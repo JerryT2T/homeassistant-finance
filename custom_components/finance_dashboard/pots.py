@@ -67,6 +67,9 @@ class Pot:
     category_keys: list[str] = field(default_factory=list)
     kind: str = POT_KIND_SPEND
     account_key: str = ""  # account the virtual pot sits on (coverage check)
+    # Accounts whose bookings count as spending of this pot (account identity keys,
+    # never raw uids). None = all accounts.
+    account_keys: list[str] | None = None
     # week start (ISO Monday) -> "accept" | "drop": what the user decided about the
     # carry-over into that week. No entry = default (carry stays in the balance).
     carry_decisions: dict[str, str] = field(default_factory=dict)
@@ -84,6 +87,7 @@ class Pot:
             "category_keys": list(self.category_keys),
             "kind": self.kind,
             "account_key": self.account_key,
+            "account_keys": None if self.account_keys is None else list(self.account_keys),
             "carry_decisions": dict(self.carry_decisions),
         }
 
@@ -118,8 +122,35 @@ class Pot:
             category_keys=keys,
             kind=kind,
             account_key=str(data.get("account_key") or "").strip()[:80],
+            account_keys=_clean_account_keys(data.get("account_keys")),
             carry_decisions=_clean_decisions(data.get("carry_decisions")),
         )
+
+
+MAX_ACCOUNT_KEYS = 20
+
+
+def _clean_account_keys(raw: Any) -> list[str] | None:
+    """``None``/empty -> all accounts; else a deduplicated list of identity keys."""
+    if raw is None:
+        return None
+    if not isinstance(raw, list):
+        raise ValueError("account_keys must be a list or null")
+    keys = list(dict.fromkeys(str(k).strip()[:80] for k in raw if str(k).strip()))
+    if len(keys) > MAX_ACCOUNT_KEYS:
+        raise ValueError("too many account_keys")
+    return keys or None
+
+
+def pot_accepts_account(pot: Pot, key: Any) -> bool:
+    """Whether a booking from account ``key`` counts for ``pot``.
+
+    Unbound pots take everything; a booking without a key (a projected upcoming
+    one) is unknown and therefore kept.
+    """
+    if pot.account_keys is None or not key:
+        return True
+    return str(key) in pot.account_keys
 
 
 CARRY_ACCEPT = "accept"
@@ -245,6 +276,7 @@ def _matching(pot: Pot, bookings: list[dict[str, Any]], cycle: tuple[date, date]
     for b in bookings:
         if (
             b["category"] in keys
+            and pot_accepts_account(pot, b.get("account_key"))
             and not b.get("pending")
             and not b.get("upcoming")
             and cycle[0] <= b["date"] <= min(upto, cycle[1])
