@@ -64,6 +64,11 @@ CATEGORY_DEFAULTS: dict[str, tuple[int, int, int, str]] = {
 _FALLBACK_DEFAULTS = (1, 1, 0, "days")
 
 
+REVIEW_CONTRACT = "contract"
+REVIEW_NOT_CONTRACT = "not_contract"
+REVIEW_ANSWERS = (REVIEW_CONTRACT, REVIEW_NOT_CONTRACT)
+
+
 class ContractError(Exception):
     """Invalid contract input (``code`` is machine-readable)."""
 
@@ -101,6 +106,7 @@ class Contract:
     special_termination: bool | None = None  # None = derive from the pattern
     plan_mode: str | None = None
     plan_fixed_amount: float | None = None
+    review: str | None = None  # the user's answer to a candidate (#130)
 
     _FIELDS = (
         "start",
@@ -115,6 +121,7 @@ class Contract:
         "special_termination",
         "plan_mode",
         "plan_fixed_amount",
+        "review",
     )
 
     def to_dict(self) -> dict[str, Any]:
@@ -182,6 +189,8 @@ def _validate(d: dict[str, Any]) -> None:
         if not 0 <= fixed <= 1_000_000:
             raise ContractError("invalid_plan_fixed_amount", "Out of range")
         d["plan_fixed_amount"] = round(float(fixed), 2)
+    if d["review"] is not None and d["review"] not in REVIEW_ANSWERS:
+        raise ContractError("invalid_review", "Unknown review answer")
     if d["plan_mode"] == PLAN_MODE_FIXED and d["plan_fixed_amount"] is None:
         raise ContractError("invalid_plan_fixed_amount", "Fixed mode needs an amount")
 
@@ -352,8 +361,11 @@ def build_contracts(
             continue
         if is_own_name(s["creditor"], own_names):
             continue
-        if s.get("candidate") and s["id"] in store.contracts:
-            # the user already edited it: it is a contract, whatever the score says
+        stored = store.contracts.get(s["id"])
+        if stored is not None and stored.review == REVIEW_NOT_CONTRACT:
+            continue  # "Kein Vertrag": never shown again (#130)
+        if s.get("candidate") and stored is not None:
+            # confirmed, or edited by the user: a contract, whatever the score says
             s = {**s, "candidate": False}
         out.append(_contract_view(s, store.get(s["id"]), today))
     out.sort(key=lambda c: (c["next_deadline"] is None, c["next_deadline"] or ""))

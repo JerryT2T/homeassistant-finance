@@ -78,3 +78,17 @@ def test_detect_series_marks_candidates():
     (s,) = detect_series(txns, today=TODAY)
     assert s["candidate"] is True
     assert s["confidence"]["score"] < CANDIDATE_BELOW
+
+
+def test_every_reason_code_has_a_de_and_en_string():
+    import json
+    import re
+    from pathlib import Path
+
+    root = Path(__file__).parent.parent / "custom_components" / "finance_dashboard"
+    src = (root / "series_confidence.py").read_text("utf-8")
+    codes = set(re.findall(r'add\(-?\d+, "([a-z_]+)"\)', src))
+    assert codes
+    for lang in ("de", "en"):
+        strings = json.loads((root / "frontend" / "locales" / f"{lang}.json").read_text("utf-8"))
+        assert {k[len("ct.reason."):] for k in strings if k.startswith("ct.reason.")} == codes, lang

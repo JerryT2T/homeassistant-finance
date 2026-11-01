@@ -654,3 +654,33 @@ def test_a_contract_the_user_edited_is_never_a_candidate():
     store.contracts[first["id"]] = Contract(first["id"], notice_value=1)
     (again,) = build_contracts(rows, store, today=TODAY)
     assert again["candidate"] is False
+
+
+def _cafe_rows():
+    rows = monthly([-12.4, -13.1, -11.8], name="Cafe Bohne", category="food")
+    for r in rows:
+        r["remittanceInformationUnstructured"] = "VISA Debitkarte"
+    return rows
+
+
+def test_not_a_contract_answer_hides_the_series_for_good():
+    store = blank_store()
+    (first,) = build_contracts(_cafe_rows(), store, today=TODAY)
+    store.contracts[first["id"]] = Contract(first["id"], review="not_contract")
+    assert build_contracts(_cafe_rows() + _cafe_rows()[:0], store, today=TODAY) == []
+
+
+def test_confirmed_candidate_counts_as_a_contract():
+    store = blank_store()
+    (first,) = build_contracts(_cafe_rows(), store, today=TODAY)
+    assert first["candidate"] is True
+    store.contracts[first["id"]] = Contract(first["id"], review="contract")
+    (again,) = build_contracts(_cafe_rows(), store, today=TODAY)
+    assert again["candidate"] is False
+    assert again["contract"]["stored"]["review"] == "contract"
+
+
+def test_unknown_review_answer_is_rejected():
+    with pytest.raises(ContractError) as err:
+        Contract("s_x").apply({"review": "maybe"})
+    assert err.value.code == "invalid_review"
