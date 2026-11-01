@@ -23,6 +23,7 @@ from .const import (
 )
 
 CANDIDATE_BELOW = 50
+REASON_OWN_NAME = "own_name"  # paid to an own account holder's name (#109)
 
 _CARD = re.compile(
     r"\b(visa|mastercard|maestro|debitkarte|kreditkarte|girocard|ec[- ]?karte"
@@ -34,7 +35,7 @@ _DIRECT_DEBIT = re.compile(
 )
 _SUBSCRIPTION = re.compile(
     r"\b(abo|abonnement|subscription|mitglied\w*|beitrag|premium|membership|tarif|monatsgeb\w*"
-    r"|abschlag|miete|rate|versicherung|police)\b",
+    r"|abschlag|miete|rate|versicherung|police|darlehen|kredit|mobilfunk|strom)\b",
     re.IGNORECASE,
 )
 _CONTRACT_CATEGORIES = {
@@ -119,6 +120,15 @@ def _is_step(mags: list[float]) -> bool:
     """Amounts change at most once (a price step), never back and forth."""
     changes = sum(1 for i in range(1, len(mags)) if round(mags[i], 2) != round(mags[i - 1], 2))
     return changes <= 1
+
+
+def own_name_contract(confidence: dict[str, Any]) -> bool:
+    """A payment to an own name that still reads like a contract: a contract
+    word or number in the text and a stable amount (a loan instalment to an
+    own account at an unlinked bank). Savings transfers carry neither."""
+    reasons = set(confidence.get("reasons") or ())
+    named = bool(reasons & {"contract_keyword", "contract_reference"})
+    return named and "stable_amount" in reasons
 
 
 def is_candidate(confidence: dict[str, Any]) -> bool:

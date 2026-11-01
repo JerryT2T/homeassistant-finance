@@ -29,7 +29,9 @@ weekly/monthly (-), day-of-month regularity on a 31-day circle, contract categor
 shopping) (-). Reasons are codes, never amounts or names. Review (#130): `Contract.review` = `contract` (confirmed, never a
 candidate again) or `not_contract` (the series is dropped from `build_contracts` for good); any stored contract fields
 also end the candidate status. The contracts page lists candidates for admins under "Prüfen" with the reason codes as a
-tooltip; `PUT /contracts/{id}` with `{"review": "not_contract"}` answers `{"id", "dismissed": true}`. Candidates are left out of reserves, plan prefill, notice
+tooltip; `PUT /contracts/{id}` with `{"review": "not_contract"}` answers `{"id", "dismissed": true}`. Own names (#109): a series to an
+own account holder's name is dropped as a transfer, unless its text carries a contract word or number and the amount is
+stable (`series_confidence.own_name_contract`) - then it is a candidate with the first reason `own_name`. Candidates are left out of reserves, plan prefill, notice
 events and the contracts page list/totals; non-admin views carry `candidate` too.
 `detect_recurring` (monthly, home screen) is unchanged. `recurring.add_months` is a public helper.
 

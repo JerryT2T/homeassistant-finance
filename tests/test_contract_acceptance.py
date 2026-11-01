@@ -112,7 +112,12 @@ def test_case(case: str):
     pairs, extra = _pair(found, SPEC[case]["contracts"])
     missing = [w for w, hit in pairs if hit is None]
     assert not missing, f"not detected: {missing}"
-    unsure = [w["creditor"] for w, hit in pairs if hit is not None and hit.get("candidate")]
+    # a case may expect a candidate (a question, #109); every other contract must be sure
+    unsure = [
+        w["creditor"]
+        for w, hit in pairs
+        if hit is not None and bool(hit.get("candidate")) != bool(w.get("candidate"))
+    ]
     assert not unsure, f"detected only as a candidate (#129): {unsure}"
     false_positives = [f["creditor"] for f in _fixed(extra)]
     assert not false_positives, f"counted as contract by mistake: {false_positives}"

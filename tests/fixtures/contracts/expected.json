@@ -35,9 +35,8 @@
       ]
     },
     "loan_to_own_name": {
-      "xfail": "#109",
       "contracts": [
-        {"creditor": "erika mustermann", "interval": "monthly", "plan_amount": 320.00, "kind": "contract", "category": "finance_obligations"}
+        {"creditor": "erika mustermann", "interval": "monthly", "plan_amount": 320.00, "kind": "contract", "category": "finance_obligations", "candidate": true}
       ]
     },
     "mobile_via_family": {

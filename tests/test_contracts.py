@@ -684,3 +684,33 @@ def test_unknown_review_answer_is_rejected():
     with pytest.raises(ContractError) as err:
         Contract("s_x").apply({"review": "maybe"})
     assert err.value.code == "invalid_review"
+
+
+def _to_own(text, amounts=(-320.0,) * 4):
+    rows = monthly(list(amounts), name="Erika Mustermann")
+    for r in rows:
+        r["remittanceInformationUnstructured"] = text
+    return rows
+
+
+def test_instalment_to_own_name_is_a_candidate_question():
+    own = frozenset({"erika mustermann"})
+    (c,) = build_contracts(_to_own("Rate Sparbank 99887766"), blank_store(), today=TODAY, own_names=own)
+    assert c["candidate"] is True
+    assert c["confidence"]["reasons"][0] == "own_name"
+
+
+def test_savings_transfer_to_own_name_stays_hidden():
+    own = frozenset({"erika mustermann"})
+    assert build_contracts(_to_own("Sparen"), blank_store(), today=TODAY, own_names=own) == []
+    varying = _to_own("Rate", amounts=(-100.0, -250.0, -80.0, -300.0))
+    assert build_contracts(varying, blank_store(), today=TODAY, own_names=own) == []
+
+
+def test_confirmed_own_name_contract_counts():
+    own = frozenset({"erika mustermann"})
+    store = blank_store()
+    (c,) = build_contracts(_to_own("Darlehen Rate"), store, today=TODAY, own_names=own)
+    store.contracts[c["id"]] = Contract(c["id"], review="contract")
+    (again,) = build_contracts(_to_own("Darlehen Rate"), store, today=TODAY, own_names=own)
+    assert again["candidate"] is False
