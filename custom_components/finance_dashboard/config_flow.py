@@ -472,7 +472,13 @@ class FinanceDashboardOptionsFlow(OptionsFlow):
         return self._entry_override or self.config_entry
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        """Manage the options."""
+        """Manage the options.
+
+        Deliberately absent: a refresh interval (the bank is never polled; see
+        the daily refresh in the panel), the split model (the ``select`` entity
+        owns it, the stored option stays its default), currency and the panel
+        toggle (nothing read them). Stored values of removed keys are kept.
+        """
         if user_input is not None:
             return self.async_create_entry(title="", data={**self._entry.options, **user_input})
 
@@ -481,24 +487,8 @@ class FinanceDashboardOptionsFlow(OptionsFlow):
             data_schema=vol.Schema(
                 {
                     vol.Optional(
-                        "refresh_interval_minutes",
-                        default=self._entry.options.get("refresh_interval_minutes", 60),
-                    ): vol.All(vol.Coerce(int), vol.Range(min=15, max=1440)),
-                    vol.Optional(
-                        "split_model",
-                        default=self._entry.options.get("split_model", "proportional"),
-                    ): vol.In(["pooled_equal", "proportional", "equal", "custom"]),
-                    vol.Optional(
-                        "currency",
-                        default=self._entry.options.get("currency", "EUR"),
-                    ): str,
-                    vol.Optional(
                         "enable_total_balance_sensor",
                         default=self._entry.options.get("enable_total_balance_sensor", False),
-                    ): bool,
-                    vol.Optional(
-                        "enable_dashboard_panel",
-                        default=self._entry.options.get("enable_dashboard_panel", True),
                     ): bool,
                     vol.Optional(
                         "demo_mode",

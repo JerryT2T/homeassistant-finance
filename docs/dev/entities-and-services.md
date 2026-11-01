@@ -67,3 +67,30 @@ Home screen (`api/home.py`, `home.py`, `pots.py`, `cycle.py`):
   `/home` carries `setup {persons, user_mapped, accounts_total, accounts_assigned, pots}`.
 - Demo mode (`manager.demo_mode`, or `demo=1`) serves the same payload from invented data
   (`demo.generate_demo_home`).
+
+## AI consent and spreadsheet ideas
+
+AI consent is per purpose (`ai_consent.py`, own store `finance_dashboard.ai_consent`; first load
+migrates the legacy wizard flag `ai_opt_in` into `categorize`). Purposes: `categorize`
+(`recurring`: merchant + remittance text of unclassified transactions, stays granted) and
+`sheet_analysis` (`once`: names of budget-sheet positions local matching could not place; consumed
+by the first analysis that gets a real AI answer). `manager/_questions.py` gates the categorisation
+pass on `async_granted(hass, "categorize")`.
+
+- `GET /setup/ai/consents` (admin) -> `{consents: {purpose: {granted, mode, granted_at, used_at}},
+  purposes: {purpose: {mode, pros: [i18n key x<=3], risks: [i18n key x<=3]}}}`.
+- `PUT /setup/ai/consents` (admin) body `{purpose, granted: bool}` -> same payload; unknown purpose
+  or non-boolean -> 400 `invalid_body`.
+- `POST /plan_wizard/sheet_ideas` (admin) body `{content_base64}` or `{url}` (Google Sheets, URL
+  built from the sheet id only). Reads position **names** only (amounts ignored), matches them
+  locally against recurring series (`recurring.detect_series`) and category names/spend in the
+  cached ledger, never a bank call, never writes the plan. Response
+  `{ideas: [{name, matched: "series"|"category"|"ai"|null, series_id, category, amount (monthly,
+  plan sign, from ledger data only, else null), kind: "fixed"|"pot"|"reserve"|null}],
+  needs_consent, ai_used}`. Unmatched names go to the AI only with `sheet_analysis` consent (names
+  only, one batched call, counts against the monthly budget); without it `needs_consent` is true
+  and no call is made.
+
+Options flow (`init`): `raw_retention_days`, `show_household`, `demo_mode`,
+`enable_total_balance_sensor`. There is no refresh interval (no polling); the split model is the
+`select.fd_split_model` entity (a stored `split_model` option stays its default).
