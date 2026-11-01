@@ -571,3 +571,25 @@ def test_same_day_split_gives_the_payee_id_independent_of_input_order():
     first = {abs(s["plan_amount"]): s["id"] for s in detect_series(_loans(), today=TODAY)}
     flipped = {abs(s["plan_amount"]): s["id"] for s in detect_series(_loans()[::-1], today=TODAY)}
     assert first == flipped
+
+
+def test_parts_of_one_payee_never_share_an_id():
+    from custom_components.finance_dashboard.recurring import _part_id, _Part
+
+    part = _Part([], "monthly", "~same")
+    used: set[str] = set()
+    ids = []
+    for _ in range(3):
+        sid = _part_id(
+            part,
+            is_base=False,
+            canonical="x",
+            names=["x"],
+            negative=True,
+            aliases={},
+            known=set(),
+            used=used,
+        )
+        used.add(sid)
+        ids.append(sid)
+    assert len(set(ids)) == 3

@@ -508,7 +508,7 @@ def _whole_or_bands(rows, date_tol: int, amount_tol: float, tag: str = "", ref: 
     for rows_, interval in _join_successors(streams, date_tol, amount_tol):
         mid = statistics.median(abs(r[1]) for r in rows_[:MIN_BAND_OCCURRENCES])
         # a band never claims the reference: two bands would fight over it
-        parts.append(_Part(rows_, interval, f"{tag}~{_digest(f'{mid:.0f}')}"))
+        parts.append(_Part(rows_, interval, f"{tag}~{_digest(f'{mid:.2f}')}"))
     return parts
 
 
@@ -587,7 +587,12 @@ def _part_id(
     for sid in candidates:
         if sid and sid not in used:
             return sid
-    return series_id(f"{names[0]} {part.tag or part.ref}", negative)
+    sid = series_id(f"{names[0]} {part.tag or part.ref}", negative)
+    n = 1
+    while sid in used:  # two tags may still collide; ids within a payee must not
+        n += 1
+        sid = series_id(f"{names[0]} {part.tag or part.ref} {n}", negative)
+    return sid
 
 
 def _most_common_value(values: list[Any], default: Any) -> Any:
