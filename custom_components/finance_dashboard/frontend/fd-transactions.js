@@ -107,9 +107,31 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
   .row .ac::before { content: none; }
   .row .m .ac { grid-column: 3; grid-row: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .row .a { grid-column: 4; grid-row: 1; }
+  .row .lb { grid-column: 2 / -1; grid-row: 2; }
 }
 .pager { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; padding-top: 8px; border-top: 1px solid var(--fd-line); }
 .pager .btns { display: flex; gap: 6px; }
+.row[data-i] { cursor: pointer; border-radius: 8px; }
+.row[data-i]:hover { background: var(--fd-sunk); }
+.row[data-i]:focus-visible { outline: 2px solid var(--fd-a500); outline-offset: -2px; }
+.row .cat { color: var(--fd-t2); font-size: 11.5px; overflow-wrap: anywhere; }
+.row .cat i { font-style: normal; opacity: .8; }
+.row .lb { grid-column: 1 / -1; min-width: 0; }
+.row .lb:empty { display: none; }
+.scrim { position: fixed; inset: 0; z-index: 50; display: flex; align-items: flex-end; justify-content: center; background: rgba(0,0,0,.4); }
+.dlg { box-sizing: border-box; width: min(480px, 100%); max-height: 90dvh; overflow: auto; padding: 16px; border-radius: 18px 18px 0 0; background: var(--fd-card); box-shadow: var(--fd-sh2); }
+@media (min-width: 600px) { .scrim { align-items: center; } .dlg { border-radius: 18px; } }
+.dlg h3 { margin: 0 0 2px; font-size: 15px; font-weight: 500; overflow-wrap: anywhere; }
+.dlg .sec { margin: 12px 0 4px; font-size: 12px; color: var(--fd-t2); }
+.pick { display: flex; flex-wrap: wrap; gap: 6px; }
+.pick label { position: relative; display: inline-flex; align-items: center; min-height: 40px; padding: 0 14px; border: 1px solid var(--fd-line); border-radius: var(--fd-r-pill); cursor: pointer; font-size: 12.5px; }
+.pick input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+.pick label:has(input:checked) { background: var(--fd-a50); border-color: var(--fd-a500); color: var(--fd-a900); font-weight: 500; }
+.pick label:has(input:focus-visible) { outline: 2px solid var(--fd-a500); outline-offset: 2px; }
+.newrow { display: flex; gap: 8px; margin-top: 8px; }
+.newrow input { flex: 1 1 auto; min-width: 0; box-sizing: border-box; min-height: var(--fd-touch); padding: 0 12px; border: 1px solid var(--fd-line); border-radius: 10px; background: var(--fd-page); color: var(--fd-t1); }
+.acts { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+.err { margin-top: 8px; color: var(--fd-over); font-size: 12px; }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 .wide { display: none; }
 .narrow { display: block; }
@@ -122,6 +144,8 @@ class FdTransactions extends HTMLElement {
     this.attachShadow({ mode: "open" });
     this._hass = null;
     this._accounts = [];
+    this._labels = [];
+    this._dlg = null;
     this._tx = { items: [], total: 0, offset: 0 };
     this._status = "idle"; // idle | loading | ok | admin | error
     this._q = "";
@@ -174,8 +198,11 @@ class FdTransactions extends HTMLElement {
     const params = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String(offset) });
     if (this._q) params.set("q", this._q);
     if (this._account) params.set("account", this._account);
+    // Catalogue is fetched once (cached in the shared helper); chips need the custom names.
+    const labelsP = window._fd.getLabels(this._hass).then((l) => { this._labels = l; });
     try {
       const r = await this._hass.callApi("GET", `${DOMAIN}/transactions?${params}`);
+      await labelsP;
       if (seq !== this._seq) return;
       if (r && r.privacy === "aggregate_only") {
         this._status = "admin";
@@ -246,13 +273,19 @@ class FdTransactions extends HTMLElement {
       try { return new Intl.NumberFormat(undefined, { style: "currency", currency: x.currency || "EUR" }).format(n); }
       catch (_) { return `${x.amount} ${x.currency || ""}`; }
     };
-    const rows = t.items.map((x) => {
+    const { catLabel, labelChips } = window._fd;
+    const rows = t.items.map((x, idx) => {
       const n = parseFloat(x.amount);
       const party = x.creditor || x.debtor || "";
       const pend = x.status && x.status !== "booked" ? ` <span class="chip">${e(tr("tx.pending"))}</span>` : "";
-      return `<div class="row">
-  <div class="l"><div class="p">${e(party)}${pend}</div><div class="d">${e(x.description)}</div></div>
+      const cat = x.category ? `<div class="cat">${e(catLabel(x.category))}${x.category_source === "contract" ? ` <i>· ${e(tr("tx.from_contract"))}</i>` : ""}</div>` : "";
+      const chips = labelChips(x.labels_inherited, this._labels, "inherited") + labelChips(x.labels_own, this._labels, "own") + labelChips(x.labels_auto, this._labels, "auto");
+      const open = this._isAdmin && x.ledger_id
+        ? ` data-i="${idx}" role="button" tabindex="0" aria-label="${e(tr("tx.open_booking") + ": " + (party || x.description || ""))}"` : "";
+      return `<div class="row"${open}>
+  <div class="l"><div class="p">${e(party)}${pend}</div><div class="d">${e(x.description)}</div>${cat}</div>
   <div class="a ${n > 0 ? "in" : ""}">${e(fmtAmt(x))}</div>
+  <div class="lb"><div class="lcs">${chips}</div></div>
   <div class="m"><span class="dt">${e(fmtDate(x.date))}</span><span class="ac">${e(x.account_name || "")}</span></div>
 </div>`;
     });
@@ -268,6 +301,144 @@ class FdTransactions extends HTMLElement {
 </div>`;
     list.querySelector("#prev").addEventListener("click", () => this._load(Math.max(0, t.offset - PAGE_SIZE)));
     list.querySelector("#next").addEventListener("click", () => this._load(t.offset + PAGE_SIZE));
+    list.querySelectorAll(".row[data-i]").forEach((r) => {
+      const open = () => this._openDialog(Number(r.dataset.i), r);
+      r.addEventListener("click", open);
+      r.addEventListener("keydown", (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); open(); } });
+    });
+  }
+
+  // ---- booking dialog (#113) -------------------------------------------------
+  async _openDialog(i, opener) {
+    const x = this._tx.items[i];
+    if (!x || !x.ledger_id) return;
+    this._dlg = { x, opener, sel: new Set(x.labels_own || []), error: "", saving: false, newName: "" };
+    this._paintDialog();
+    this._focusDialog();
+    if (!this._labels.length) {
+      this._labels = await window._fd.getLabels(this._hass);
+      if (this._dlg && this._dlg.x === x) this._paintDialog();
+    }
+  }
+
+  _focusDialog(sel) {
+    const el = this.shadowRoot.querySelector(sel || "#dlg .pick input, #dlg button");
+    if (el) el.focus();
+  }
+
+  _closeDialog() {
+    const d = this._dlg;
+    this._dlg = null;
+    const host = this.shadowRoot.getElementById("dlg");
+    if (host) host.innerHTML = "";
+    if (d && d.opener && d.opener.isConnected) d.opener.focus();
+  }
+
+  _paintDialog() {
+    const d = this._dlg;
+    let host = this.shadowRoot.getElementById("dlg");
+    if (!host) {
+      host = document.createElement("div");
+      host.id = "dlg";
+      this.shadowRoot.appendChild(host);
+      host.addEventListener("click", (ev) => this._onDlgClick(ev));
+      host.addEventListener("keydown", (ev) => this._onDlgKey(ev));
+      host.addEventListener("input", (ev) => { if (ev.target.id === "newlb" && this._dlg) this._dlg.newName = ev.target.value; });
+      host.addEventListener("change", (ev) => {
+        const id = ev.target.dataset && ev.target.dataset.lb;
+        if (id && this._dlg) { if (ev.target.checked) this._dlg.sel.add(id); else this._dlg.sel.delete(id); }
+      });
+    }
+    if (!d) { host.innerHTML = ""; return; }
+    const { escHtml: e, catLabel, labelChips, labelName, fmtDate } = window._fd;
+    const x = d.x;
+    const inh = x.labels_inherited || [];
+    const auto = x.labels_auto || [];
+    const party = x.creditor || x.debtor || x.description || "";
+    let catLine = "";
+    if (x.category) {
+      catLine = x.category_source === "contract" && x.contract_name
+        ? `${e(catLabel(x.category))} · ${e(tr("tx.from_contract_named", { name: x.contract_name }))}`
+        : `${e(catLabel(x.category_source === "own" ? (x.own_category || x.category) : x.category))}${x.category_source === "own" ? ` · ${e(tr("tx.own_category"))}` : ""}`;
+    }
+    const inhSet = new Set(inh);
+    const pickable = (this._labels || []).filter((l) => l.kind !== "auto" && !inhSet.has(l.id));
+    host.innerHTML = `<div class="scrim" data-act="scrim"><div class="dlg" role="dialog" aria-modal="true" aria-labelledby="dlgt">
+  <h3 id="dlgt">${e(tr("tx.booking"))}: ${e(party)}</h3>
+  <div class="muted">${e(fmtDate(x.date))}${x.account_name ? " · " + e(x.account_name) : ""}</div>
+  ${catLine ? `<div class="sec">${e(tr("tx.category"))}</div><div>${catLine}</div>` : ""}
+  ${inh.length ? `<div class="sec">${e(tr("lb.from_contract"))}</div><div class="lcs">${labelChips(inh, this._labels, "inherited")}</div>` : ""}
+  ${auto.length ? `<div class="sec">${e(tr("lb.auto"))}</div><div class="lcs">${labelChips(auto, this._labels, "auto")}</div>` : ""}
+  <div class="sec" id="ownh">${e(tr("lb.own"))}</div>
+  <div class="pick" role="group" aria-labelledby="ownh">${pickable.length ? pickable.map((l) => `<label><input type="checkbox" data-lb="${e(l.id)}"${d.sel.has(l.id) ? " checked" : ""}>${e(labelName(l.id, this._labels))}</label>`).join("") : `<span class="muted">${e(tr("lb.none"))}</span>`}</div>
+  <div class="sec"><label for="newlb">${e(tr("lb.new"))}</label></div>
+  <div class="newrow"><input id="newlb" type="text" maxlength="40" autocomplete="off" placeholder="${e(tr("lb.new_ph"))}" value="${e(d.newName)}">
+    <button type="button" class="btn ghost" data-act="add">${e(tr("lb.add"))}</button></div>
+  <div class="err" role="alert">${e(d.error)}</div>
+  <div class="acts"><button type="button" class="btn ghost" data-act="cancel">${e(tr("tx.cancel"))}</button>
+    <button type="button" class="btn" data-act="save" ${d.saving ? "disabled" : ""}>${e(tr(d.saving ? "tx.saving" : "tx.save"))}</button></div>
+</div></div>`;
+  }
+
+  _onDlgKey(ev) {
+    if (!this._dlg) return;
+    if (ev.key === "Escape") { ev.stopPropagation(); this._closeDialog(); return; }
+    if (ev.key === "Enter" && ev.target.id === "newlb") { ev.preventDefault(); this._createLabel(); return; }
+    if (ev.key !== "Tab") return;
+    const f = [...this.shadowRoot.querySelectorAll("#dlg input, #dlg button:not([disabled])")];
+    if (!f.length) return;
+    const idx = f.indexOf(this.shadowRoot.activeElement);
+    if (ev.shiftKey && idx <= 0) { ev.preventDefault(); f[f.length - 1].focus(); }
+    else if (!ev.shiftKey && idx === f.length - 1) { ev.preventDefault(); f[0].focus(); }
+  }
+
+  _onDlgClick(ev) {
+    const t = ev.target.closest("[data-act]");
+    if (!t || !this._dlg) return;
+    switch (t.dataset.act) {
+      case "scrim": if (ev.target === t) this._closeDialog(); break;
+      case "cancel": this._closeDialog(); break;
+      case "add": this._createLabel(); break;
+      case "save": this._saveLabels(); break;
+      default: break;
+    }
+  }
+
+  async _createLabel() {
+    const d = this._dlg;
+    const name = ((d && d.newName) || "").trim();
+    if (!d || !name) return;
+    try {
+      const r = await this._hass.callApi("POST", `${DOMAIN}/labels`, { name });
+      this._labels = (r && r.labels) || this._labels;
+      window._fd.setLabels(this._labels);
+      if (r && r.id) d.sel.add(r.id);
+      d.newName = "";
+      d.error = "";
+    } catch (err) {
+      const code = err && err.body && err.body.error;
+      d.error = code && tr(`lb.err.${code}`) !== `lb.err.${code}` ? tr(`lb.err.${code}`) : tr("lb.err.generic");
+    }
+    this._paintDialog();
+    this._focusDialog("#newlb");
+  }
+
+  async _saveLabels() {
+    const d = this._dlg;
+    if (!d || d.saving) return;
+    d.saving = true;
+    d.error = "";
+    this._paintDialog();
+    try {
+      const r = await this._hass.callApi("PUT", `${DOMAIN}/transactions/${encodeURIComponent(d.x.ledger_id)}/labels`, { labels: [...d.sel] });
+      d.x.labels_own = (r && r.labels_own) || [...d.sel];
+      this._closeDialog();
+      this._paintList();
+    } catch (_) {
+      d.saving = false;
+      d.error = tr("tx.save_failed");
+      this._paintDialog();
+    }
   }
 }
 
