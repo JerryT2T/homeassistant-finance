@@ -45,6 +45,7 @@ from typing import Any
 from .budget_plan import BudgetPlan
 from .const import OWNER_SHARED, POSITION_KIND_FIXED
 from .cycle import calendar_cycle, household_cycle, household_starts
+from .text_norm import canonical_name, processor_merchant_text
 from .tx_dates import effective_day
 
 CYCLES = ("current", "previous")
@@ -145,14 +146,14 @@ def _paypal_mirrors(booked: list[dict[str, Any]], pp_ids: set[str]) -> set[int]:
     """
     if not pp_ids:
         return set()
-    purchases: dict[int, list[date]] = defaultdict(list)
+    purchases: dict[int, list[dict[str, Any]]] = defaultdict(list)
     credits: dict[int, list[dict[str, Any]]] = defaultdict(list)
     for tx in booked:
         if _day(tx) is None or str(tx.get("_account_id") or "") not in pp_ids:
             continue
         cents = round(_amount(tx) * 100)
         if cents < 0:
-            purchases[cents].append(_day(tx))
+            purchases[cents].append(tx)
         elif cents > 0:
             credits[-cents].append(tx)
     mirrors: set[int] = set()
@@ -179,12 +180,27 @@ def _paypal_mirrors(booked: list[dict[str, Any]], pp_ids: set[str]) -> set[int]:
             credit = min(funding, key=lambda c: near(day, _day(c)))
             credits[cents].remove(credit)
             mirrors.add(id(credit))
-        bought = [d for d in purchases.get(cents, []) if near(day, d) is not None]
+        merchant = canonical_name(
+            processor_merchant_text(str(tx.get("remittanceInformationUnstructured") or ""))
+        )
+        bought = [
+            p
+            for p in purchases.get(cents, [])
+            if near(day, _day(p)) is not None and _same_merchant(merchant, p)
+        ]
         if bought:
-            purchases[cents].remove(min(bought, key=lambda d: near(day, d)))
+            purchases[cents].remove(min(bought, key=lambda p: near(day, _day(p))))
         if funding or bought:
             mirrors.add(id(tx))
     return mirrors
+
+
+def _same_merchant(merchant: str, line: dict[str, Any]) -> bool:
+    """The bank debit names no merchant, or the PayPal line's payee shares a word with it."""
+    if not merchant:
+        return True
+    payee = canonical_name(str(line.get("creditorName") or line.get("debtorName") or ""))
+    return not payee or bool(set(merchant.split()) & set(payee.split()))
 
 
 # ---------------------------------------------------------------------------

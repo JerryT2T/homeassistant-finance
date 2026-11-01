@@ -141,6 +141,15 @@ def test_paypal_top_up_without_purchase_counts_nowhere():
     assert counted_transactions([debit, credit], PP_ACCOUNTS) == []
 
 
+def test_paypal_line_of_another_merchant_is_no_mirror():
+    debit = tx(
+        "a1", -20, 5, "PayPal (Europe) S.a.r.l.",
+        remittanceInformationUnstructured="PP.1.PP . Pizza Roma, Ihr Einkauf bei Pizza Roma",
+    )
+    line = _pp_line(-20, 6, transactionDate="2026-04-06")  # Streamly
+    assert len(counted_transactions([debit, line], PP_ACCOUNTS)) == 2
+
+
 def test_paypal_line_too_far_away_is_no_mirror():
     debit = tx("a1", -40, 20, "PayPal (Europe) S.a.r.l.")
     line = _pp_line(-40, 4, transactionDate="2026-04-04")
