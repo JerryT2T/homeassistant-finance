@@ -193,6 +193,9 @@ class ContractStore:
         self._store = Store(hass, STORAGE_VERSION, STORAGE_KEY_CONTRACTS)
         self.contracts: dict[str, Contract] = {}
         self.notified: set[str] = set()
+        # canonical payee name -> series id; keeps ids stable across spellings
+        self.aliases: dict[str, str] = {}
+        self._aliases_changed = False
         self._loaded = False
 
     async def async_load(self) -> None:
@@ -206,6 +209,9 @@ class ContractStore:
                 if isinstance(item, dict):
                     self.contracts[str(sid)] = Contract.from_dict(str(sid), item)
             self.notified = {str(n) for n in raw.get("notified") or []}
+            self.aliases = {
+                str(k): str(v) for k, v in (raw.get("aliases") or {}).items() if k and v
+            }
         self._loaded = True
 
     async def async_save(self) -> None:
@@ -213,8 +219,21 @@ class ContractStore:
             {
                 "contracts": {sid: c.to_dict() for sid, c in self.contracts.items()},
                 "notified": sorted(self.notified),
+                "aliases": dict(sorted(self.aliases.items())),
             }
         )
+        self._aliases_changed = False
+
+    def learn_alias(self, key: str, sid: str) -> None:
+        """Remember which series id a payee name maps to (names only, no amounts)."""
+        if key and self.aliases.get(key) != sid:
+            self.aliases[key] = sid
+            self._aliases_changed = True
+
+    async def async_save_if_changed(self) -> None:
+        """Persist aliases learned during a detection pass."""
+        if self._aliases_changed:
+            await self.async_save()
 
     def get(self, sid: str) -> Contract:
         return self.contracts.get(sid) or Contract(series_id=sid)
@@ -318,9 +337,17 @@ def build_contracts(
     chain detector missed, never a contract.
     """
     today = today or date.today()
-    series_list = detect_series(transactions, today=today, overrides=store.overrides())
+    series_list = detect_series(
+        transactions,
+        today=today,
+        overrides=store.overrides(),
+        aliases=store.aliases,
+        known_ids=set(store.contracts),
+    )
     out: list[dict[str, Any]] = []
     for s in series_list:
+        for key in s.get("alias_keys") or [s["alias_key"]]:
+            store.learn_alias(key, s["id"])
         if s["direction"] != "out":
             continue
         if is_own_name(s["creditor"], own_names):
@@ -484,6 +511,8 @@ async def async_fire_notice_due(
         cutoff = (today or date.today()).isoformat()
         store.notified = {m for m in store.notified if m.split("|")[-1] >= cutoff}
         await store.async_save()
+    else:
+        await store.async_save_if_changed()
     return fired
 
 

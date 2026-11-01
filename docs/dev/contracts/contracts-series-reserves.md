@@ -5,7 +5,20 @@ Everything is cache-only; no bank call is added.
 
 ## Series (`recurring.detect_series(transactions, today=, amount_tolerance=0.20, date_tolerance_days=5, overrides=)`)
 Intervals: weekly (>=4 payments), monthly, quarterly, half_yearly, yearly (>=2). Amounts in bank sign.
-One price step is allowed (a series with two +-tolerance jumps is rejected). Fields: `id` (stable hash of payee+direction),
+Payees are grouped by `text_norm.canonical_name` (encoding repaired, umlauts/accents, punctuation and legal forms removed), so
+a bank changing "S.à r.l." to "S.Ã  r.l." or dropping "GmbH" does not split a series. Id (`resolve_series_id`): the stored
+alias of the group (`ContractStore.aliases`, key `<canonical>|out|in`, names only), else a stored contract id of one of its
+spellings, else `sha1(first-seen normalized name|direction)` - identical to the pre-alias id, so stored contracts never move.
+Callers persist newly learned aliases with `ContractStore.async_save_if_changed()`.
+One payee, several series (#108, `_series_parts`): a payee group is split by contract reference
+(`contract_reference`: a number after a keyword such as Darlehen, Vertrag, Kd-Nr, Mandat, Police, Mitglieds-Nr - never a bare
+order number) when two or more references each recur and run in parallel; a reference that only changes once is a successor.
+Only when the whole group is no series, it is searched for amount bands (+-5 % around its most frequent amounts); a band counts only with >= 3
+payments each within the date tolerance of the predicted date, finite instalments ("Teil 1/3", "Rate 2 von 6") never form
+a band, and a band that continues where another stopped is joined (price step), so a real price step is never split. The part with the earliest payment keeps the payee id;
+other parts get `sha1(name tag)`. Each part remembers its id under `alias_keys`: the payee key (earliest part), a
+name-independent hashed reference key and a hashed band key - never a number or an amount in clear.
+One price step is allowed (a series with two +-tolerance jumps is rejected). Fields: `id`, `alias_key`, `alias_keys`,
 `interval`, `next_expected`, `expected_amount`/`plan_amount`, `plan_mode` (highest default / average / last / median / fixed),
 `annual_cost`, `status` (`active` / `missing` > date tolerance overdue / `ended` > 2 periods overdue),
 `price_change {previous,last,change_pct,increase,date}`, `category`, `account_key`, `account_type`, `account_person`.

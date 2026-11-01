@@ -1,5 +1,31 @@
 # Build Log
 
+## 0.24.3 — 2026-11-01
+Version: 0.24.3
+Branch: fix/108-payee-split
+Changes:
+- fix(contracts): two loans or contracts at one payee are two contracts with their full amounts when the transfer text names different contract, loan, customer or mandate numbers that run in parallel; a number that only changes once stays one contract
+- fix(contracts): a subscription at a payee that also sells one-off purchases (app store, BNPL provider) is found on its own; the one-offs and finite instalments ("Teil 1/3") stay out, a real price step is still one series
+- fix(contracts): energy advances stay one contract even when a yearly settlement from the same supplier sits between them
+- feat(contracts): split parts keep their ids through hashed reference and amount-band keys in the alias table (no numbers or amounts stored in clear)
+
+## 0.24.2 — 2026-11-01
+Version: 0.24.2
+Branch: fix/120-processor-merchants
+Changes:
+- fix(categorizer): purchases paid via PayPal, Klarna, SumUp and other processors are categorised by the remittance text (the merchant, the order), never by the processor's own name; a line without a recognisable merchant stays "other" and is asked in the question flow
+- fix(questions): every purchase through a processor gets its own merchant ("Ihr Einkauf bei …"), so answering one PayPal purchase no longer recategorises all of them; an earlier answer stored for the shared PayPal key no longer applies
+- fix(banking): counterparty names delivered as Latin-1 mojibake ("S.Ã  r.l.") are repaired at import, replacement characters are dropped
+- chore(release): manifest and const carry the version again (0.24.1 had shipped with the old number)
+
+## 0.24.1 — 2026-11-01
+Version: 0.24.1
+Branch: chore/122-stable-contract-ids
+Changes:
+- fix(contracts): a payee whose name the bank spells differently (punctuation, legal form, broken encoding such as "S.Ã  r.l.") stays one contract with the same id, so term, notice, plan mode and category you entered are kept
+- feat(contracts): name variants are remembered in an alias table in the contract store (names only, no amounts), so a contract keeps its id after the old spelling has left the bank history
+- test: synthetic acceptance fixtures for contract detection measure recall, false positives and annual-total deviation for the Contract Detection milestone (#106)
+
 ## 0.24.0 — 2026-10-29
 Version: 0.24.0
 Branch: claude/ai-budget-points-history

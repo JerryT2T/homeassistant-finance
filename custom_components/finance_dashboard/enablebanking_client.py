@@ -28,6 +28,7 @@ import jwt
 from cryptography.hazmat.primitives import serialization
 
 from .const import ENABLEBANKING_BASE_URL, TRANSACTION_MAX_PAGES, VERSION
+from .text_norm import repair_mojibake
 
 # Type alias for optional injected session
 _SessionType = aiohttp.ClientSession | None
@@ -529,12 +530,13 @@ class EnableBankingClient:
                 "amount": cls._signed_amount(amount_data, txn),
                 "currency": amount_data.get("currency") or "EUR",
             },
-            "creditorName": (
+            # Some ASPSPs deliver UTF-8 names decoded as Latin-1 ("S.Ã  r.l.").
+            "creditorName": repair_mojibake(
                 (creditor.get("name") or "")
                 if isinstance(creditor, dict)
                 else (txn.get("creditor_name") or "")
             ),
-            "debtorName": (
+            "debtorName": repair_mojibake(
                 (debtor.get("name") or "")
                 if isinstance(debtor, dict)
                 else (txn.get("debtor_name") or "")

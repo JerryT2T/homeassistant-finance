@@ -44,6 +44,14 @@ def monthly(amounts, name="Netflix", start=date(2026, 1, 10), **kw):
 TODAY = date(2026, 6, 15)
 
 
+def blank_store() -> ContractStore:
+    """A store without Home Assistant storage behind it."""
+    store = ContractStore.__new__(ContractStore)
+    store.contracts, store.notified, store.aliases = {}, set(), {}
+    store._aliases_changed = False  # noqa: SLF001
+    return store
+
+
 def test_monthly_series_and_next_date():
     (s,) = detect_series(monthly([-10, -10, -10, -10, -10]), today=TODAY)
     assert s["interval"] == "monthly"
@@ -170,8 +178,7 @@ def test_special_termination_pattern():
 
 
 def test_build_contracts_sorted_and_flags(monkeypatch):
-    store = ContractStore.__new__(ContractStore)
-    store.contracts, store.notified = {}, set()
+    store = blank_store()
     rows = monthly([-10, -10, -10, -15], name="Strom AG", category="utilities") + monthly(
         [-9.99] * 4, name="Streamingdienst", category="subscriptions"
     )
@@ -206,8 +213,7 @@ def test_contract_validation():
 
 
 def test_reserves_from_irregular_series():
-    store = ContractStore.__new__(ContractStore)
-    store.contracts, store.notified = {}, set()
+    store = blank_store()
     rows = [
         txn("2025-03-01", -120, "Haftpflicht", "insurance"),
         txn("2026-03-01", -120, "Haftpflicht", "insurance"),
@@ -229,7 +235,11 @@ def test_pot_coverage():
     ]
 
     def bal(amount):
-        return {"u1": {"balances": [{"balanceType": "closingBooked", "balanceAmount": {"amount": amount}}]}}
+        return {
+            "u1": {
+                "balances": [{"balanceType": "closingBooked", "balanceAmount": {"amount": amount}}]
+            }
+        }
 
     short = pot_coverage(pots, [acc], bal("420.00"))
     row = short["accounts"][0]
@@ -248,8 +258,7 @@ def test_pot_account_key_roundtrip():
 async def test_notice_due_event_fires_once(monkeypatch):
     from custom_components.finance_dashboard import contracts as mod
 
-    store = ContractStore.__new__(ContractStore)
-    store.contracts, store.notified = {}, set()
+    store = blank_store()
 
     async def _noop():
         return None
@@ -302,10 +311,10 @@ def test_member_contract_view_is_gated_and_reduced() -> None:
     assert visible_to(shared, None) and visible_to(anna, "Anna")
     assert not visible_to(anna, "Max") and not visible_to(anna, None) and not visible_to(anna, "")
 
-    store = ContractStore.__new__(ContractStore)
-    store.contracts, store.notified = {}, set()
-    items = build_contracts(monthly([-9.99] * 4, name="Streamingdienst",
-                                    category="subscriptions"), store, today=TODAY)
+    store = blank_store()
+    items = build_contracts(
+        monthly([-9.99] * 4, name="Streamingdienst", category="subscriptions"), store, today=TODAY
+    )
     assert items
     for item in items:
         view = aggregate_view(item)
@@ -316,8 +325,7 @@ def test_member_contract_view_is_gated_and_reduced() -> None:
 def test_own_transfers_are_not_contracts():
     from custom_components.finance_dashboard.household_summary import counted_transactions
 
-    store = ContractStore.__new__(ContractStore)
-    store.contracts, store.notified = {}, set()
+    store = blank_store()
     own = [
         {**r, "_transfer_chain_id": f"c{i}", "_transfer_role": "source"}
         for i, r in enumerate(monthly([-500] * 4, name="Herr Max Muster"))
@@ -332,10 +340,278 @@ def test_payments_to_own_account_holders_are_not_contracts():
 
     names = own_account_names([{"name": "Max Muster und Erika Muster"}, {"name": "PayPal"}])
     assert names == {"max muster", "erika muster"}
-    store = ContractStore.__new__(ContractStore)
-    store.contracts, store.notified = {}, set()
-    rows = monthly([-500] * 4, name="Herr Max Muster") + monthly(
-        [-300] * 4, name="Max Peter Muster") + monthly([-20] * 4, name="Maxi Musterhaus") + monthly(
-        [-9.99] * 4, name="Streamingdienst", category="subscriptions")
+    store = blank_store()
+    rows = (
+        monthly([-500] * 4, name="Herr Max Muster")
+        + monthly([-300] * 4, name="Max Peter Muster")
+        + monthly([-20] * 4, name="Maxi Musterhaus")
+        + monthly([-9.99] * 4, name="Streamingdienst", category="subscriptions")
+    )
     out = build_contracts(rows, store, today=TODAY, own_names=names)
     assert {c["creditor"] for c in out} == {"streamingdienst", "maxi musterhaus"}
+
+
+# ---------------------------------------------------------------------------
+# Stable ids across payee spellings (#122)
+# ---------------------------------------------------------------------------
+
+
+def test_canonical_name_ignores_spelling_legal_form_and_encoding():
+    from custom_components.finance_dashboard.text_norm import canonical_name, repair_mojibake
+
+    assert repair_mojibake("Streamly S.\u00c3\u00a0 r.l.") == "Streamly S.\u00e0 r.l."
+    variants = [
+        "Streamly S.\u00e0 r.l.",
+        "Streamly S.\u00c3\u00a0 r.l.",
+        "STREAMLY SARL",
+        "Streamly S.a.r.l.",
+    ]
+    assert {canonical_name(v) for v in variants} == {"streamly"}
+    assert canonical_name("Autoclub Muster e.V.") == "autoclub muster"
+    assert canonical_name("Müller GmbH & Co. KG") == "mueller"
+    assert canonical_name("PayPal Europe S.a.r.l. et Cie S.C.A") == "paypal europe"
+    assert canonical_name("AG") == "ag"  # never empty for a real name
+    # numbered or lettered payees and non-latin names stay apart
+    assert canonical_name("Kita 1") != canonical_name("Kita 2")
+    assert canonical_name("Apotheke A") != canonical_name("Apotheke B")
+    assert canonical_name("Иван") != canonical_name("Петр")
+    assert canonical_name("Иван")
+
+
+def test_unchanged_payee_keeps_its_previous_id():
+    from custom_components.finance_dashboard.recurring import series_id
+
+    (s,) = detect_series(monthly([-10] * 4, name="Netflix International B.V."), today=TODAY)
+    assert s["id"] == series_id("netflix international b.v.", True)
+
+
+def _renamed_rows():
+    old = monthly([-12.99] * 3, name="Streamly S.\u00e0 r.l.", start=date(2026, 1, 10))
+    new = monthly([-12.99] * 2, name="Streamly S.\u00c3\u00a0 r.l.", start=date(2026, 4, 10))
+    return old + new
+
+
+def test_renamed_payee_keeps_contract_id_and_fields():
+    from custom_components.finance_dashboard.recurring import series_id
+
+    store = blank_store()
+    sid = series_id("streamly s.\u00e0 r.l.", True)
+    store.contracts[sid] = Contract(sid, notice_value=2, notice_unit="weeks")
+    (c,) = build_contracts(_renamed_rows(), store, today=TODAY)
+    assert c["id"] == sid
+    assert c["occurrences"] == 5
+    assert (c["contract"]["notice_value"], c["contract"]["notice_unit"]) == (2, "weeks")
+
+
+def test_alias_keeps_id_after_old_spelling_leaves_history():
+    store = blank_store()
+    (first,) = build_contracts(_renamed_rows(), store, today=TODAY)
+    assert store.aliases == {first["alias_key"]: first["id"]}
+    only_new = [r for r in _renamed_rows() if "\u00c3" in r["creditorName"]]
+    (again,) = build_contracts(only_new, store, today=TODAY)
+    assert again["id"] == first["id"]
+
+
+async def test_aliases_persist_and_hold_no_amounts(monkeypatch):
+    from custom_components.finance_dashboard import contracts as mod
+    from tests.fakes import FakeStore
+
+    monkeypatch.setattr(mod, "Store", FakeStore)
+    store = mod.ContractStore(None)
+    build_contracts(_renamed_rows(), store, today=TODAY)
+    await store.async_save_if_changed()
+    raw = await store._store.async_load()  # noqa: SLF001
+    assert set(raw["aliases"]) == {"streamly|out"}
+    assert "12.99" not in str(raw["aliases"])
+    reloaded = mod.ContractStore(None)
+    reloaded._store = store._store  # noqa: SLF001
+    await reloaded.async_load()
+    assert reloaded.aliases == store.aliases
+
+
+def test_spellings_that_each_own_a_contract_stay_separate():
+    from custom_components.finance_dashboard.recurring import series_id
+
+    store = blank_store()
+    gmbh, ag = series_id("acme gmbh", True), series_id("acme ag", True)
+    store.contracts[gmbh] = Contract(gmbh, notice_value=1)
+    store.contracts[ag] = Contract(ag, notice_value=2)
+    rows = monthly([-10] * 3, name="Acme GmbH") + monthly([-50] * 3, name="Acme AG")
+    out = build_contracts(rows, store, today=TODAY)
+    assert {c["id"] for c in out} == {gmbh, ag}
+
+
+# --- one payee, several series (#108) ---------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("text", "ref"),
+    [
+        ("Darlehen 4711001 Rate 08/2026", "4711001"),
+        ("Beitrag Vertrag HR-20031", "hr-20031"),
+        ("Abschlag Kd-Nr 5550123", "5550123"),
+        ("Mandatsreferenz: ABC12345", "abc12345"),
+        ("Abo Cloudspeicher 200 GB", ""),
+        ("Ratenkauf 88123 Teil 1/3", ""),
+        ("Rechnung 89002", ""),
+        ("Kreditkartenabrechnung 12345678", ""),
+    ],
+)
+def test_contract_reference(text, ref):
+    from custom_components.finance_dashboard.recurring import contract_reference
+
+    assert contract_reference(text) == ref
+
+
+def _loans(months=4, second_from=0):
+    rows = []
+    for i in range(months):
+        day = add_months(date(2026, 2, 1), i).isoformat()
+        rows.append(
+            txn(day, -250, "Musterbank AG", remittanceInformationUnstructured="Darlehen 4711001")
+        )
+        if i >= second_from:
+            rows.append(
+                txn(
+                    day, -180, "Musterbank AG", remittanceInformationUnstructured="Darlehen 4711002"
+                )
+            )
+    return rows
+
+
+def test_two_loans_of_one_lender_become_two_series_with_full_amounts():
+    from custom_components.finance_dashboard.recurring import series_id
+
+    out = detect_series(_loans(), today=TODAY)
+    assert sorted(abs(s["plan_amount"]) for s in out) == [180.0, 250.0]
+    base = series_id("musterbank ag", True)
+    assert base in {s["id"] for s in out}, "the earliest stream keeps the payee id"
+    assert len({s["id"] for s in out}) == 2
+
+
+def test_split_ids_stay_put_when_a_loan_ends():
+    store = blank_store()
+    first = {abs(c["plan_amount"]): c["id"] for c in build_contracts(_loans(), store, today=TODAY)}
+    only_second = [r for r in _loans() if "4711002" in r["remittanceInformationUnstructured"]]
+    (again,) = build_contracts(only_second, store, today=TODAY)
+    assert again["id"] == first[180.0]
+
+
+def test_aliases_of_split_series_hold_no_reference_numbers():
+    store = blank_store()
+    build_contracts(_loans(), store, today=TODAY)
+    assert "4711001" not in str(store.aliases) and "250" not in str(store.aliases)
+
+
+def test_successor_reference_is_not_a_second_contract():
+    rows = [
+        txn(
+            add_months(date(2026, 1, 3), i).isoformat(),
+            -30,
+            "Fitness Club",
+            remittanceInformationUnstructured=f"Mitglieds-Nr {'1001' if i < 3 else '2002'}",
+        )
+        for i in range(6)
+    ]
+    (s,) = detect_series(rows, today=TODAY)
+    assert s["occurrences"] == 6
+
+
+def test_subscription_is_found_among_one_off_purchases():
+    rows = monthly([-9.99] * 4, name="Appstore", start=date(2026, 2, 5))
+    rows += [
+        txn("2026-02-17", -2.99, "Appstore"),
+        txn("2026-03-21", -24.99, "Appstore"),
+        txn("2026-04-14", -0.99, "Appstore"),
+    ]
+    (s,) = detect_series(rows, today=TODAY)
+    assert s["plan_amount"] == -9.99 and s["occurrences"] == 4
+
+
+def test_finite_instalments_never_form_a_series_inside_a_mixed_payee():
+    rows = monthly([-4.99] * 3, name="Klarnetta", start=date(2026, 3, 20))
+    rows += [
+        txn("2026-03-02", -33.33, "Klarnetta", remittanceInformationUnstructured="Teil 1/3"),
+        txn("2026-04-02", -33.33, "Klarnetta", remittanceInformationUnstructured="Teil 2/3"),
+        txn("2026-04-25", -18.50, "Klarnetta"),
+    ]
+    (s,) = detect_series(rows, today=TODAY)
+    assert s["plan_amount"] == -4.99
+
+
+def test_price_step_stays_one_series():
+    from custom_components.finance_dashboard.recurring import series_id
+
+    (s,) = detect_series(monthly([-10, -10, -10, -10, -13]), today=TODAY)
+    assert s["occurrences"] == 5
+    assert s["id"] == series_id("netflix", True)
+    assert s["price_change"]["increase"]
+
+
+def test_two_similar_purchases_inside_a_busy_shop_are_no_series():
+    rows = [
+        txn("2026-02-03", -182.00, "Baumarkt"),
+        txn("2026-02-11", -12.40, "Baumarkt"),
+        txn("2026-02-27", -47.10, "Baumarkt"),
+        txn("2026-03-04", -189.00, "Baumarkt"),
+        txn("2026-03-19", -7.95, "Baumarkt"),
+    ]
+    assert detect_series(rows, today=TODAY) == []
+
+
+def test_price_step_beside_a_one_off_stays_one_series():
+    rows = monthly([-9.99] * 6 + [-11.99] * 6, name="Streamly", start=date(2025, 6, 10))
+    rows.append(txn("2025-09-21", -25.00, "Streamly"))
+    (s,) = detect_series(rows, today=TODAY)
+    assert s["occurrences"] == 12
+    assert s["price_change"] is None or s["last_amount"] == -11.99
+
+
+def test_same_day_split_gives_the_payee_id_independent_of_input_order():
+    first = {abs(s["plan_amount"]): s["id"] for s in detect_series(_loans(), today=TODAY)}
+    flipped = {abs(s["plan_amount"]): s["id"] for s in detect_series(_loans()[::-1], today=TODAY)}
+    assert first == flipped
+
+
+def test_parts_of_one_payee_never_share_an_id():
+    from custom_components.finance_dashboard.recurring import _part_id, _Part
+
+    part = _Part([], "monthly", "~same")
+    used: set[str] = set()
+    ids = []
+    for _ in range(3):
+        sid = _part_id(
+            part,
+            is_base=False,
+            canonical="x",
+            names=["x"],
+            negative=True,
+            aliases={},
+            known=set(),
+            used=used,
+        )
+        used.add(sid)
+        ids.append(sid)
+    assert len(set(ids)) == 3
+
+
+def test_a_reference_on_two_invoices_does_not_split_a_contract():
+    rows = monthly([-40] * 5, name="Stadtwerke", start=date(2026, 1, 10))
+    for r in rows:
+        r["remittanceInformationUnstructured"] = "Abschlag Kd-Nr 5550123"
+    rows += [
+        txn(
+            "2026-02-14",
+            -12,
+            "Stadtwerke",
+            remittanceInformationUnstructured="Vertrag 77001 Gebuehr",
+        ),
+        txn(
+            "2026-04-02",
+            -35,
+            "Stadtwerke",
+            remittanceInformationUnstructured="Vertrag 77001 Zaehler",
+        ),
+    ]
+    (s,) = detect_series(rows, today=TODAY)
+    assert s["occurrences"] == 5

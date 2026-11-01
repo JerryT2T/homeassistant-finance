@@ -51,10 +51,29 @@ def _tx(creditor="", remit="", amount=-10.0, day=20, lid="", chain=None, debtor=
         ("REWE Markt GmbH", "", "rewe markt"),
         ("Foo Bar SE", "", "foo bar"),
         ("", "VISA Debitkartenumsatz vom 27.10.2026 Bäckerei Kamps 12345678", "baeckerei kamps"),
+        # the processor itself is the counterparty: the merchant comes from the text
+        (
+            "PayPal Europe S.a.r.l. et Cie S.C.A",
+            "PP.4471.PP . Streamly Media, Ihr Einkauf bei Streamly Media",
+            "streamly media",
+        ),
+        (
+            "PayPal (Europe) S.à r.l. et Cie, S.C.A.",
+            "1040123 PP.5555.PP . Lieferheld",
+            "lieferheld",
+        ),
     ],
 )
 def test_merchant_key(creditor, remit, key) -> None:
     assert merchant_key(_tx(creditor, remit)) == key
+
+
+def test_purchases_through_one_processor_keep_separate_merchants() -> None:
+    paypal = "PayPal Europe S.a.r.l. et Cie S.C.A"
+    pizza = _tx(paypal, "PP.1.PP . Pizzeria Roma, Ihr Einkauf bei Pizzeria Roma")
+    taxi = _tx(paypal, "PP.2.PP . Taxi Zentrale, Ihr Einkauf bei Taxi Zentrale")
+    assert merchant_key(pizza) != merchant_key(taxi)
+    assert "europe" not in merchant_key(pizza)
 
 
 def test_same_merchant_different_cities_and_dates_share_a_key() -> None:
