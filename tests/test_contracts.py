@@ -44,6 +44,14 @@ def monthly(amounts, name="Netflix", start=date(2026, 1, 10), **kw):
 TODAY = date(2026, 6, 15)
 
 
+def blank_store() -> ContractStore:
+    """A store without Home Assistant storage behind it."""
+    store = ContractStore.__new__(ContractStore)
+    store.contracts, store.notified, store.aliases = {}, set(), {}
+    store._aliases_changed = False  # noqa: SLF001
+    return store
+
+
 def test_monthly_series_and_next_date():
     (s,) = detect_series(monthly([-10, -10, -10, -10, -10]), today=TODAY)
     assert s["interval"] == "monthly"
@@ -170,8 +178,7 @@ def test_special_termination_pattern():
 
 
 def test_build_contracts_sorted_and_flags(monkeypatch):
-    store = ContractStore.__new__(ContractStore)
-    store.contracts, store.notified = {}, set()
+    store = blank_store()
     rows = monthly([-10, -10, -10, -15], name="Strom AG", category="utilities") + monthly(
         [-9.99] * 4, name="Streamingdienst", category="subscriptions"
     )
@@ -206,8 +213,7 @@ def test_contract_validation():
 
 
 def test_reserves_from_irregular_series():
-    store = ContractStore.__new__(ContractStore)
-    store.contracts, store.notified = {}, set()
+    store = blank_store()
     rows = [
         txn("2025-03-01", -120, "Haftpflicht", "insurance"),
         txn("2026-03-01", -120, "Haftpflicht", "insurance"),
@@ -248,8 +254,7 @@ def test_pot_account_key_roundtrip():
 async def test_notice_due_event_fires_once(monkeypatch):
     from custom_components.finance_dashboard import contracts as mod
 
-    store = ContractStore.__new__(ContractStore)
-    store.contracts, store.notified = {}, set()
+    store = blank_store()
 
     async def _noop():
         return None
@@ -302,8 +307,7 @@ def test_member_contract_view_is_gated_and_reduced() -> None:
     assert visible_to(shared, None) and visible_to(anna, "Anna")
     assert not visible_to(anna, "Max") and not visible_to(anna, None) and not visible_to(anna, "")
 
-    store = ContractStore.__new__(ContractStore)
-    store.contracts, store.notified = {}, set()
+    store = blank_store()
     items = build_contracts(monthly([-9.99] * 4, name="Streamingdienst",
                                     category="subscriptions"), store, today=TODAY)
     assert items
@@ -316,8 +320,7 @@ def test_member_contract_view_is_gated_and_reduced() -> None:
 def test_own_transfers_are_not_contracts():
     from custom_components.finance_dashboard.household_summary import counted_transactions
 
-    store = ContractStore.__new__(ContractStore)
-    store.contracts, store.notified = {}, set()
+    store = blank_store()
     own = [
         {**r, "_transfer_chain_id": f"c{i}", "_transfer_role": "source"}
         for i, r in enumerate(monthly([-500] * 4, name="Herr Max Muster"))
@@ -332,10 +335,81 @@ def test_payments_to_own_account_holders_are_not_contracts():
 
     names = own_account_names([{"name": "Max Muster und Erika Muster"}, {"name": "PayPal"}])
     assert names == {"max muster", "erika muster"}
-    store = ContractStore.__new__(ContractStore)
-    store.contracts, store.notified = {}, set()
+    store = blank_store()
     rows = monthly([-500] * 4, name="Herr Max Muster") + monthly(
         [-300] * 4, name="Max Peter Muster") + monthly([-20] * 4, name="Maxi Musterhaus") + monthly(
         [-9.99] * 4, name="Streamingdienst", category="subscriptions")
     out = build_contracts(rows, store, today=TODAY, own_names=names)
     assert {c["creditor"] for c in out} == {"streamingdienst", "maxi musterhaus"}
+
+
+# ---------------------------------------------------------------------------
+# Stable ids across payee spellings (#122)
+# ---------------------------------------------------------------------------
+
+
+def test_canonical_name_ignores_spelling_legal_form_and_encoding():
+    from custom_components.finance_dashboard.text_norm import canonical_name, repair_mojibake
+
+    assert repair_mojibake("Streamly S.\u00c3\u00a0 r.l.") == "Streamly S.\u00e0 r.l."
+    variants = [
+        "Streamly S.\u00e0 r.l.",
+        "Streamly S.\u00c3\u00a0 r.l.",
+        "STREAMLY SARL",
+        "Streamly S.a.r.l.",
+    ]
+    assert {canonical_name(v) for v in variants} == {"streamly"}
+    assert canonical_name("Autoclub Muster e.V.") == "autoclub muster"
+    assert canonical_name("Müller GmbH & Co. KG") == "mueller"
+    assert canonical_name("AG") == "ag"  # never empty for a real name
+
+
+def test_unchanged_payee_keeps_its_previous_id():
+    from custom_components.finance_dashboard.recurring import series_id
+
+    (s,) = detect_series(monthly([-10] * 4, name="Netflix International B.V."), today=TODAY)
+    assert s["id"] == series_id("netflix international b.v.", True)
+
+
+def _renamed_rows():
+    old = monthly([-12.99] * 3, name="Streamly S.\u00e0 r.l.", start=date(2026, 1, 10))
+    new = monthly([-12.99] * 2, name="Streamly S.\u00c3\u00a0 r.l.", start=date(2026, 4, 10))
+    return old + new
+
+
+def test_renamed_payee_keeps_contract_id_and_fields():
+    from custom_components.finance_dashboard.recurring import series_id
+
+    store = blank_store()
+    sid = series_id("streamly s.\u00e0 r.l.", True)
+    store.contracts[sid] = Contract(sid, notice_value=2, notice_unit="weeks")
+    (c,) = build_contracts(_renamed_rows(), store, today=TODAY)
+    assert c["id"] == sid
+    assert c["occurrences"] == 5
+    assert (c["contract"]["notice_value"], c["contract"]["notice_unit"]) == (2, "weeks")
+
+
+def test_alias_keeps_id_after_old_spelling_leaves_history():
+    store = blank_store()
+    (first,) = build_contracts(_renamed_rows(), store, today=TODAY)
+    assert store.aliases == {first["alias_key"]: first["id"]}
+    only_new = [r for r in _renamed_rows() if "\u00c3" in r["creditorName"]]
+    (again,) = build_contracts(only_new, store, today=TODAY)
+    assert again["id"] == first["id"]
+
+
+async def test_aliases_persist_and_hold_no_amounts(monkeypatch):
+    from custom_components.finance_dashboard import contracts as mod
+    from tests.fakes import FakeStore
+
+    monkeypatch.setattr(mod, "Store", FakeStore)
+    store = mod.ContractStore(None)
+    build_contracts(_renamed_rows(), store, today=TODAY)
+    await store.async_save_if_changed()
+    raw = await store._store.async_load()  # noqa: SLF001
+    assert set(raw["aliases"]) == {"streamly|out"}
+    assert "12.99" not in str(raw["aliases"])
+    reloaded = mod.ContractStore(None)
+    reloaded._store = store._store  # noqa: SLF001
+    await reloaded.async_load()
+    assert reloaded.aliases == store.aliases

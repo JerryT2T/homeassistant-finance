@@ -18,6 +18,8 @@ from collections import defaultdict
 from datetime import date, datetime, timedelta
 from typing import Any
 
+from .text_norm import canonical_name
+
 _LOGGER = logging.getLogger(__name__)
 
 # Amount tolerance for "same" recurring payment
@@ -202,6 +204,41 @@ def series_id(creditor: str, negative: bool) -> str:
     return "s_" + hashlib.sha1(raw.encode()).hexdigest()[:12]  # noqa: S324 - not security
 
 
+def alias_key(canonical: str, negative: bool) -> str:
+    """Key under which a series remembers its id across name variants."""
+    return f"{canonical}|{'out' if negative else 'in'}"
+
+
+def resolve_series_id(
+    canonical: str,
+    names: list[str],
+    negative: bool,
+    aliases: dict[str, str],
+    known: set[str],
+) -> str:
+    """Id of a payee group: remembered alias, else a known id of one of its
+    spellings, else the id of the first-seen spelling.
+
+    For a payee whose spelling never changed this is ``series_id(name)`` as
+    before, so ids stored before name grouping existed stay valid.
+    """
+    remembered = aliases.get(alias_key(canonical, negative))
+    if remembered:
+        return remembered
+    candidates = [series_id(n, negative) for n in names]
+    return next((c for c in candidates if c in known), candidates[0])
+
+
+def _names_first_seen(rows: list[tuple[date, float, dict[str, Any]]]) -> list[str]:
+    """Distinct normalized counterparty names of ``rows`` (date-sorted), oldest first."""
+    names: list[str] = []
+    for _day, _amount, txn in rows:
+        name = _normalize_name(txn.get("creditorName", "") or txn.get("debtorName", ""))
+        if name not in names:
+            names.append(name)
+    return names
+
+
 def plan_amount(
     amounts: list[float], mode: str = PLAN_MODE_HIGHEST, fixed: float | None = None
 ) -> float:
@@ -265,11 +302,20 @@ def detect_series(
     amount_tolerance: float = SERIES_AMOUNT_TOLERANCE,
     date_tolerance_days: int = SERIES_DATE_TOLERANCE_DAYS,
     overrides: dict[str, dict[str, Any]] | None = None,
+    aliases: dict[str, str] | None = None,
+    known_ids: set[str] | frozenset[str] = frozenset(),
 ) -> list[dict[str, Any]]:
     """Detect recurring series of any interval in booked transactions.
 
     ``overrides`` maps a series id to ``{"plan_mode", "plan_fixed_amount"}``.
     Amounts in the result are in the bank sign (expense negative).
+
+    Payees are grouped by their spelling-independent name, so a bank that
+    changes punctuation, legal form or encoding does not split a series.
+    ``aliases`` maps an ``alias_key`` to the id the series had before
+    (see :func:`resolve_series_id`); each result carries its ``alias_key``.
+    ``known_ids`` are ids that hold user data (stored contracts): a payee
+    group that contains one of their spellings keeps that id.
     """
     today = today or date.today()
     overrides = overrides or {}
@@ -277,9 +323,9 @@ def detect_series(
     for txn in transactions:
         if txn.get("_status") != "booked":
             continue
-        name = _normalize_name(txn.get("creditorName", "") or txn.get("debtorName", ""))
+        raw = txn.get("creditorName", "") or txn.get("debtorName", "")
         day = _parse_day(txn.get("bookingDate", ""))
-        if not name or day is None:
+        if not _normalize_name(raw) or day is None:
             continue
         try:
             amount = float(txn.get("transactionAmount", {}).get("amount", 0))
@@ -287,11 +333,15 @@ def detect_series(
             continue
         if amount == 0:
             continue
-        groups[(name, amount < 0)].append((day, amount, txn))
+        groups[(canonical_name(raw), amount < 0)].append((day, amount, txn))
 
+    known = set(known_ids) | set(overrides) | set((aliases or {}).values())
     out: list[dict[str, Any]] = []
-    for (name, negative), rows in groups.items():
+    for (key, negative), rows in groups.items():
         rows.sort(key=lambda r: r[0])
+        names = _names_first_seen(rows)
+        sid = resolve_series_id(key, names, negative, aliases or {}, known)
+        name = names[-1]
         dedup: list[tuple[date, float, dict[str, Any]]] = []
         for row in rows:  # same-day duplicates carry no interval information
             if dedup and dedup[-1][0] == row[0]:
@@ -302,9 +352,11 @@ def detect_series(
         interval = _classify_interval([r[0] for r in dedup], date_tolerance_days)
         if interval is None or not _amounts_consistent([r[1] for r in dedup], amount_tolerance):
             continue
-        out.append(
-            _build_series(name, negative, dedup, interval, today, date_tolerance_days, overrides)
+        series = _build_series(
+            sid, name, negative, dedup, interval, today, date_tolerance_days, overrides
         )
+        series["alias_key"] = alias_key(key, negative)
+        out.append(series)
     out.sort(key=lambda s: s["annual_cost"], reverse=True)
     return out
 
@@ -318,6 +370,7 @@ def _most_common_value(values: list[Any], default: Any) -> Any:
 
 
 def _build_series(
+    sid: str,
     name: str,
     negative: bool,
     rows: list[tuple[date, float, dict[str, Any]]],
@@ -329,7 +382,6 @@ def _build_series(
     nominal, per_year, _ = INTERVALS[interval]
     dates = [r[0] for r in rows]
     amounts = [r[1] for r in rows]
-    sid = series_id(name, negative)
     ov = overrides.get(sid, {})
     mode = ov.get("plan_mode") if ov.get("plan_mode") in PLAN_MODES else PLAN_MODE_HIGHEST
     fixed = ov.get("plan_fixed_amount")

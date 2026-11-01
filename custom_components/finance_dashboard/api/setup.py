@@ -233,6 +233,7 @@ class FinanceDashboardPlanPrefillView(HomeAssistantView):
         contracts = build_contracts(
             txns, store, own_names=own_account_names(manager._accounts)  # noqa: SLF001
         )
+        await store.async_save_if_changed()
         return prefill.propose_positions(contracts, manager.budget_plan.positions)
 
     async def get(self, request: web.Request) -> web.Response:

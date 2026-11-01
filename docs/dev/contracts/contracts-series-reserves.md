@@ -5,7 +5,12 @@ Everything is cache-only; no bank call is added.
 
 ## Series (`recurring.detect_series(transactions, today=, amount_tolerance=0.20, date_tolerance_days=5, overrides=)`)
 Intervals: weekly (>=4 payments), monthly, quarterly, half_yearly, yearly (>=2). Amounts in bank sign.
-One price step is allowed (a series with two +-tolerance jumps is rejected). Fields: `id` (stable hash of payee+direction),
+Payees are grouped by `text_norm.canonical_name` (encoding repaired, umlauts/accents, punctuation and legal forms removed), so
+a bank changing "S.à r.l." to "S.Ã  r.l." or dropping "GmbH" does not split a series. Id (`resolve_series_id`): the stored
+alias of the group (`ContractStore.aliases`, key `<canonical>|out|in`, names only), else a stored contract id of one of its
+spellings, else `sha1(first-seen normalized name|direction)` - identical to the pre-alias id, so stored contracts never move.
+Callers persist newly learned aliases with `ContractStore.async_save_if_changed()`.
+One price step is allowed (a series with two +-tolerance jumps is rejected). Fields: `id`, `alias_key`,
 `interval`, `next_expected`, `expected_amount`/`plan_amount`, `plan_mode` (highest default / average / last / median / fixed),
 `annual_cost`, `status` (`active` / `missing` > date tolerance overdue / `ended` > 2 periods overdue),
 `price_change {previous,last,change_pct,increase,date}`, `category`, `account_key`, `account_type`, `account_person`.
