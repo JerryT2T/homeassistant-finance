@@ -22,12 +22,21 @@ One price step is allowed (a series with two +-tolerance jumps is rejected). Fie
 `interval`, `next_expected`, `expected_amount`/`plan_amount`, `plan_mode` (highest default / average / last / median / fixed),
 `annual_cost`, `status` (`active` / `missing` > date tolerance overdue / `ended` > 2 periods overdue),
 `price_change {previous,last,change_pct,increase,date}`, `category`, `account_key`, `account_type`, `account_person`.
+Confidence (#129, `series_confidence.score_series`): every series carries `confidence {score 0-100, reasons[]}` and
+`candidate` (score < 50). Signals: contract reference / direct-debit marker (+), card-payment marker (-), contract keywords
+(Abo, Beitrag, Miete, Abschlag ...) (+), stable amount or one price step (+) vs varying (-), >= 4 payments (+) vs only 2 for
+weekly/monthly (-), day-of-month regularity on a 31-day circle, contract categories (+) vs everyday ones (food, health,
+shopping) (-). Reasons are codes, never amounts or names. Review (#130): `Contract.review` = `contract` (confirmed, never a
+candidate again) or `not_contract` (the series is dropped from `build_contracts` for good); any stored contract fields
+also end the candidate status. The contracts page lists candidates for admins under "Prüfen" with the reason codes as a
+tooltip; `PUT /contracts/{id}` with `{"review": "not_contract"}` answers `{"id", "dismissed": true}`. Candidates are left out of reserves, plan prefill, notice
+events and the contracts page list/totals; non-admin views carry `candidate` too.
 `detect_recurring` (monthly, home screen) is unchanged. `recurring.add_months` is a public helper.
 
 ## Contract model (`contracts.Contract`, stored in `.storage/finance_dashboard_contracts`)
 Fields (all optional, `null` = prefilled default): `start`, `min_term_months`, `renewal_months`, `notice_value`,
 `notice_unit` (days/weeks/months), `notice_reference` (`end_of_term`/`end_of_month`), `owner`, `category`,
-`plan_position_id`, `special_termination` (null = derive), `plan_mode`, `plan_fixed_amount`.
+`plan_position_id`, `special_termination` (null = derive), `plan_mode`, `plan_fixed_amount`, `review` (#130).
 Category defaults: insurance 12/12 + 3 months; telecom 24/12 + 1 month; subscriptions 1/1 + 0; utilities/loans/housing 12/12 + 1/3/3 months; else 1/1 + 0.
 Start falls back to the first seen payment. Deadline = (term end, or month end of it) - notice; rolls to the next renewal if passed.
 Special termination prefill: last 3 payments, traits amount / booking day / gap; >=2 traits differing -> unchecked, else checked.

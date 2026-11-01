@@ -64,6 +64,11 @@ CATEGORY_DEFAULTS: dict[str, tuple[int, int, int, str]] = {
 _FALLBACK_DEFAULTS = (1, 1, 0, "days")
 
 
+REVIEW_CONTRACT = "contract"
+REVIEW_NOT_CONTRACT = "not_contract"
+REVIEW_ANSWERS = (REVIEW_CONTRACT, REVIEW_NOT_CONTRACT)
+
+
 class ContractError(Exception):
     """Invalid contract input (``code`` is machine-readable)."""
 
@@ -101,6 +106,7 @@ class Contract:
     special_termination: bool | None = None  # None = derive from the pattern
     plan_mode: str | None = None
     plan_fixed_amount: float | None = None
+    review: str | None = None  # the user's answer to a candidate (#130)
 
     _FIELDS = (
         "start",
@@ -115,6 +121,7 @@ class Contract:
         "special_termination",
         "plan_mode",
         "plan_fixed_amount",
+        "review",
     )
 
     def to_dict(self) -> dict[str, Any]:
@@ -182,6 +189,8 @@ def _validate(d: dict[str, Any]) -> None:
         if not 0 <= fixed <= 1_000_000:
             raise ContractError("invalid_plan_fixed_amount", "Out of range")
         d["plan_fixed_amount"] = round(float(fixed), 2)
+    if d["review"] is not None and d["review"] not in REVIEW_ANSWERS:
+        raise ContractError("invalid_review", "Unknown review answer")
     if d["plan_mode"] == PLAN_MODE_FIXED and d["plan_fixed_amount"] is None:
         raise ContractError("invalid_plan_fixed_amount", "Fixed mode needs an amount")
 
@@ -352,6 +361,12 @@ def build_contracts(
             continue
         if is_own_name(s["creditor"], own_names):
             continue
+        stored = store.contracts.get(s["id"])
+        if stored is not None and stored.review == REVIEW_NOT_CONTRACT:
+            continue  # "Kein Vertrag": never shown again (#130)
+        if s.get("candidate") and stored is not None:
+            # confirmed, or edited by the user: a contract, whatever the score says
+            s = {**s, "candidate": False}
         out.append(_contract_view(s, store.get(s["id"]), today))
     out.sort(key=lambda c: (c["next_deadline"] is None, c["next_deadline"] or ""))
     return out
@@ -423,7 +438,11 @@ def aggregate_view(item: dict[str, Any]) -> dict[str, Any]:
         "notice_due_soon",
         "special_termination_available",
     )
-    return {k: item[k] for k in keep}
+    return {
+        **{k: item[k] for k in keep},
+        "candidate": bool(item.get("candidate")),
+        "confidence": item.get("confidence"),
+    }
 
 
 def visible_to(item: dict[str, Any], person: str | None) -> bool:
@@ -441,6 +460,8 @@ def build_reserves(contracts: list[dict[str, Any]]) -> dict[str, Any]:
     by_owner: dict[str, float] = {}
     for c in contracts:
         if c["interval"] not in IRREGULAR_INTERVALS or c["status"] == "ended":
+            continue
+        if c.get("candidate"):  # not sure it is a contract: no reserve (#129)
             continue
         monthly = round(c["annual_cost"] / 12, 2)
         items.append(
@@ -487,7 +508,7 @@ async def async_fire_notice_due(
     store = await async_get_store(hass)
     fired = 0
     for c in build_contracts(transactions, store, today=today, own_names=own_names):
-        if not c["notice_due_soon"] or c["status"] == "ended":
+        if not c["notice_due_soon"] or c["status"] == "ended" or c.get("candidate"):
             continue
         marker = f"{c['id']}|{c['next_deadline']}"
         if marker in store.notified:

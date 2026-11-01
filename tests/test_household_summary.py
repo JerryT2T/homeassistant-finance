@@ -79,11 +79,81 @@ def test_rejected_chain_counts_as_normal():
     assert out["expenses"] == 10 and out["income"] == 10
 
 
-def test_paypal_funding_debit_dropped_only_with_paypal_account():
-    pp = [*ACCOUNTS, {"id": "pp", "type": "personal", "person": "Anna", "name": "PayPal", "institution": "PayPal"}]
+PP_ACCOUNTS = [
+    *ACCOUNTS,
+    {"id": "pp", "type": "personal", "person": "Anna", "name": "PayPal", "institution": "PayPal"},
+]
+
+
+def _pp_line(amount, day, **dates):
+    """A PayPal-side line: no booking date unless given (#107)."""
+    line = {
+        "transactionId": f"pp-{day}-{amount}",
+        "bookingDate": "",
+        "transactionAmount": {"amount": str(amount), "currency": "EUR"},
+        "creditorName": "Streamly",
+        "category": "other",
+        "_account_id": "pp",
+        "_account_type": "personal",
+        "_account_person": "Anna",
+        "_status": "booked",
+    }
+    line.update(dates)
+    return line
+
+
+def test_paypal_funding_debit_counts_without_a_paypal_line():
     txs = [tx("a1", -40, 5, "PayPal (Europe) S.a.r.l.")]
     assert counted_transactions(txs, ACCOUNTS) == txs
-    assert counted_transactions(txs, pp) == []
+    assert counted_transactions(txs, PP_ACCOUNTS) == txs
+
+
+def test_paypal_funding_debit_dropped_when_a_dated_paypal_line_counts_it():
+    debit = tx("a1", -40, 5, "PayPal (Europe) S.a.r.l.")
+    line = _pp_line(-40, 4, transactionDate="2026-04-04")
+    assert counted_transactions([debit, line], PP_ACCOUNTS) == [line]
+
+
+def test_undated_paypal_line_leaves_the_bank_debit_counting():
+    debit = tx("a1", -40, 5, "PayPal (Europe) S.a.r.l.")
+    line = _pp_line(-40, 4)
+    assert counted_transactions([debit, line], PP_ACCOUNTS) == [debit]
+
+
+def test_one_paypal_line_mirrors_one_debit_only():
+    first = tx("a1", -40, 5, "PayPal (Europe) S.a.r.l.")
+    second = tx("a1", -40, 6, "PayPal (Europe) S.a.r.l.")
+    line = _pp_line(-40, 5, transactionDate="2026-04-05")
+    out = counted_transactions([first, second, line], PP_ACCOUNTS)
+    assert len(out) == 2 and line in out
+
+
+def test_paypal_funding_credit_is_no_income():
+    debit = tx("a1", -40, 5, "PayPal (Europe) S.a.r.l.")
+    credit = _pp_line(40, 5, transactionDate="2026-04-05", creditorName="", debtorName="Anna Giro")
+    purchase = _pp_line(-40, 5, transactionDate="2026-04-05")
+    assert counted_transactions([debit, credit, purchase], PP_ACCOUNTS) == [purchase]
+
+
+def test_paypal_top_up_without_purchase_counts_nowhere():
+    debit = tx("a1", -100, 5, "PayPal (Europe) S.a.r.l.")
+    credit = _pp_line(100, 6, transactionDate="2026-04-06", creditorName="", debtorName="Anna Giro")
+    assert counted_transactions([debit, credit], PP_ACCOUNTS) == []
+
+
+def test_paypal_line_of_another_merchant_is_no_mirror():
+    debit = tx(
+        "a1", -20, 5, "PayPal (Europe) S.a.r.l.",
+        remittanceInformationUnstructured="PP.1.PP . Pizza Roma, Ihr Einkauf bei Pizza Roma",
+    )
+    line = _pp_line(-20, 6, transactionDate="2026-04-06")  # Streamly
+    assert len(counted_transactions([debit, line], PP_ACCOUNTS)) == 2
+
+
+def test_paypal_line_too_far_away_is_no_mirror():
+    debit = tx("a1", -40, 20, "PayPal (Europe) S.a.r.l.")
+    line = _pp_line(-40, 4, transactionDate="2026-04-04")
+    assert len(counted_transactions([debit, line], PP_ACCOUNTS)) == 2
 
 
 def test_refund_netted_not_income():

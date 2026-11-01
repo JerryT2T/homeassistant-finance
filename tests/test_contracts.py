@@ -615,3 +615,72 @@ def test_a_reference_on_two_invoices_does_not_split_a_contract():
     ]
     (s,) = detect_series(rows, today=TODAY)
     assert s["occurrences"] == 5
+
+
+def test_series_uses_the_transaction_date_when_no_booking_date_exists():
+    rows = monthly([-13.99, -13.99, -17.99], name="Streamly")
+    for r in rows:
+        r["transactionDate"], r["bookingDate"] = r["bookingDate"], ""
+    (s,) = detect_series(rows, today=TODAY)
+    assert s["interval"] == "monthly"
+    assert s["price_change"]["increase"]
+
+
+def test_candidates_get_no_reserve():
+    from custom_components.finance_dashboard.contracts import build_reserves
+
+    base = {
+        "interval": "yearly",
+        "status": "active",
+        "annual_cost": 120.0,
+        "owner": "",
+        "next_expected": "2026-09-01",
+        "category": "insurance",
+        "plan_amount": -120.0,
+    }
+    sure = {**base, "id": "a", "creditor": "a", "candidate": False}
+    unsure = {**base, "id": "b", "creditor": "b", "candidate": True}
+    items = build_reserves([sure, unsure])["items"]
+    assert [i["series_id"] for i in items] == ["a"]
+
+
+def test_a_contract_the_user_edited_is_never_a_candidate():
+    rows = monthly([-12.4, -13.1, -11.8], name="Cafe Bohne", category="food")
+    for r in rows:
+        r["remittanceInformationUnstructured"] = "VISA Debitkarte"
+    store = blank_store()
+    (first,) = build_contracts(rows, store, today=TODAY)
+    assert first["candidate"] is True
+    store.contracts[first["id"]] = Contract(first["id"], notice_value=1)
+    (again,) = build_contracts(rows, store, today=TODAY)
+    assert again["candidate"] is False
+
+
+def _cafe_rows():
+    rows = monthly([-12.4, -13.1, -11.8], name="Cafe Bohne", category="food")
+    for r in rows:
+        r["remittanceInformationUnstructured"] = "VISA Debitkarte"
+    return rows
+
+
+def test_not_a_contract_answer_hides_the_series_for_good():
+    store = blank_store()
+    (first,) = build_contracts(_cafe_rows(), store, today=TODAY)
+    store.contracts[first["id"]] = Contract(first["id"], review="not_contract")
+    assert build_contracts(_cafe_rows() + _cafe_rows()[:0], store, today=TODAY) == []
+
+
+def test_confirmed_candidate_counts_as_a_contract():
+    store = blank_store()
+    (first,) = build_contracts(_cafe_rows(), store, today=TODAY)
+    assert first["candidate"] is True
+    store.contracts[first["id"]] = Contract(first["id"], review="contract")
+    (again,) = build_contracts(_cafe_rows(), store, today=TODAY)
+    assert again["candidate"] is False
+    assert again["contract"]["stored"]["review"] == "contract"
+
+
+def test_unknown_review_answer_is_rejected():
+    with pytest.raises(ContractError) as err:
+        Contract("s_x").apply({"review": "maybe"})
+    assert err.value.code == "invalid_review"

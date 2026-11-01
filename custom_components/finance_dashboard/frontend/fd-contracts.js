@@ -240,6 +240,10 @@ button.ct { min-height: var(--fd-touch); }
 .cov.short .bar i { background: var(--fd-near); }
 .cov .l1 { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .btn { min-height: var(--fd-touch); padding: 0 16px; border: 1px solid transparent; border-radius: var(--fd-r-pill); background: var(--fd-a700); color: #fff; font-weight: 500; }
+.rv { padding: 10px 0; }
+.rv + .rv { border-top: 1px solid var(--fd-line); }
+.rv .sub { font-size: 12.5px; margin: 2px 0 8px; }
+.rvb { display: flex; gap: 8px; flex-wrap: wrap; }
 .btn.ghost { background: transparent; color: var(--fd-a700); border-color: var(--fd-a100); }
 .btn:disabled { opacity: .5; cursor: default; }
 .scrim { position: fixed; inset: 0; z-index: 50; display: flex; align-items: flex-end; justify-content: center; background: rgba(0,0,0,.4); }
@@ -292,7 +296,11 @@ class FdContracts extends HTMLElement {
     this._render();
     try {
       const r = await this._hass.callApi("GET", `${DOMAIN}/contracts`);
-      this._items = (r && r.contracts) || [];
+      // Candidates (#129) are not sure to be contracts: kept out of the list
+      // and the totals, asked under "Prüfen" (#130).
+      const all = (r && r.contracts) || [];
+      this._items = all.filter((c) => !c.candidate);
+      this._candidates = all.filter((c) => c.candidate && c.status !== "ended");
     } catch (e) {
       console.warn("fd-contracts: load failed:", e);
       this._err = true;
@@ -375,8 +383,44 @@ class FdContracts extends HTMLElement {
     ${this._isAdmin ? "" : `<p class="muted" style="margin:8px 0 0">${e(tr("ct.member_note"))}</p>`}
   </section>` : ""}
   <section class="card" aria-label="${e(tr("ct.title"))}">${list}</section>
+  ${this._reviewHtml()}
 </div>
 <div>${this._reservesHtml()}</div>`;
+  }
+
+  _reviewHtml() {
+    const cands = this._isAdmin ? this._candidates || [] : [];
+    if (!cands.length) return "";
+    const e = window._fd.escHtml;
+    const rows = cands.map((c) => {
+      const why = ((c.confidence && c.confidence.reasons) || []).map((r) => tr(`ct.reason.${r}`)).join(" · ");
+      const sub = [tr(`ct.interval.${c.interval}`), tr("ct.per_month", { amount: this._m(c.monthly_equivalent, 2) })].join(" · ");
+      const busy = this._reviewing === c.id ? " disabled" : "";
+      return `<div class="rv"><div class="l1"><span class="nm"><i aria-hidden="true">${this._catIcon(c.category)}</i><span>${e(c.display_name || c.creditor)}</span></span>
+  <span class="badge info" data-tip="${e(why)}" aria-label="${e(tr("ct.review.why") + ": " + why)}">${e(tr("ct.review.why"))}</span></div>
+<div class="sub muted">${e(sub)}</div>
+<div class="rvb"><button type="button" class="btn" data-review="contract" data-id="${e(c.id)}"${busy}>${e(tr("ct.review.yes"))}</button>
+  <button type="button" class="btn ghost" data-review="not_contract" data-id="${e(c.id)}"${busy}>${e(tr("ct.review.no"))}</button></div></div>`;
+    }).join("");
+    return `<section class="card" aria-label="${e(tr("ct.review.title"))}"><h3>${e(tr("ct.review.title"))}</h3>
+  <p class="muted" style="margin:0 0 8px">${e(tr("ct.review.say"))}</p>${rows}</section>`;
+  }
+
+  async _review(id, answer) {
+    if (this._reviewing) return;
+    this._reviewing = id;
+    this._render();
+    try {
+      const upd = await this._hass.callApi("PUT", `${DOMAIN}/contracts/${encodeURIComponent(id)}`, { review: answer });
+      this._candidates = (this._candidates || []).filter((c) => c.id !== id);
+      if (upd && !upd.dismissed && !upd.candidate) this._items = [...(this._items || []), upd];
+      this._toast(tr(answer === "contract" ? "ct.review.done_yes" : "ct.review.done_no"));
+    } catch (e) {
+      this._toast(tr("ct.review.failed"), "error");
+    } finally {
+      this._reviewing = null;
+      this._render();
+    }
   }
 
   _spark(c) {
@@ -597,6 +641,7 @@ class FdContracts extends HTMLElement {
       const s = this._sheet;
       if (t.dataset.edit) return this._openSheet(t.dataset.edit);
       if (t.dataset.sav) return this._toggleSavings(t.dataset.sav);
+      if (t.dataset.review) return this._review(t.dataset.id, t.dataset.review);
       if (t.dataset.grp && s) {
         if (t.dataset.grp === "special") s.d.special_termination = !s.d.special_termination;
         else s.d[t.dataset.grp] = t.dataset.val;

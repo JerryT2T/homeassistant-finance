@@ -2,7 +2,7 @@
 
 All notable changes to the Finance will be documented in this file.
 
-## [0.25.0] — 2026-11-01
+## [0.27.0] — 2026-11-01
 
 ### Added
 - The setup (Einrichtung) covers only technical and assignment steps: persons with one display name, accounts with bank account type and "data since", payday, region, notifications, AI, points; the last step opens the household plan or says when it becomes possible
@@ -17,6 +17,31 @@ All notable changes to the Finance will be documented in this file.
 
 ### Fixed
 - Saving income from the wizard keeps stored insurance and tax adjustments
+
+## [0.26.0] — 2026-11-01
+
+### Added
+- The contracts page has a "Prüfen" section (admins) listing repeating payments that do not clearly look like a contract, with a "Warum?" tooltip naming the reasons
+- "Ist ein Vertrag" takes a candidate over as a contract (fixed costs, reserves, reminders); "Kein Vertrag" hides it for good, also after new imports
+
+## [0.25.0] — 2026-11-01
+
+### Added
+- Every detected series gets a confidence score with its reasons (direct debit or contract number vs. card payment, stable amount, number of payments, regular day of month, category, contract keywords); the contracts API returns `confidence` and `candidate`
+
+### Fixed
+- Card purchases at a café, drugstore or pharmacy that happen to recur monthly are candidates, not contracts: they no longer count in fixed costs, reserves, plan proposals or notice reminders
+
+## [0.24.4] — 2026-11-01
+
+### Added
+- The Datenstand page warns admins about accounts with bookings that carry no date at all, with the count per account
+
+### Fixed
+- Subscriptions paid through a linked PayPal account are found even when PayPal's own lines carry no booking date; the transaction date counts as the date of such a line (new field `transactionDate`, the stored booking date stays untouched)
+- A bank-side PayPal debit is only dropped when a dated PayPal line of the same amount within five days already counts the purchase; otherwise it counts, so nothing disappears and nothing counts twice
+- A PayPal funding credit (bank to PayPal) is no income; a pure PayPal top-up counts on neither side
+- Carry-over and cycle-history texts show their amounts instead of literal "{amount}" placeholders
 
 ## [0.24.3] — 2026-11-01
 

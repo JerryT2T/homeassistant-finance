@@ -1,7 +1,7 @@
 # Build Log
 
-## 0.25.0 — 2026-11-01
-Version: 0.25.0
+## 0.27.0 — 2026-11-01
+Version: 0.27.0
 Branch: claude/einrichtungsdialoge-ueberarbeiten-6752b6
 Changes:
 - feat(setup): the setup (Einrichtung) covers only technical and assignment steps: persons with one display name, accounts with bank account type and "data since", payday, region, notifications, AI, points; the last step opens the household plan or says when it becomes possible
@@ -12,6 +12,30 @@ Changes:
 - refactor(ui): the plan is called "Haushaltsplan" everywhere; the pot button reads "Topf anpassen"
 - refactor(options): the options dialog drops the unused refresh interval, currency and panel switch and the split model (covered by its select entity)
 - fix(plan): saving income from the wizard keeps stored insurance and tax adjustments
+
+## 0.26.0 — 2026-11-01
+Version: 0.26.0
+Branch: feat/130-review-candidates
+Changes:
+- feat(contracts): the contracts page has a "Prüfen" section (admins) listing repeating payments that do not clearly look like a contract, with a "Warum?" tooltip naming the reasons
+- feat(contracts): "Ist ein Vertrag" takes a candidate over as a contract (fixed costs, reserves, reminders); "Kein Vertrag" hides it for good, also after new imports
+
+## 0.25.0 — 2026-11-01
+Version: 0.25.0
+Branch: feat/110-series-confidence
+Changes:
+- feat(contracts): every detected series gets a confidence score with its reasons (direct debit or contract number vs. card payment, stable amount, number of payments, regular day of month, category, contract keywords); the contracts API returns `confidence` and `candidate`
+- fix(contracts): card purchases at a café, drugstore or pharmacy that happen to recur monthly are candidates, not contracts: they no longer count in fixed costs, reserves, plan proposals or notice reminders
+
+## 0.24.4 — 2026-11-01
+Version: 0.24.4
+Branch: fix/107-paypal-transaction-date
+Changes:
+- fix(contracts): subscriptions paid through a linked PayPal account are found even when PayPal's own lines carry no booking date; the transaction date counts as the date of such a line (new field `transactionDate`, the stored booking date stays untouched)
+- fix(household): a bank-side PayPal debit is only dropped when a dated PayPal line of the same amount within five days already counts the purchase; otherwise it counts, so nothing disappears and nothing counts twice
+- feat(freshness): the Datenstand page warns admins about accounts with bookings that carry no date at all, with the count per account
+- fix(household): a PayPal funding credit (bank to PayPal) is no income; a pure PayPal top-up counts on neither side
+- fix(home): carry-over and cycle-history texts show their amounts instead of literal "{amount}" placeholders
 
 ## 0.24.3 — 2026-11-01
 Version: 0.24.3

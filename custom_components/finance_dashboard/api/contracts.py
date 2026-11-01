@@ -95,7 +95,10 @@ class FinanceDashboardContractView(HomeAssistantView):
         store.contracts[series_id] = contract
         await store.async_save()
         _store, contracts = await _contracts_for(request, manager)
-        return self.json(next(c for c in contracts if c["id"] == series_id))
+        item = next((c for c in contracts if c["id"] == series_id), None)
+        if item is None:  # answered "Kein Vertrag": the series is gone for good
+            return self.json({"id": series_id, "dismissed": True})
+        return self.json(item)
 
 
 class FinanceDashboardReservesView(HomeAssistantView):

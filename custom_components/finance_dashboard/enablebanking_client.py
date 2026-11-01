@@ -526,6 +526,8 @@ class EnableBankingClient:
             "bookingDate": txn.get("booking_date") or "",
             "bookingDateTime": txn.get("booking_date_time") or "",
             "valueDate": txn.get("value_date") or "",
+            # PayPal's own lines carry only this one (#107)
+            "transactionDate": txn.get("transaction_date") or "",
             "transactionAmount": {
                 "amount": cls._signed_amount(amount_data, txn),
                 "currency": amount_data.get("currency") or "EUR",
