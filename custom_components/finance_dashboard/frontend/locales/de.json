@@ -747,11 +747,11 @@
   "cat.leisure": "Freizeit",
   "cat.media": "Medien & Kommunikation",
   "cat.finance": "Finanzen & Verpflichtungen",
-  "cat.income_work": "Arbeit",
-  "cat.income_state": "Staat",
-  "cat.income_capital": "Kapital",
-  "cat.income_refund": "Erstattung",
-  "cat.income_private": "Privat",
+  "cat.income_work": "Lohn & Gehalt",
+  "cat.income_state": "Staatliche Leistungen",
+  "cat.income_capital": "Kapitalerträge",
+  "cat.income_refund": "Erstattungen",
+  "cat.income_private": "Von Privatpersonen",
   "cat.other": "Sonstiges",
   "cat.transfers": "Umbuchung"
 }

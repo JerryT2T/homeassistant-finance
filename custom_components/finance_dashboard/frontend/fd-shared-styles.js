@@ -66,15 +66,15 @@ const CAT_LABEL_FB = {
     housing_cold: "Wohnen kalt", housing_warm: "Wohnen warm", groceries: "Lebensmittel & Haushalt",
     mobility: "Mobilität", health: "Gesundheit & Absicherung", leisure: "Freizeit",
     media: "Medien & Kommunikation", finance: "Finanzen & Verpflichtungen",
-    income_work: "Arbeit", income_state: "Staat", income_capital: "Kapital",
-    income_refund: "Erstattung", income_private: "Privat", other: "Sonstiges", transfers: "Umbuchung",
+    income_work: "Lohn & Gehalt", income_state: "Staatliche Leistungen", income_capital: "Kapitalerträge",
+    income_refund: "Erstattungen", income_private: "Von Privatpersonen", other: "Sonstiges", transfers: "Umbuchung",
   },
   en: {
     housing_cold: "Housing (cold)", housing_warm: "Housing (warm)", groceries: "Groceries & household",
     mobility: "Mobility", health: "Health & protection", leisure: "Leisure",
     media: "Media & communication", finance: "Finance & obligations",
-    income_work: "Work", income_state: "State", income_capital: "Capital",
-    income_refund: "Refunds", income_private: "Private", other: "Other", transfers: "Transfer",
+    income_work: "Salary & wages", income_state: "State benefits", income_capital: "Capital income",
+    income_refund: "Refunds", income_private: "From private persons", other: "Other", transfers: "Transfer",
   },
 };
 

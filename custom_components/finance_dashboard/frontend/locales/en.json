@@ -747,11 +747,11 @@
   "cat.leisure": "Leisure",
   "cat.media": "Media & communication",
   "cat.finance": "Finance & obligations",
-  "cat.income_work": "Work",
-  "cat.income_state": "State",
-  "cat.income_capital": "Capital",
+  "cat.income_work": "Salary & wages",
+  "cat.income_state": "State benefits",
+  "cat.income_capital": "Capital income",
   "cat.income_refund": "Refunds",
-  "cat.income_private": "Private",
+  "cat.income_private": "From private persons",
   "cat.other": "Other",
   "cat.transfers": "Transfer"
 }
