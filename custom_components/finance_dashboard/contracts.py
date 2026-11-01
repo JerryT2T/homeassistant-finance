@@ -423,7 +423,7 @@ def aggregate_view(item: dict[str, Any]) -> dict[str, Any]:
         "notice_due_soon",
         "special_termination_available",
     )
-    return {k: item[k] for k in keep}
+    return {**{k: item[k] for k in keep}, "candidate": bool(item.get("candidate"))}
 
 
 def visible_to(item: dict[str, Any], person: str | None) -> bool:
@@ -441,6 +441,8 @@ def build_reserves(contracts: list[dict[str, Any]]) -> dict[str, Any]:
     by_owner: dict[str, float] = {}
     for c in contracts:
         if c["interval"] not in IRREGULAR_INTERVALS or c["status"] == "ended":
+            continue
+        if c.get("candidate"):  # not sure it is a contract: no reserve (#129)
             continue
         monthly = round(c["annual_cost"] / 12, 2)
         items.append(
@@ -487,7 +489,7 @@ async def async_fire_notice_due(
     store = await async_get_store(hass)
     fired = 0
     for c in build_contracts(transactions, store, today=today, own_names=own_names):
-        if not c["notice_due_soon"] or c["status"] == "ended":
+        if not c["notice_due_soon"] or c["status"] == "ended" or c.get("candidate"):
             continue
         marker = f"{c['id']}|{c['next_deadline']}"
         if marker in store.notified:

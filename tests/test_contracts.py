@@ -624,3 +624,21 @@ def test_series_uses_the_transaction_date_when_no_booking_date_exists():
     (s,) = detect_series(rows, today=TODAY)
     assert s["interval"] == "monthly"
     assert s["price_change"]["increase"]
+
+
+def test_candidates_get_no_reserve():
+    from custom_components.finance_dashboard.contracts import build_reserves
+
+    base = {
+        "interval": "yearly",
+        "status": "active",
+        "annual_cost": 120.0,
+        "owner": "",
+        "next_expected": "2026-09-01",
+        "category": "insurance",
+        "plan_amount": -120.0,
+    }
+    sure = {**base, "id": "a", "creditor": "a", "candidate": False}
+    unsure = {**base, "id": "b", "creditor": "b", "candidate": True}
+    items = build_reserves([sure, unsure])["items"]
+    assert [i["series_id"] for i in items] == ["a"]

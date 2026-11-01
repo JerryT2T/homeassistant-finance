@@ -19,6 +19,7 @@ from collections import defaultdict
 from datetime import date, datetime, timedelta
 from typing import Any
 
+from .series_confidence import is_candidate, score_series
 from .text_norm import canonical_name
 from .tx_dates import effective_day
 
@@ -388,6 +389,10 @@ def detect_series(
                 keys.append(_ref_alias_key(part.ref, negative))
             series["alias_key"] = keys[0]
             series["alias_keys"] = keys
+            series["confidence"] = score_series(
+                part.rows, part.interval, series["category"], part.ref
+            )
+            series["candidate"] = is_candidate(series["confidence"])
             out.append(series)
     out.sort(key=lambda s: s["annual_cost"], reverse=True)
     return out

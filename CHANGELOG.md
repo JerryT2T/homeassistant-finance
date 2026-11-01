@@ -2,6 +2,14 @@
 
 All notable changes to the Finance will be documented in this file.
 
+## [0.25.0] — 2026-11-01
+
+### Added
+- Every detected series gets a confidence score with its reasons (direct debit or contract number vs. card payment, stable amount, number of payments, regular day of month, category, contract keywords); the contracts API returns `confidence` and `candidate`
+
+### Fixed
+- Card purchases at a café, drugstore or pharmacy that happen to recur monthly are candidates, not contracts: they no longer count in fixed costs, reserves, plan proposals or notice reminders
+
 ## [0.24.4] — 2026-11-01
 
 ### Added
