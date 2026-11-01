@@ -67,6 +67,24 @@ Start falls back to the first seen payment. Deadline = (term end, or month end o
 Special termination prefill: last 3 payments, traits amount / booking day / gap; >=2 traits differing -> unchecked, else checked.
 `special_termination_available` = latest price change is an increase and the (stored or prefilled) flag is checked.
 
+## Labels (#113, `labels.py`, `api/labels.py`)
+Labels are non-exclusive tags next to the one exclusive category. Catalogue: 15 starter labels (`energy`,
+`communication`, `streaming_media`, `software_cloud_ai`, `insurance`, `credit_rate`, `fees_interest`, `membership`,
+`settlement_refund`, `refundable`, `business_expense`, `household_service`, `family_child`, `optimizable`,
+`taxes_levies`; names translated in the frontend as `label.<id>`) plus own labels (`.storage/finance_dashboard_labels`,
+`custom {id: name}`, at most 100, names <= 40 chars, never leave HA). `Contract.labels` (<= 20 catalogue ids) are
+inherited at read time by every booking of the series (`series.ledger_ids`); the booking also shows the contract's
+category (`category_source = "contract"`, the booking's own one as `own_category`). Candidates pass nothing on.
+Own labels per booking: `bookings {ledger_id: [ids]}`. Automatic labels, computed on read and never stored or
+editable: payment channel per booking (`auto_bnpl` > `auto_paypal` > `auto_card` > `auto_direct_debit`) and
+`auto_price_increased` / `auto_special_termination` per contract. Deleting an own label removes it from every booking
+and contract. Category totals still use the booking's own category (inheritance is shown where bookings are read).
+- `GET /labels` -> `{labels: [{id, name, kind: starter|custom|auto}]}`; `POST /labels {name}`, `PUT /labels/{id} {name}`,
+  `DELETE /labels/{id}` (admin, own labels only).
+- `PUT /transactions/{ledger_id}/labels {labels: [...]}` (admin) -> `{ledger_id, labels_own}`; 404 `unknown_booking`.
+- `GET /transactions` rows add `ledger_id`, `own_category`, `contract_id`, `contract_name`, `category_source`,
+  `labels_inherited`, `labels_own`, `labels_auto`; `PUT /contracts/{id}` accepts `labels`.
+
 ## Endpoints
 - `GET /api/finance_dashboard/contracts` - expense series + `contract` block + `next_deadline`, `effective_end`, `days_until_deadline`,
   `notice_due_soon`, `special_termination_available`, `monthly_equivalent`; sorted by next deadline. Admin full; non-admin only
