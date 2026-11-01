@@ -352,6 +352,9 @@ def build_contracts(
             continue
         if is_own_name(s["creditor"], own_names):
             continue
+        if s.get("candidate") and s["id"] in store.contracts:
+            # the user already edited it: it is a contract, whatever the score says
+            s = {**s, "candidate": False}
         out.append(_contract_view(s, store.get(s["id"]), today))
     out.sort(key=lambda c: (c["next_deadline"] is None, c["next_deadline"] or ""))
     return out
@@ -423,7 +426,11 @@ def aggregate_view(item: dict[str, Any]) -> dict[str, Any]:
         "notice_due_soon",
         "special_termination_available",
     )
-    return {**{k: item[k] for k in keep}, "candidate": bool(item.get("candidate"))}
+    return {
+        **{k: item[k] for k in keep},
+        "candidate": bool(item.get("candidate")),
+        "confidence": item.get("confidence"),
+    }
 
 
 def visible_to(item: dict[str, Any], person: str | None) -> bool:

@@ -642,3 +642,15 @@ def test_candidates_get_no_reserve():
     unsure = {**base, "id": "b", "creditor": "b", "candidate": True}
     items = build_reserves([sure, unsure])["items"]
     assert [i["series_id"] for i in items] == ["a"]
+
+
+def test_a_contract_the_user_edited_is_never_a_candidate():
+    rows = monthly([-12.4, -13.1, -11.8], name="Cafe Bohne", category="food")
+    for r in rows:
+        r["remittanceInformationUnstructured"] = "VISA Debitkarte"
+    store = blank_store()
+    (first,) = build_contracts(rows, store, today=TODAY)
+    assert first["candidate"] is True
+    store.contracts[first["id"]] = Contract(first["id"], notice_value=1)
+    (again,) = build_contracts(rows, store, today=TODAY)
+    assert again["candidate"] is False
