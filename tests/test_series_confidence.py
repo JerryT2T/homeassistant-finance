@@ -26,7 +26,7 @@ def _rows(amounts, text="", start=date(2026, 1, 10), name="Shop"):
 
 
 def test_card_purchases_at_a_cafe_are_a_candidate():
-    conf = score_series(_rows([-12.4, -13.1, -11.8], "VISA Debitkarte Cafe"), "monthly", "food")
+    conf = score_series(_rows([-12.4, -13.1, -11.8], "VISA Debitkarte Cafe"), "monthly", "leisure")
     assert conf["score"] < CANDIDATE_BELOW
     assert {"card_payment", "varying_amount", "everyday_category"} <= set(conf["reasons"])
 

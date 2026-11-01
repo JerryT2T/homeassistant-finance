@@ -36,12 +36,12 @@ COUNTRY_REGION = "DE"
 # Plan category -> dataset dimension. A category whose dimension has no
 # sourced value (insurance, loans) resolves to None and is not compared.
 CATEGORY_DIMENSIONS: dict[str, str] = {
-    "housing": "housing_energy",
-    "food": "food",
-    "transport": "mobility",
-    "subscriptions": "communication",
-    "insurance": "insurance",
-    "loans": "debt_ratio",
+    "housing_cold": "housing_energy",
+    "groceries": "food",
+    "mobility": "mobility",
+    "media": "communication",
+    "health": "insurance",
+    "finance": "debt_ratio",
     "savings": "savings_rate",
 }
 

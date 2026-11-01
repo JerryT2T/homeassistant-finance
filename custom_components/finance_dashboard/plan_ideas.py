@@ -27,7 +27,7 @@ FUZZY_RATIO = 0.84
 HISTORY_MONTHS = 3
 
 # Category -> idea kind. Variable everyday spending is a pot, the rest is a fixed cost.
-_POT_CATEGORIES = frozenset({"food", "transport", "leisure", "shopping", "health", "other"})
+_POT_CATEGORIES = frozenset({"groceries", "mobility", "leisure", "health", "other"})
 
 
 def sheet_position_names(workbook: bytes) -> list[str]:

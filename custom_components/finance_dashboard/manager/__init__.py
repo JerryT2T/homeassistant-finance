@@ -55,16 +55,16 @@ from ..const import (
 )
 from ..data_store import Ledger, StorageDecryptError
 from ..fetch_budget import FetchBudget
-from ..pots import Pot, PotStore
 from ..household import HouseholdMember, HouseholdModel, model_from_plan
+from ..pots import Pot, PotStore
 from ..transfer_detector import (
     apply_overrides,
     get_effective_transactions,
 )
 from ..transfer_plan import build_transfer_plan
 from ._banks import BankMixin
-from ._questions import QuestionsMixin
 from ._persistence import PersistenceMixin
+from ._questions import QuestionsMixin
 from ._refresh import RefreshMixin
 
 _LOGGER = logging.getLogger(__name__)
@@ -528,7 +528,7 @@ class FinanceDashboardManager(RefreshMixin, BankMixin, PersistenceMixin, Questio
         recurring_top = self._recurring_patterns[:10]
 
         # Fixed vs variable costs
-        fixed_cats = {"housing", "loans", "utilities", "insurance"}
+        fixed_cats = {"housing_cold", "housing_warm", "finance", "health"}
         fixed_total = sum(abs(category_totals.get(c, 0)) for c in fixed_cats)
         variable_total = total_expenses - fixed_total
 

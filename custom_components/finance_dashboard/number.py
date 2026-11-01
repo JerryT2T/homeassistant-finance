@@ -23,17 +23,15 @@ _LOGGER = logging.getLogger(__name__)
 PARALLEL_UPDATES = 0
 
 CATEGORY_ICONS = {
-    "housing": "mdi:home",
-    "food": "mdi:food",
-    "transport": "mdi:bus",
-    "insurance": "mdi:shield-check",
-    "subscriptions": "mdi:youtube-subscription",
-    "loans": "mdi:bank",
-    "utilities": "mdi:flash",
-    "income": "mdi:cash-plus",
-    "transfers": "mdi:bank-transfer",
+    "housing_cold": "mdi:home",
+    "housing_warm": "mdi:radiator",
+    "groceries": "mdi:cart",
+    "mobility": "mdi:car",
+    "health": "mdi:heart-pulse",
+    "leisure": "mdi:party-popper",
+    "media": "mdi:cellphone-wireless",
+    "finance": "mdi:bank",
     "other": "mdi:dots-horizontal",
-    "cleaning": "mdi:broom",
 }
 
 

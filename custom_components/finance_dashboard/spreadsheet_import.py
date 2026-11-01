@@ -44,18 +44,20 @@ from typing import Any
 from .budget_plan import BudgetPlan, CostPosition, IncomeEntry, slugify_position
 from .const import (
     CATEGORIZATION_RULES,
-    CATEGORY_FOOD,
-    CATEGORY_HOUSING,
-    CATEGORY_INSURANCE,
-    CATEGORY_LOANS,
+    CATEGORY_FINANCE,
+    CATEGORY_GROCERIES,
+    CATEGORY_HEALTH,
+    CATEGORY_HOUSING_COLD,
+    CATEGORY_HOUSING_WARM,
+    CATEGORY_MEDIA,
+    CATEGORY_MOBILITY,
     CATEGORY_OTHER,
-    CATEGORY_SUBSCRIPTIONS,
-    CATEGORY_TRANSPORT,
-    CATEGORY_UTILITIES,
+    CATEGORY_TRANSFERS,
     OWNER_SHARED,
     POSITION_KIND_BUFFER,
     POSITION_KIND_FIXED,
 )
+from .life_areas import is_income
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -103,16 +105,14 @@ _MONTHS_DE = {
 # generic rules are tuned for bank transaction text and mis-file some position
 # names — most notably a loan whose creditor is a health insurer.
 _NAME_CATEGORY_OVERRIDES: list[tuple[tuple[str, ...], str]] = [
-    (("kredit", "darlehen", "tilgung", "klarna"), CATEGORY_LOANS),
-    (("miete", "warm", "hausrat"), CATEGORY_HOUSING),
-    (("essen", "hellofresh", "haushalt einkaufen", "lebensmittel"), CATEGORY_FOOD),
-    (("ticket", "bahn", "celular", "mobil"), CATEGORY_TRANSPORT),
-    (("versicherung", "haftpflicht"), CATEGORY_INSURANCE),
-    (
-        ("strom", "wasser", "internet", "warmwasser", "rundfunk", "telekom", "vodafone"),
-        CATEGORY_UTILITIES,
-    ),
-    (("netflix", "youtube", "google", "prime", "claude", "home assistant"), CATEGORY_SUBSCRIPTIONS),
+    (("kredit", "darlehen", "tilgung", "klarna"), CATEGORY_FINANCE),
+    (("strom", "wasser", "warmwasser", " gas ", "gasabschlag", "heiz", "nebenkosten"), CATEGORY_HOUSING_WARM),
+    (("miete", "warm", "hausrat"), CATEGORY_HOUSING_COLD),
+    (("essen", "hellofresh", "haushalt einkaufen", "lebensmittel"), CATEGORY_GROCERIES),
+    (("internet", "rundfunk", "telekom", "vodafone", "celular", "handy"), CATEGORY_MEDIA),
+    (("ticket", "bahn", "mobil"), CATEGORY_MOBILITY),
+    (("versicherung", "haftpflicht"), CATEGORY_HEALTH),
+    (("netflix", "youtube", "google", "prime", "claude", "home assistant"), CATEGORY_MEDIA),
 ]
 
 
@@ -163,6 +163,8 @@ def categorize_position(name: str) -> str:
             return category
 
     for category, keywords in CATEGORIZATION_RULES.items():
+        if is_income(category) or category == CATEGORY_TRANSFERS:
+            continue  # positions are costs
         if any(kw in lowered for kw in keywords):
             return category
 

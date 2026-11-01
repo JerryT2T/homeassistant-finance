@@ -86,43 +86,89 @@ SESSION_MAX_DAYS = 180  # Enable Banking session validity
 SESSION_TIMEOUT_MINUTES = 30
 ENABLEBANKING_RATE_LIMIT_DAILY = 4
 
-# Transaction categorization
-CATEGORY_HOUSING = "housing"
-CATEGORY_FOOD = "food"
-CATEGORY_TRANSPORT = "transport"
-CATEGORY_INSURANCE = "insurance"
-CATEGORY_SUBSCRIPTIONS = "subscriptions"
-CATEGORY_LOANS = "loans"
-CATEGORY_UTILITIES = "utilities"
-CATEGORY_INCOME = "income"
+# Transaction categorization - eight life areas plus an income set (#112,
+# life_areas.py). The legacy slugs (housing, food, utilities, ...) are migrated
+# once at setup (taxonomy_migration.py).
+CATEGORY_HOUSING_COLD = "housing_cold"
+CATEGORY_HOUSING_WARM = "housing_warm"
+CATEGORY_GROCERIES = "groceries"
+CATEGORY_MOBILITY = "mobility"
+CATEGORY_HEALTH = "health"
+CATEGORY_LEISURE = "leisure"
+CATEGORY_MEDIA = "media"
+CATEGORY_FINANCE = "finance"
+CATEGORY_INCOME_WORK = "income_work"
+CATEGORY_INCOME_STATE = "income_state"
+CATEGORY_INCOME_CAPITAL = "income_capital"
+CATEGORY_INCOME_REFUND = "income_refund"
+CATEGORY_INCOME_PRIVATE = "income_private"
 CATEGORY_TRANSFERS = "transfers"
 CATEGORY_OTHER = "other"
 
+# The expense areas a user can pick, budget and be asked about.
 DEFAULT_CATEGORIES = [
-    CATEGORY_HOUSING,
-    CATEGORY_FOOD,
-    CATEGORY_TRANSPORT,
-    CATEGORY_INSURANCE,
-    CATEGORY_SUBSCRIPTIONS,
-    CATEGORY_LOANS,
-    CATEGORY_UTILITIES,
-    CATEGORY_INCOME,
-    CATEGORY_TRANSFERS,
+    CATEGORY_HOUSING_COLD,
+    CATEGORY_HOUSING_WARM,
+    CATEGORY_GROCERIES,
+    CATEGORY_MOBILITY,
+    CATEGORY_HEALTH,
+    CATEGORY_LEISURE,
+    CATEGORY_MEDIA,
+    CATEGORY_FINANCE,
     CATEGORY_OTHER,
 ]
+INCOME_CATEGORIES = [
+    CATEGORY_INCOME_WORK,
+    CATEGORY_INCOME_STATE,
+    CATEGORY_INCOME_CAPITAL,
+    CATEGORY_INCOME_REFUND,
+    CATEGORY_INCOME_PRIVATE,
+]
 
-# Categorization rules — keyword-based auto-detection
-# These are default patterns; users can customize via UI
+# Categorization rules - keyword-based auto-detection, first match wins in
+# this order: specific areas before broad ones (health insurance before
+# "versicherung"). Income rules only match money coming in.
 CATEGORIZATION_RULES = {
-    CATEGORY_HOUSING: [
+    CATEGORY_HOUSING_WARM: [
+        "strom",
+        "erdgas",
+        "gasversorgung",
+        "gasrechnung",
+        "gasabschlag",
+        "gaslieferung",
+        "wasser",
+        "fernwärme",
+        "heizkosten",
+        "nebenkosten",
+        "betriebskosten",
+        "abschlag",
+    ],
+    CATEGORY_HOUSING_COLD: [
         "miete",
         "rent",
         "wohnung",
         "hausgeld",
-        "nebenkosten",
         "mietpool",
+        "hausrat",
+        "wohngebäude",
+        "baufinanzierung",
     ],
-    CATEGORY_FOOD: [
+    CATEGORY_MEDIA: [
+        "netflix",
+        "spotify",
+        "amazon prime",
+        "disney",
+        "xbox",
+        "google one",
+        "icloud",
+        "youtube premium",
+        "telekom",
+        "vodafone",
+        "o2",
+        "rundfunkbeitrag",
+        "gez",
+    ],
+    CATEGORY_GROCERIES: [
         "rewe",
         "edeka",
         "aldi",
@@ -132,13 +178,15 @@ CATEGORIZATION_RULES = {
         "globus",
         "metro",
         "hellofresh",
-        "lieferando",
-        "uber eats",
         "supermarkt",
         "lebensmittel",
+    ],
+    CATEGORY_LEISURE: [
+        "lieferando",
+        "uber eats",
         "restaurant",
     ],
-    CATEGORY_TRANSPORT: [
+    CATEGORY_MOBILITY: [
         "deutschland ticket",
         "deutschlandticket",
         "db ",
@@ -148,57 +196,53 @@ CATEGORIZATION_RULES = {
         "aral",
         "uber",
         "taxi",
+        "kfz",
     ],
-    CATEGORY_INSURANCE: [
-        "versicherung",
-        "insurance",
-        "haftpflicht",
-        "rechtsschutz",
+    CATEGORY_HEALTH: [
         "krankenversicherung",
         "tk ",
         "aok",
         "barmer",
+        "haftpflicht",
+        "rechtsschutz",
+        "versicherung",
+        "insurance",
     ],
-    CATEGORY_SUBSCRIPTIONS: [
-        "netflix",
-        "spotify",
-        "amazon prime",
-        "disney",
-        "xbox",
-        "google one",
-        "icloud",
-        "youtube premium",
-    ],
-    CATEGORY_LOANS: [
+    CATEGORY_FINANCE: [
         "kredit",
         "tilgung",
         "darlehen",
         "loan",
         "finanzierung",
+        "sparplan",
+        "klarna",
+        "ratenkauf",
+        "kontoführung",
+        "finanzamt",
+        "unterhalt",
     ],
-    CATEGORY_UTILITIES: [
-        "strom",
-        "gas",
-        "wasser",
-        "fernwärme",
-        "telekom",
-        "vodafone",
-        "o2",
-        "rundfunkbeitrag",
-        "gez",
+    CATEGORY_INCOME_STATE: [
+        "kindergeld",
+        "elterngeld",
+        "familienkasse",
+        "bundesagentur",
+        "rentenversicherung",
     ],
-    CATEGORY_INCOME: [
+    CATEGORY_INCOME_CAPITAL: [
+        "zinsen",
+        "dividende",
+        "ausschüttung",
+    ],
+    CATEGORY_INCOME_WORK: [
         "gehalt",
         "lohn",
         "salary",
         "vergütung",
-        "überweisung",
     ],
     CATEGORY_TRANSFERS: [
         "umbuchung",
         "übertrag",
         "transfer",
-        "sparplan",
     ],
 }
 
@@ -291,12 +335,12 @@ TRANSFER_PLAN_ZERO_TOLERANCE = 0.02
 # comparison against the German average. Mirrors the spreadsheet's definitions:
 # housing counted rent plus utilities together, food counted both buffers.
 BENCHMARK_METRIC_SOURCES = {
-    "housing": [CATEGORY_HOUSING, CATEGORY_UTILITIES],
-    "food": [CATEGORY_FOOD],
-    "loans": [CATEGORY_LOANS],
-    "insurance": [CATEGORY_INSURANCE],
-    "transport": [CATEGORY_TRANSPORT],
-    "subscriptions": [CATEGORY_SUBSCRIPTIONS],
+    CATEGORY_HOUSING_COLD: [CATEGORY_HOUSING_COLD, CATEGORY_HOUSING_WARM],
+    CATEGORY_GROCERIES: [CATEGORY_GROCERIES],
+    CATEGORY_FINANCE: [CATEGORY_FINANCE],
+    CATEGORY_HEALTH: [CATEGORY_HEALTH],
+    CATEGORY_MOBILITY: [CATEGORY_MOBILITY],
+    CATEGORY_MEDIA: [CATEGORY_MEDIA],
 }
 
 # Benchmark location (setup wizard / options). The comparison uses the finest

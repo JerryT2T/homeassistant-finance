@@ -198,7 +198,7 @@ def test_unsourced_dimension_resolves_to_none(data: dict) -> None:
 def test_provider_compare_is_labelled(data: dict) -> None:
     provider = BenchmarkProvider(dataset=data)
     food = resolve(data, "food", household_size=2)["value"]
-    result = provider.compare("food", food + 50, household_size=2)
+    result = provider.compare("groceries", food + 50, household_size=2)
     assert result["better"] is False
     assert result["difference"] == 50
     for key in (

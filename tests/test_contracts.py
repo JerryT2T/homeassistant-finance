@@ -135,9 +135,9 @@ def test_add_months_clamps():
 
 
 def test_category_defaults():
-    assert category_defaults("insurance")["notice_value"] == 3
+    assert category_defaults("health")["notice_value"] == 3
     assert category_defaults("telecom")["min_term_months"] == 24
-    assert category_defaults("subscriptions")["notice_value"] == 0
+    assert category_defaults("media")["notice_value"] == 0
     assert category_defaults("whatever")["renewal_months"] == 1
 
 

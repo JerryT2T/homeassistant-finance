@@ -24,9 +24,9 @@ from typing import Any
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
 
-from .const import CATEGORY_INCOME, CATEGORY_OTHER, CATEGORY_TRANSFERS, DOMAIN
-from .cycle import cycle_windows, salary_starts
 from . import plan_wizard
+from .const import CATEGORY_OTHER, CATEGORY_TRANSFERS, DOMAIN, INCOME_CATEGORIES
+from .cycle import cycle_windows, salary_starts
 from .recurring import detect_recurring
 
 STORAGE_KEY = f"{DOMAIN}.setup_wizard"
@@ -50,8 +50,8 @@ DEFAULT_NOTIFICATIONS: dict[str, Any] = {
 }
 
 # Fixed costs belong in the plan, not in variable-spend pots.
-_NOT_VARIABLE = {"housing", "insurance", "loans", "subscriptions"}
-_SKIP = {CATEGORY_INCOME, CATEGORY_TRANSFERS, CATEGORY_OTHER}
+_NOT_VARIABLE = {"housing_cold", "housing_warm", "finance", "media"}
+_SKIP = {*INCOME_CATEGORIES, "income", CATEGORY_TRANSFERS, CATEGORY_OTHER}
 POT_ROUNDING = 10
 MIN_SAMPLES = 2
 CYCLES_BACK = 3

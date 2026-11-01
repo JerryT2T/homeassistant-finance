@@ -67,7 +67,7 @@ NOTICE_REFERENCES = (REF_END_OF_TERM, REF_END_OF_MONTH)
 # Legacy per-category table; the kind (#111) decides the defaults now.
 CATEGORY_DEFAULTS: dict[str, tuple[int, int, int, str]] = {
     **KIND_CATEGORY_DEFAULTS,
-    "subscriptions": SUBSCRIPTION_DEFAULTS,
+    "media": SUBSCRIPTION_DEFAULTS,
 }
 _FALLBACK_DEFAULTS = SUBSCRIPTION_DEFAULTS
 

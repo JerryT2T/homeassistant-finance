@@ -18,7 +18,7 @@ from custom_components.finance_dashboard.pots import Pot
 TODAY = date(2026, 4, 20)
 
 
-def _tx(amount, day, name="Shop", cat="food", owner="Anna", month=None, **extra):
+def _tx(amount, day, name="Shop", cat="groceries", owner="Anna", month=None, **extra):
     d = date(2026, month or 4, day).isoformat()
     t = {
         "transactionAmount": {"amount": str(amount), "currency": "EUR"},
@@ -140,12 +140,12 @@ def test_pot_suggestions_median_rounded_excluding_fixed_other_transfers() -> Non
     txs = [_salary(m, day=1) for m in (1, 2, 3, 4)]
     # food per cycle (1st..end): Jan 200, Feb 233, Mar 400 -> median 233 -> 230
     txs += [_tx(-200, 10, month=1), _tx(-233, 10, month=2), _tx(-400, 10, month=3)]
-    txs += [_tx(-900, 3, "Landlord", "housing", month=m) for m in (1, 2, 3)]
+    txs += [_tx(-900, 3, "Landlord", "housing_cold", month=m) for m in (1, 2, 3)]
     txs += [_tx(-70, 4, "Misc", "other", month=m) for m in (1, 2, 3)]
     txs += [_tx(-70, 4, "Own acct", "transfers", month=m) for m in (1, 2, 3)]
     out = wiz.suggest_pots(txs, [], TODAY)
     assert [(s["owner"], s["category"], s["cycle_budget"], s["samples"]) for s in out] == [
-        ("Anna", "food", 230.0, 3)
+        ("Anna", "groceries", 230.0, 3)
     ]
 
 
@@ -155,14 +155,14 @@ def test_pot_suggestions_need_two_samples_and_skip_existing() -> None:
     assert wiz.suggest_pots(txs, [], TODAY) == []
     txs += [_tx(-100, 10, month=2)]
     assert len(wiz.suggest_pots(txs, [], TODAY)) == 1
-    existing = [Pot(id="p", name="Food", owner="Anna", category_keys=["food"])]
+    existing = [Pot(id="p", name="Food", owner="Anna", category_keys=["groceries"])]
     assert wiz.suggest_pots(txs, existing, TODAY) == []
 
 
 def test_pot_acceptance_validation() -> None:
     assert wiz.validate_pot_acceptance(
-        {"accept": [{"category": "food", "owner": "Anna", "cycle_budget": 230}]}
-    )[0]["category_keys"] == ["food"]
+        {"accept": [{"category": "groceries", "owner": "Anna", "cycle_budget": 230}]}
+    )[0]["category_keys"] == ["groceries"]
     for bad in (None, {"accept": []}, {"accept": [{"x": 1}]}):
         with pytest.raises(wiz.SetupError):
             wiz.validate_pot_acceptance(bad)
@@ -217,10 +217,10 @@ def test_consent_exceptions() -> None:
 
 
 def test_digest_text() -> None:
-    txs = [_tx(-100, 18, cat="food"), _tx(-40, 10, cat="food")]
+    txs = [_tx(-100, 18, cat="groceries"), _tx(-40, 10, cat="groceries")]
     d = notify.build_digest(txs, TODAY, {"status": "good", "remaining": 321.0, "questions_open": 2})
     assert d["questions_open"] == 2 and d["week"] == "2026-W17"
-    assert "passt" in d["text"] and "Lebensmittel" in d["text"] and d["top_changes"][0]["category"] == "food"
+    assert "passt" in d["text"] and "Lebensmittel" in d["text"] and d["top_changes"][0]["category"] == "groceries"
 
 
 def _hass_for_run():
@@ -358,7 +358,7 @@ async def test_member_transactions_are_aggregate_only(monkeypatch) -> None:
     from custom_components.finance_dashboard.api import data
 
     mgr = SimpleNamespace(async_get_monthly_summary=AsyncMock(return_value={
-        "categories": {"food": 10}, "total_income": 1, "total_expenses": 2,
+        "categories": {"groceries": 10}, "total_income": 1, "total_expenses": 2,
         "transaction_count": 3}))
     monkeypatch.setattr(data, "_get_manager", lambda hass: mgr)
     view = data.FinanceDashboardTransactionsView()

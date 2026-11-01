@@ -303,7 +303,16 @@ def public_view(cfg: dict[str, Any], today: date, opt_in: bool) -> dict[str, Any
 # Candidate selection + usability (pure)
 # ---------------------------------------------------------------------------
 
-NEVER_AI = ("other", "income", "transfers")
+NEVER_AI = (
+    "other",
+    "transfers",
+    "income",
+    "income_work",
+    "income_state",
+    "income_capital",
+    "income_refund",
+    "income_private",
+)
 
 
 def provider_usable(
