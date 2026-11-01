@@ -80,3 +80,10 @@ def test_candidates_and_ended_series_stay_out_of_the_totals():
         {"kind": "subscription", "annual_cost": 999.0, "status": "ended"},
     ]
     assert contract_totals(items)["fixed"] == {"monthly": 10.0, "yearly": 120.0, "count": 1}
+
+
+def test_stale_pending_debit_far_later_is_no_proof():
+    # Codex #115: a pending debit three periods on must not keep the series alive
+    (s,) = detect_series(_gym(pending_day="2026-08-10"), today=date(2026, 8, 12))
+    assert s["pending_since"] is None
+    assert s["last_seen"] == "2026-05-10"

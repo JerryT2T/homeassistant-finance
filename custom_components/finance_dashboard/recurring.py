@@ -815,14 +815,15 @@ def _pending_alive(
 ) -> date | None:
     """Date of a pending debit that stands for the next payment, else None.
 
-    It must lie at least half a period after the last booked payment (not a
-    duplicate of it) and match the plan amount within the series tolerance
-    (not a one-off purchase at the same payee).
+    It must lie half a period to one and a half periods after the last booked
+    payment (not a duplicate of it, not a stale pending debit far later) and
+    match the plan amount within the series tolerance (not a one-off purchase
+    at the same payee).
     """
     hits = [
         day
         for day, amount, _txn in pending
-        if (day - last_booked).days >= nominal / 2
+        if nominal / 2 <= (day - last_booked).days <= nominal * 3 / 2
         and plan
         and abs(abs(amount) - plan) / plan <= amount_tol
     ]
