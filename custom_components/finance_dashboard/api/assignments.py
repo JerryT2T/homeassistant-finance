@@ -5,8 +5,10 @@ from __future__ import annotations
 from aiohttp import web
 from homeassistant.components.http import HomeAssistantView
 
+from ..account_identity import account_key
 from ..const import DOMAIN
 from ..manager import AssignmentError
+from ..plan_wizard import earliest_booked_by_key
 from ._helpers import _get_manager
 
 
@@ -31,7 +33,21 @@ class FinanceDashboardAssignmentsView(HomeAssistantView):
         if not manager:
             return self.json({"error": "Not configured"}, status_code=404)
         users = await hass.auth.async_get_users()
-        return self.json(manager.get_assignments(users))
+        return self.json(self._with_account_info(manager, manager.get_assignments(users)))
+
+    @staticmethod
+    def _with_account_info(manager, payload: dict) -> dict:
+        """Additive: per account ``earliest_booked`` (ledger, cache) and ``account_type``."""
+        earliest = earliest_booked_by_key(getattr(manager, "_ledger", None))
+        types = {
+            account_key(a): str(a.get("account_type") or "")
+            for a in getattr(manager, "_accounts", []) or []
+        }
+        for acc in payload.get("accounts", []):
+            key = acc.get("key")
+            acc["earliest_booked"] = earliest.get(key)
+            acc["account_type"] = types.get(key) or None
+        return payload
 
     async def put(self, request: web.Request) -> web.Response:
         """Validate and persist the assignments; returns the GET payload."""
@@ -55,4 +71,4 @@ class FinanceDashboardAssignmentsView(HomeAssistantView):
             manager.async_set_assignments(body, users)
         except AssignmentError as err:
             return self.json({"error": err.code, "detail": err.detail}, status_code=400)
-        return self.json(manager.get_assignments(users))
+        return self.json(self._with_account_info(manager, manager.get_assignments(users)))

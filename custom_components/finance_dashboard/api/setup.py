@@ -1,6 +1,7 @@
 """Setup-wizard endpoints (admin only, cache/config only - never a bank call).
 
-* ``GET/PUT /api/finance_dashboard/setup``                     wizard state
+* ``GET/PUT /api/finance_dashboard/setup``                     wizard state (Einrichtung)
+  (the household-plan wizard lives in ``plan_wizard.py`` / ``api/plan_wizard.py``)
 * ``GET /api/finance_dashboard/setup/payday_suggestions``      per-person payday hints
 * ``GET/POST /api/finance_dashboard/setup/pot_suggestions``    pots from history
 * ``GET/POST /api/finance_dashboard/setup/plan_prefill``       plan positions from contracts
@@ -22,6 +23,7 @@ from .. import plan_prefill as prefill
 from .. import points_target as pts
 from .. import savings_goals as goals_mod
 from .. import setup_wizard as wiz
+from ..account_identity import account_key
 from ..const import DEFAULT_CATEGORIES, DOMAIN, OPT_BENCHMARK_POSTCODE, OPT_BENCHMARK_STATE
 from ..contracts import async_get_store as async_get_contract_store
 from ..contracts import build_contracts, own_account_names
@@ -63,15 +65,38 @@ def _region(raw) -> dict | None:
     return {OPT_BENCHMARK_STATE: state, OPT_BENCHMARK_POSTCODE: postcode}
 
 
+async def _ai_opt_in(hass, state: dict) -> bool:
+    """Categorisation consent: the per-purpose store when present, else the legacy flag."""
+    try:
+        from .. import ai_consent
+    except ImportError:  # parallel module not merged yet
+        return bool(state.get("ai_opt_in"))
+    return bool(await ai_consent.async_granted(hass, "categorize"))
+
+
+async def _set_ai_opt_in(hass, state: dict, value: bool) -> None:
+    state["ai_opt_in"] = value  # legacy mirror
+    try:
+        from .. import ai_consent
+    except ImportError:
+        return
+    await ai_consent.async_set(hass, "categorize", value)
+
+
 async def _payload(hass, manager) -> dict:
     state = await wiz.async_load_state(hass)
     accounts = getattr(manager, "_accounts", []) or []
-    hints = wiz.data_hints(manager.persons, accounts, len(manager.pots))
+    hints = wiz.data_hints(
+        manager.persons,
+        accounts,
+        region=bool(_options(manager).get(OPT_BENCHMARK_STATE)),
+        points=bool(state["points_target"]),
+    )
     return {
         "current_step": wiz.current_step(state, hints),
         "steps": wiz.effective_steps(state, hints),
         "completed": bool(state["completed"]),
-        "ai_opt_in": state["ai_opt_in"],
+        "ai_opt_in": await _ai_opt_in(hass, state),
         "points_target": state["points_target"],
         "notifications": state["notifications"],
         "persons": [
@@ -159,6 +184,8 @@ class FinanceDashboardSetupView(HomeAssistantView):
                 manager._entry,  # noqa: SLF001
                 options={**manager._entry.options, **region},  # noqa: SLF001
             )
+        if "ai_opt_in" in body:
+            await _set_ai_opt_in(hass, state, state["ai_opt_in"])
         await wiz.async_save_state(hass, state)
         return self.json(await _payload(hass, manager))
 
@@ -194,7 +221,8 @@ class FinanceDashboardPotSuggestionsView(HomeAssistantView):
         return self.json({"suggestions": wiz.suggest_pots(txs, manager.pots, today)})
 
     async def post(self, request: web.Request) -> web.Response:
-        """Accept suggestions: ``{"accept": [{category, owner, cycle_budget, name?}]}``."""
+        """Accept suggestions: ``{"accept": [{category, owner, cycle_budget, name?,
+        account_keys?}]}`` (``account_keys``: account identity keys, null = all accounts)."""
         if (denied := admin_denied(self, request)) is not None:
             return denied
         manager = _get_manager(request.app["hass"])
@@ -202,7 +230,8 @@ class FinanceDashboardPotSuggestionsView(HomeAssistantView):
             return self.json({"error": "Not configured"}, status_code=404)
         body = await _body(request)
         try:
-            payloads = wiz.validate_pot_acceptance(body)
+            known = {account_key(a) for a in manager._accounts}  # noqa: SLF001
+            payloads = wiz.validate_pot_acceptance(body, known)
             for payload in payloads:  # validate everything before saving anything
                 Pot.from_dict(payload)
             created = []
@@ -394,7 +423,7 @@ class FinanceDashboardAiTestView(HomeAssistantView):
         result = await ai.async_test(
             hass,
             credentials=getattr(manager, "_credential_manager", None),
-            opt_in=bool(state["ai_opt_in"]),
+            opt_in=await _ai_opt_in(hass, state),
             categories=[c for c in DEFAULT_CATEGORIES if c not in ai.NEVER_AI],
             today=dt_util.now().date(),
             usable=_ai_usable(hass, cfg, manager),
@@ -413,7 +442,7 @@ class FinanceDashboardAiView(HomeAssistantView):
     async def _view(hass) -> dict:
         state = await wiz.async_load_state(hass)
         cfg = await ai.async_load_config(hass)
-        view = ai.public_view(cfg, dt_util.now().date(), state["ai_opt_in"])
+        view = ai.public_view(cfg, dt_util.now().date(), await _ai_opt_in(hass, state))
         view["usable"] = _ai_usable(hass, cfg, _get_manager(hass))
         return view
 
@@ -453,6 +482,6 @@ class FinanceDashboardAiView(HomeAssistantView):
         await ai.async_save_config(hass, cfg)
         if "ai_opt_in" in body:
             state = await wiz.async_load_state(hass)
-            state["ai_opt_in"] = body["ai_opt_in"]
+            await _set_ai_opt_in(hass, state, body["ai_opt_in"])
             await wiz.async_save_state(hass, state)
         return self.json(await self._view(hass))

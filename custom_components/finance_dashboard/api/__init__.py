@@ -60,6 +60,14 @@ from .refresh import (
     FinanceDashboardRefreshTriggerView,
     FinanceDashboardReprocessView,
 )
+from .plan_wizard import (
+    FinanceDashboardPlanWizardFixedView,
+    FinanceDashboardPlanWizardGateView,
+    FinanceDashboardPlanWizardIncomeSuggestionsView,
+    FinanceDashboardPlanWizardIncomeView,
+    FinanceDashboardPlanWizardResultView,
+    FinanceDashboardPlanWizardView,
+)
 from .setup import (
     FinanceDashboardAiTestView,
     FinanceDashboardAiView,
@@ -112,6 +120,12 @@ __all__ = [  # noqa: RUF022  # grouped by category, not alphabetical
     "FinanceDashboardSetupView",
     "FinanceDashboardPaydaySuggestionsView",
     "FinanceDashboardPotSuggestionsView",
+    "FinanceDashboardPlanWizardView",
+    "FinanceDashboardPlanWizardGateView",
+    "FinanceDashboardPlanWizardIncomeSuggestionsView",
+    "FinanceDashboardPlanWizardIncomeView",
+    "FinanceDashboardPlanWizardFixedView",
+    "FinanceDashboardPlanWizardResultView",
     # Refresh
     "FinanceDashboardRefreshStatusView",
     "FinanceDashboardReprocessView",
@@ -169,4 +183,12 @@ async def async_register_api(hass: HomeAssistant) -> None:
     hass.http.register_view(FinanceDashboardPointsView())
     hass.http.register_view(FinanceDashboardAiView())
     hass.http.register_view(FinanceDashboardAiTestView())
+    hass.http.register_view(FinanceDashboardPlanWizardView())
+    hass.http.register_view(FinanceDashboardPlanWizardGateView())
+    hass.http.register_view(FinanceDashboardPlanWizardIncomeSuggestionsView())
+    hass.http.register_view(FinanceDashboardPlanWizardIncomeView())
+    hass.http.register_view(FinanceDashboardPlanWizardFixedView())
+    hass.http.register_view(FinanceDashboardPlanWizardResultView())
+    # NOTE: views of the parallel AI-consent / plan-ideas work (api/ai_consent.py,
+    # api/plan_ideas.py) are not on this branch; register them at merge.
     _LOGGER.debug("Finance API endpoints registered")

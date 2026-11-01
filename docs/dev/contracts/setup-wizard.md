@@ -6,11 +6,13 @@ Modules: `setup_wizard.py` (state + pure logic), `api/setup.py` (endpoints), `no
 
 ## Wizard state
 
-Own HA Store `finance_dashboard.setup_wizard` (no config-entry update, no reload). Steps:
-`persons, accounts, payday, pots, plan, notifications, ai, done`. Status per step:
-`pending|done|skipped`. Skippable: payday, pots, plan, notifications, ai. A `pending` step is
-reported `done` when the data already proves it (persons exist; all accounts assigned; every
-person has a confirmed payday; at least one pot) - that is the resume rule. `current_step`
+Own HA Store `finance_dashboard.setup_wizard` (no config-entry update, no reload). Setup
+(Einrichtung) steps: `persons, accounts, payday, region, notifications, ai, points, done`. Status
+per step: `pending|done|skipped`. Skippable: payday, region, notifications, ai, points. Pots,
+plan and goals left the setup; stored entries for `pots`/`plan`/`goals` from older versions are
+ignored on load. A `pending` step is reported `done` when the data already proves it (persons
+exist; all accounts assigned; every person has a confirmed payday; region state set; points
+target set) - that is the resume rule. `current_step`
 is the first unresolved step, `done` once `complete: true` was stored.
 
 `GET /api/finance_dashboard/setup` (admin) ->
@@ -21,7 +23,9 @@ is the first unresolved step, `done` once `complete: true` was stored.
 same payload as GET. Errors 400 `{error, detail}`: `unknown_step, invalid_status,
 not_skippable, invalid_ai_opt_in, unknown_notification_setting, invalid_notifications,
 invalid_complete, invalid_paydays, unknown_person, invalid_payday`.
-`ai_opt_in` is stored only; the AI categoriser is not wired to it here.
+`ai_opt_in` is kept for compatibility and routed through `ai_consent` (read:
+`async_granted(hass, "categorize")`, write: `async_set(hass, "categorize", value)`); the legacy
+state flag is only the fallback while that module is absent.
 
 Notification settings (defaults): `enabled true, large_debit true, large_debit_factor 3.0,
 large_debit_threshold 500.0 (0 = absolute rule off), double_charge true, missing_salary true,
@@ -53,8 +57,15 @@ rounded to 10 EUR (min 10). Excluded: income, transfers, other, and fixed-cost c
 (housing, insurance, loans, subscriptions - those belong in the plan), and owner+category pairs
 already covered by an existing pot.
 
-`POST /setup/pot_suggestions` (admin) body `{accept: [{category, owner, cycle_budget, name?}]}`
--> 201 `{ok, pots}`; creates pots via `manager.async_save_pot` (all validated first).
+`POST /setup/pot_suggestions` (admin) body `{accept: [{category, owner, cycle_budget, name?,
+account_keys?}]}` -> 201 `{ok, pots}`; creates pots via `manager.async_save_pot` (all validated
+first). Extra error `unknown_account` (an `account_keys` entry is not a known account key).
+
+Pot account binding: every pot dict (`/pots` POST/PUT, `/home`) carries `account_keys: string[] |
+null`. `null` (or `[]`) = all accounts; otherwise only bookings from those account identity keys
+(`account_identity.account_key`, never raw uids) count as the pot's spending (`pots.pot_accepts_account`,
+applied in `home._pot_bookings` and `pots._matching`). Bookings carry `account_key`; projected
+upcoming bookings without a key are kept.
 
 ## Exceptions and digest
 
@@ -134,3 +145,42 @@ All admin only, cache/config only. Errors are 400 `{error, detail}` unless noted
   has_key, budget {month, calls, cap, hard_cap, remaining}, cached_merchants, providers[]}`. The key is
   Fernet-encrypted (credential manager) in the `finance_dashboard.ai_provider` store and never returned.
   `ai_provider.async_categorize(...)` is the entry point for the categoriser (not wired into the pipeline yet).
+
+## Einrichtung additions
+
+`GET /assignments` accounts[] gain (additive) `earliest_booked` (`"YYYY-MM-DD"|null`, ledger first
+booked date, meta `history[akey].earliest_booked` as fallback) and `account_type` (bank
+`cash_account_type`, e.g. `CACC|SVGS|CARD`, `null` when unknown).
+
+## Plan wizard (Haushaltsplan erstellen)
+
+Module `plan_wizard.py` (state, gate, income, result) + `api/plan_wizard.py`. State is the
+`plan_wizard` section of the same Store. All admin only, cache/config only, never a bank call.
+Plan sign everywhere (expense positive); income positive.
+
+- `GET /plan_wizard` -> `{current_step, steps{income,fixed,pots,goals,result: pending|done|skipped}, completed}`
+  (`current_step` is `result` once completed).
+- `PUT /plan_wizard` body (all optional) `{step, status (default done), current_step, complete}` -> same
+  payload. Marking a step done/skipped moves `current_step` to the first pending step. Skippable:
+  fixed, pots, goals. Errors 400 `unknown_step, invalid_status, not_skippable, invalid_complete`.
+- `GET /plan_wizard/gate` -> `{ready, cycles, required: 3, earliest_booked, ready_from}`. Full payday
+  cycles between the earliest booked date (min over all ledger accounts) and today. Household payday =
+  first confirmed person payday, else day 1 (calendar month); day clamped to month length. The partial
+  cycle before the first payday does not count. `ready_from` = payday on which the 3rd cycle closes
+  (`null` when ready or without data).
+- `GET /plan_wizard/income_suggestions` -> `{suggestions: [{person, amount_net, source, samples}]}`:
+  largest recurring credit on the person's own accounts (`detect_recurring`, as the payday
+  suggestion). Persons without a recognised salary are omitted.
+- `PUT /plan_wizard/income` body `{income: [{person, amount_net}]}` -> `{ok, income: [entry]}`. Stores via
+  `manager.async_set_income` (the budget plan's income entry; `deposit = amount_net`, insurance and
+  tax adjustment 0). Errors `invalid_body, unknown_person, invalid_amount`, `demo_mode`.
+- `GET/POST /plan_wizard/fixed`: same as `GET/POST /setup/plan_prefill` (both stay).
+- `GET /plan_wizard/result` -> `{income_total, fixed_total, pots_total, goals_total, left_over, balanced,
+  per_person[{person, income, share, pocket_money}], history{months, avg_income, avg_spent,
+  avg_left_over}}`, monthly. `fixed_total` = all active plan positions (fixed + buffer, reimbursements
+  net); `pots_total` = sum of pot `cycle_budget`; `goals_total` = `reserve_topup.monthly_amount` +
+  `savings_rate` % of `income_total` + `target_by_date` amount / months left (min 1); `category_cap`
+  adds nothing. `left_over = income - fixed - pots - goals`, `balanced = left_over >= 0`.
+  `share` = income share; `pocket_money = income - shared_total * share - own_total` (own = the person's
+  positions, pots and goals). `history` averages the full payday cycles of the gate with counted
+  transactions (no transfers); `months: 0` and `null` averages without a full cycle.

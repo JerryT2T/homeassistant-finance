@@ -48,7 +48,7 @@ def test_state_resumes_at_first_pending_step_and_data_upgrades() -> None:
     hints = {"persons": True, "accounts": True}
     assert wiz.current_step(state, hints) == "payday"
     state = wiz.apply_update(state, {"step": "payday", "status": "skipped"})
-    assert wiz.current_step(state, hints) == "pots"
+    assert wiz.current_step(state, hints) == "region"
 
 
 def test_complete_ends_resume() -> None:
@@ -61,7 +61,7 @@ def test_complete_ends_resume() -> None:
     [
         ({"step": "nope"}, "unknown_step"),
         ({"step": "persons", "status": "skipped"}, "not_skippable"),
-        ({"step": "plan", "status": "weird"}, "invalid_status"),
+        ({"step": "ai", "status": "weird"}, "invalid_status"),
         ({"ai_opt_in": "yes"}, "invalid_ai_opt_in"),
         ({"notifications": {"bogus": True}}, "unknown_notification_setting"),
         ({"notifications": {"large_debit": 1}}, "invalid_notifications"),
@@ -76,9 +76,9 @@ def test_update_validation(body, code) -> None:
 
 
 def test_ai_is_toggle_only_and_plan_skippable() -> None:
-    state = wiz.apply_update(wiz.default_state(), {"ai_opt_in": True, "step": "plan",
+    state = wiz.apply_update(wiz.default_state(), {"ai_opt_in": True, "step": "ai",
                                                    "status": "skipped"})
-    assert state["ai_opt_in"] is True and state["steps"]["plan"] == "skipped"
+    assert state["ai_opt_in"] is True and state["steps"]["ai"] == "skipped"
 
 
 # --- payday -----------------------------------------------------------------
@@ -405,8 +405,8 @@ async def test_admin_can_run_setup_endpoints(monkeypatch) -> None:
     view.json = _Json().json
     resp = await view.get(_request(True))
     assert resp._status == 200 and resp._data["current_step"] == "accounts"
-    resp = await view.put(_request(True, body={"step": "plan", "status": "skipped"}))
-    assert resp._data["steps"]["plan"] == "skipped"
+    resp = await view.put(_request(True, body={"step": "ai", "status": "skipped"}))
+    assert resp._data["steps"]["ai"] == "skipped"
     resp = await view.put(_request(True, body={"step": "persons", "status": "skipped"}))
     assert resp._status == 400 and resp._data["error"] == "not_skippable"
 
