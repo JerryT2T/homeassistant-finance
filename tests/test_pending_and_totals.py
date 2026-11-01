@@ -16,7 +16,7 @@ def _gym(pending_day="2026-06-10", amount=-45.0, start=date(2026, 1, 10), n=5):
 
 
 def test_pending_debit_moves_last_seen_and_keeps_status_active():
-    (s,) = detect_series(_gym(), today=date(2026, 7, 12))
+    (s,) = detect_series(_gym(), today=date(2026, 6, 17))
     assert s["last_seen"] == "2026-06-10"
     assert s["pending_since"] == "2026-06-10"
     assert s["next_expected"] == "2026-07-10"
@@ -27,13 +27,13 @@ def test_pending_debit_moves_last_seen_and_keeps_status_active():
 
 def test_without_the_pending_debit_the_payment_is_missing():
     rows = [t for t in _gym() if t["_status"] == "booked"]
-    (s,) = detect_series(rows, today=date(2026, 7, 12))
+    (s,) = detect_series(rows, today=date(2026, 6, 17))
     assert s["status"] == "missing"
     assert s["pending_since"] is None
 
 
 def test_pending_purchase_at_another_amount_is_no_proof():
-    (s,) = detect_series(_gym(amount=-12.0), today=date(2026, 7, 12))
+    (s,) = detect_series(_gym(amount=-12.0), today=date(2026, 6, 17))
     assert s["pending_since"] is None
 
 
@@ -84,6 +84,31 @@ def test_candidates_and_ended_series_stay_out_of_the_totals():
 
 def test_stale_pending_debit_far_later_is_no_proof():
     # Codex #115: a pending debit three periods on must not keep the series alive
-    (s,) = detect_series(_gym(pending_day="2026-08-10"), today=date(2026, 8, 12))
+    (s,) = detect_series(_gym(pending_day="2026-08-10"), today=date(2026, 8, 11))
     assert s["pending_since"] is None
     assert s["last_seen"] == "2026-05-10"
+
+
+def test_pending_purchase_off_the_payment_date_is_no_proof():
+    # QA #115: 47 EUR ten days after the usual date is a purchase, not the fee
+    (s,) = detect_series(_gym(pending_day="2026-06-20", amount=-47.0), today=date(2026, 6, 22))
+    assert s["pending_since"] is None
+
+
+def test_pending_debit_older_than_two_weeks_is_dropped():
+    (s,) = detect_series(_gym(), today=date(2026, 7, 5))
+    assert s["pending_since"] is None
+
+
+def test_pending_debit_revives_only_the_loan_it_belongs_to():
+    rows = []
+    for ref in ("4711001", "4711002"):
+        part = monthly([-300.0] * 5, name="Musterbank")
+        for r in part:
+            r["remittanceInformationUnstructured"] = f"Darlehen {ref} Rate"
+        rows += part
+    pend = txn("2026-06-10", -300.0, "Musterbank", _status="pending")
+    pend["remittanceInformationUnstructured"] = "Darlehen 4711001 Rate"
+    series = detect_series([*rows, pend], today=date(2026, 6, 17))
+    assert len(series) == 2
+    assert sorted(s["pending_since"] or "" for s in series) == ["", "2026-06-10"]

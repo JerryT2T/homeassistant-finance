@@ -461,6 +461,7 @@ def detect_series(
         # earliest payment keeps the payee id; same day -> the tag decides, not input order
         base = min(range(len(parts)), key=lambda i: (parts[i].rows[0][0], parts[i].tag))
         used: set[str] = set()
+        part_pending = _assign_pending(parts, pending.get((key, negative), []))
         for i, part in enumerate(parts):
             sid = _part_id(
                 part,
@@ -482,7 +483,7 @@ def detect_series(
                 today,
                 date_tolerance_days,
                 overrides,
-                pending.get((key, negative), ()),
+                part_pending[i],
                 amount_tolerance,
             )
             keys = [alias_key(key, negative)] if i == base else []
@@ -743,7 +744,10 @@ def _build_series(
     fixed = ov.get("plan_fixed_amount")
     plan = plan_amount(amounts, mode, fixed)
 
-    alive = _pending_alive(dates[-1], pending, plan, nominal, amount_tol)
+    expected = _add_period(dates[-1], interval)
+    alive = _pending_alive(
+        dates[-1], expected, pending, plan, nominal, amount_tol, today, date_tol
+    )
     last_day = alive or dates[-1]
     next_expected = _add_period(last_day, interval)
     pauses, pauses_recent, longest = _pauses(dates, interval, date_tol)
@@ -806,24 +810,54 @@ def _build_series(
     }
 
 
+PENDING_MAX_AGE_DAYS = 14  # a debit pending longer was most likely dropped by the bank
+
+
+def _assign_pending(parts, pending):
+    """Pending debits per part of one payee (#115, QA): a debit carrying a
+    contract reference goes to the part with that reference; otherwise to the
+    part whose amounts it is closest to. A tie means the debit cannot tell the
+    parts apart and proves nothing."""
+    out: list[list[tuple[date, float, dict[str, Any]]]] = [[] for _ in parts]
+    if len(parts) == 1:
+        out[0] = list(pending)
+        return out
+    for row in pending:
+        ref = contract_reference(_remittance(row[2]))
+        pool = [i for i, p in enumerate(parts) if ref and p.ref == ref] or list(range(len(parts)))
+        typical = {i: statistics.median(abs(r[1]) for r in parts[i].rows) for i in pool}
+        dist = {i: abs(abs(row[1]) - typical[i]) for i in pool}
+        best = min(dist.values())
+        winners = [i for i, d in dist.items() if d == best]
+        if len(winners) == 1:
+            out[winners[0]].append(row)
+    return out
+
+
 def _pending_alive(
     last_booked: date,
+    expected: date,
     pending: Any,
     plan: float,
     nominal: int,
     amount_tol: float,
+    today: date,
+    date_tol: int,
 ) -> date | None:
     """Date of a pending debit that stands for the next payment, else None.
 
-    It must lie half a period to one and a half periods after the last booked
-    payment (not a duplicate of it, not a stale pending debit far later) and
-    match the plan amount within the series tolerance (not a one-off purchase
-    at the same payee).
+    It must fall on the expected next date (within a quarter period, at least
+    the date tolerance), be after the last booked payment, be recent (a debit
+    pending for weeks was dropped) and match the plan amount within the series
+    tolerance (not a one-off purchase at the same payee).
     """
+    window = max(date_tol, nominal / 4)
     hits = [
         day
         for day, amount, _txn in pending
-        if nominal / 2 <= (day - last_booked).days <= nominal * 3 / 2
+        if day > last_booked
+        and abs((day - expected).days) <= window
+        and (today - day).days <= PENDING_MAX_AGE_DAYS
         and plan
         and abs(abs(amount) - plan) / plan <= amount_tol
     ]
