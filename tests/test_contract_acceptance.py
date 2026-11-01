@@ -165,18 +165,19 @@ def test_detected_contracts_carry_their_kind():
     assert checked
 
 
-@pytest.mark.xfail(strict=True, reason="#112: eight life areas")
+@pytest.mark.xfail(
+    strict=True, reason="#123: invented payee names only the question flow or AI can place"
+)
 def test_detected_contracts_carry_their_life_area():
-    checked = 0
+    checked, wrong = 0, []
     for _case, pairs, _extra in _all_pairs():
         for want, hit in pairs:
             if hit is not None:
                 checked += 1
-                assert hit.get("category") == want["category"], (
-                    want["creditor"],
-                    hit.get("category"),
-                )
+                if hit.get("category") != want["category"]:
+                    wrong.append((want["creditor"], want["category"], hit.get("category")))
     assert checked
+    assert wrong == []
 
 
 @pytest.mark.xfail(strict=True, reason="#119: refund matching across cycles")

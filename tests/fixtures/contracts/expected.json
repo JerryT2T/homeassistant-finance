@@ -5,7 +5,7 @@
   "cases": {
     "baseline_streaming": {
       "contracts": [
-        {"creditor": "streamflix", "interval": "monthly", "plan_amount": 12.99, "kind": "subscription", "category": "media_communication"}
+        {"creditor": "streamflix", "interval": "monthly", "plan_amount": 12.99, "kind": "subscription", "category": "media"}
       ]
     },
     "baseline_rent": {
@@ -15,38 +15,38 @@
     },
     "paypal_subscription": {
       "contracts": [
-        {"creditor": "streamly", "interval": "monthly", "plan_amount": 17.99, "kind": "subscription", "category": "media_communication"}
+        {"creditor": "streamly", "interval": "monthly", "plan_amount": 17.99, "kind": "subscription", "category": "media"}
       ]
     },
     "two_loans_same_lender": {
       "contracts": [
-        {"creditor": "musterbank", "interval": "monthly", "plan_amount": 250.00, "kind": "contract", "category": "finance_obligations"},
-        {"creditor": "musterbank", "interval": "monthly", "plan_amount": 180.00, "kind": "contract", "category": "finance_obligations"}
+        {"creditor": "musterbank", "interval": "monthly", "plan_amount": 250.00, "kind": "contract", "category": "finance"},
+        {"creditor": "musterbank", "interval": "monthly", "plan_amount": 180.00, "kind": "contract", "category": "finance"}
       ]
     },
     "subscription_plus_oneoffs": {
       "contracts": [
-        {"creditor": "appstore digital", "interval": "monthly", "plan_amount": 9.99, "kind": "subscription", "category": "media_communication"}
+        {"creditor": "appstore digital", "interval": "monthly", "plan_amount": 9.99, "kind": "subscription", "category": "media"}
       ]
     },
     "bnpl_membership": {
       "contracts": [
-        {"creditor": "klarnetta", "interval": "monthly", "plan_amount": 4.99, "kind": "subscription", "category": "finance_obligations"}
+        {"creditor": "klarnetta", "interval": "monthly", "plan_amount": 4.99, "kind": "subscription", "category": "finance"}
       ]
     },
     "loan_to_own_name": {
       "contracts": [
-        {"creditor": "erika mustermann", "interval": "monthly", "plan_amount": 320.00, "kind": "contract", "category": "finance_obligations", "candidate": true}
+        {"creditor": "erika mustermann", "interval": "monthly", "plan_amount": 320.00, "kind": "contract", "category": "finance", "candidate": true}
       ]
     },
     "mobile_via_family": {
       "contracts": [
-        {"creditor": "hans mustermann", "interval": "monthly", "plan_amount": 29.99, "kind": "contract", "category": "media_communication"}
+        {"creditor": "hans mustermann", "interval": "monthly", "plan_amount": 29.99, "kind": "contract", "category": "media"}
       ]
     },
     "weekly_meal_kit_with_skips": {
       "contracts": [
-        {"creditor": "kochkiste", "interval": "weekly", "plan_amount": 59.90, "kind": "regular", "category": "food_household"}
+        {"creditor": "kochkiste", "interval": "weekly", "plan_amount": 59.90, "kind": "regular", "category": "groceries"}
       ]
     },
     "energy_advance_and_settlement": {
@@ -79,7 +79,7 @@
     "yearly_contracts_long_history": {
       "contracts": [
         {"creditor": "autoclub muster", "interval": "yearly", "plan_amount": 89.00, "kind": "contract", "category": "mobility"},
-        {"creditor": "haftpflicht muster", "interval": "yearly", "plan_amount": 64.50, "kind": "contract", "category": "health_protection"}
+        {"creditor": "haftpflicht muster", "interval": "yearly", "plan_amount": 64.50, "kind": "contract", "category": "health"}
       ]
     }
   }
