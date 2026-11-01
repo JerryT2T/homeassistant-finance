@@ -7,6 +7,8 @@ Changes:
 - fix(contracts): subscriptions paid through a linked PayPal account are found even when PayPal's own lines carry no booking date; the transaction date counts as the date of such a line (new field `transactionDate`, the stored booking date stays untouched)
 - fix(household): a bank-side PayPal debit is only dropped when a dated PayPal line of the same amount within five days already counts the purchase; otherwise it counts, so nothing disappears and nothing counts twice
 - feat(freshness): the Datenstand page warns admins about accounts with bookings that carry no date at all, with the count per account
+- fix(household): a PayPal funding credit (bank to PayPal) is no income; a pure PayPal top-up counts on neither side
+- fix(home): carry-over and cycle-history texts show their amounts instead of literal "{amount}" placeholders
 
 ## 0.24.3 — 2026-11-01
 Version: 0.24.3

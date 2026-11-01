@@ -128,6 +128,19 @@ def test_one_paypal_line_mirrors_one_debit_only():
     assert len(out) == 2 and line in out
 
 
+def test_paypal_funding_credit_is_no_income():
+    debit = tx("a1", -40, 5, "PayPal (Europe) S.a.r.l.")
+    credit = _pp_line(40, 5, transactionDate="2026-04-05", creditorName="", debtorName="Anna Giro")
+    purchase = _pp_line(-40, 5, transactionDate="2026-04-05")
+    assert counted_transactions([debit, credit, purchase], PP_ACCOUNTS) == [purchase]
+
+
+def test_paypal_top_up_without_purchase_counts_nowhere():
+    debit = tx("a1", -100, 5, "PayPal (Europe) S.a.r.l.")
+    credit = _pp_line(100, 6, transactionDate="2026-04-06", creditorName="", debtorName="Anna Giro")
+    assert counted_transactions([debit, credit], PP_ACCOUNTS) == []
+
+
 def test_paypal_line_too_far_away_is_no_mirror():
     debit = tx("a1", -40, 20, "PayPal (Europe) S.a.r.l.")
     line = _pp_line(-40, 4, transactionDate="2026-04-04")
