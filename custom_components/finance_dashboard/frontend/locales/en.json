@@ -328,6 +328,8 @@
   "ct.reason.irregular_day": "changing day",
   "ct.reason.contract_category": "typical contract category",
   "ct.reason.everyday_category": "everyday spending",
+  "ct.reason.savings_text": "text reads like saving or a transfer",
+  "ct.reason.own_name": "payment to an own name",
   "ct.empty": "No recurring payments detected yet. Once an item has been booked several times it shows up here.",
   "ct.member_note": "You see the contracts that belong to you or the household as an overview.",
   "ct.notice_by": "Cancel by $date",

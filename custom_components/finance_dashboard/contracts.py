@@ -32,6 +32,7 @@ from homeassistant.helpers.storage import Store
 
 from .account_identity import account_key
 from .const import DOMAIN, STORAGE_VERSION
+from .series_confidence import REASON_OWN_NAME, own_name_contract
 from .recurring import (
     IRREGULAR_INTERVALS,
     PLAN_MODE_FIXED,
@@ -360,7 +361,15 @@ def build_contracts(
         if s["direction"] != "out":
             continue
         if is_own_name(s["creditor"], own_names):
-            continue
+            # usually a savings transfer; a contract word makes it a question (#109)
+            if not own_name_contract(s.get("confidence") or {}):
+                continue
+            conf = s.get("confidence") or {"score": 0, "reasons": []}
+            s = {
+                **s,
+                "candidate": True,
+                "confidence": {**conf, "reasons": [REASON_OWN_NAME, *conf["reasons"]]},
+            }
         stored = store.contracts.get(s["id"])
         if stored is not None and stored.review == REVIEW_NOT_CONTRACT:
             continue  # "Kein Vertrag": never shown again (#130)

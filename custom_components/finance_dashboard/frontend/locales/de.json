@@ -328,6 +328,8 @@
   "ct.reason.irregular_day": "wechselnder Tag",
   "ct.reason.contract_category": "typische Vertragskategorie",
   "ct.reason.everyday_category": "Alltagsausgabe",
+  "ct.reason.savings_text": "Text klingt nach Sparen oder Umbuchung",
+  "ct.reason.own_name": "Zahlung an einen eigenen Namen",
   "ct.empty": "Noch keine wiederkehrenden Zahlungen erkannt. Sobald ein Posten mehrfach gebucht wurde, erscheint er hier.",
   "ct.member_note": "Du siehst die Verträge, die dir oder dem Haushalt gehören, als Überblick.",
   "ct.notice_by": "Kündigen bis $date",

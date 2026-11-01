@@ -1,5 +1,12 @@
 # Build Log
 
+## 0.27.1 — 2026-11-01
+Version: 0.27.1
+Branch: fix/109-own-name-candidates
+Changes:
+- fix(contracts): a loan instalment, insurance or phone bill paid to an account in your own name (an unlinked bank) is no longer invisible: with a contract word or number and a stable amount it appears under "Prüfen" with the reason "payment to an own name"; plain savings transfers stay hidden, also when their text names a contract word next to a savings word ("Sparplan Rate", "Rücklage Strom")
+- fix(contracts): Darlehen, Kredit, Mobilfunk and Strom count as contract words for the confidence score
+
 ## 0.27.0 — 2026-11-01
 Version: 0.27.0
 Branch: claude/einrichtungsdialoge-ueberarbeiten-6752b6
