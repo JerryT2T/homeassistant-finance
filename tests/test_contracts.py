@@ -419,3 +419,15 @@ async def test_aliases_persist_and_hold_no_amounts(monkeypatch):
     reloaded._store = store._store  # noqa: SLF001
     await reloaded.async_load()
     assert reloaded.aliases == store.aliases
+
+
+def test_spellings_that_each_own_a_contract_stay_separate():
+    from custom_components.finance_dashboard.recurring import series_id
+
+    store = blank_store()
+    gmbh, ag = series_id("acme gmbh", True), series_id("acme ag", True)
+    store.contracts[gmbh] = Contract(gmbh, notice_value=1)
+    store.contracts[ag] = Contract(ag, notice_value=2)
+    rows = monthly([-10] * 3, name="Acme GmbH") + monthly([-50] * 3, name="Acme AG")
+    out = build_contracts(rows, store, today=TODAY)
+    assert {c["id"] for c in out} == {gmbh, ag}

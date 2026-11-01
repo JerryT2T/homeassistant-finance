@@ -229,11 +229,37 @@ def resolve_series_id(
     return next((c for c in candidates if c in known), candidates[0])
 
 
+def _keep_known_apart(
+    groups: dict[tuple[str, bool], list[tuple[date, float, dict[str, Any]]]],
+    known: set[str],
+):
+    """Yield ``(key, negative, date-sorted rows)`` per payee group.
+
+    A group whose spellings already own two or more stored ids ("Acme GmbH"
+    and "Acme AG" with user data each) were separate payees before name
+    grouping; they stay split by spelling so no stored contract is orphaned.
+    """
+    for (key, negative), rows in groups.items():
+        rows.sort(key=lambda r: r[0])
+        names = _names_first_seen(rows)
+        if len({series_id(n, negative) for n in names} & known) < 2:
+            yield key, negative, rows
+            continue
+        for name in names:
+            part = [r for r in rows if _row_name(r) == name]
+            yield name, negative, part
+
+
+def _row_name(row: tuple[date, float, dict[str, Any]]) -> str:
+    txn = row[2]
+    return _normalize_name(txn.get("creditorName", "") or txn.get("debtorName", ""))
+
+
 def _names_first_seen(rows: list[tuple[date, float, dict[str, Any]]]) -> list[str]:
     """Distinct normalized counterparty names of ``rows`` (date-sorted), oldest first."""
     names: list[str] = []
-    for _day, _amount, txn in rows:
-        name = _normalize_name(txn.get("creditorName", "") or txn.get("debtorName", ""))
+    for row in rows:
+        name = _row_name(row)
         if name not in names:
             names.append(name)
     return names
@@ -337,8 +363,7 @@ def detect_series(
 
     known = set(known_ids) | set(overrides) | set((aliases or {}).values())
     out: list[dict[str, Any]] = []
-    for (key, negative), rows in groups.items():
-        rows.sort(key=lambda r: r[0])
+    for key, negative, rows in _keep_known_apart(groups, known):
         names = _names_first_seen(rows)
         sid = resolve_series_id(key, names, negative, aliases or {}, known)
         name = names[-1]
