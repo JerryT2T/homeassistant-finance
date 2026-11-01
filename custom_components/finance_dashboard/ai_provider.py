@@ -39,6 +39,7 @@ REQUEST_TIMEOUT = 20
 MAX_REMITTANCE = 140
 MAX_MERCHANT = 80
 MAX_CACHE = 5000
+DEFAULT_MAX_TOKENS = 20
 
 PROVIDER_HA = "ha"
 # provider -> (endpoint, default model). The default models are cheap, current
@@ -139,9 +140,7 @@ def merge_config(raw: Any) -> dict[str, Any]:
             "calls": max(0, int(usage.get("calls") or 0)),
         }
     cache = raw.get("cache")
-    cfg["cache"] = (
-        {str(k): str(v) for k, v in cache.items()} if isinstance(cache, dict) else {}
-    )
+    cfg["cache"] = {str(k): str(v) for k, v in cache.items()} if isinstance(cache, dict) else {}
     for key in ("last_run", "last_test"):
         cfg[key] = _merge_outcome(raw.get(key))
     return cfg
@@ -366,7 +365,12 @@ def select_candidates(
 
 
 async def _call_http(
-    hass: HomeAssistant, provider: str, model: str, key: str, prompt: str, max_tokens: int = 20
+    hass: HomeAssistant,
+    provider: str,
+    model: str,
+    key: str,
+    prompt: str,
+    max_tokens: int = DEFAULT_MAX_TOKENS,
 ) -> str | None:
     endpoint = PROVIDERS[provider][0]
     session = async_get_clientsession(hass)
@@ -465,7 +469,11 @@ async def _ask(
 
 
 async def _ask_raw(
-    hass: HomeAssistant, cfg: dict[str, Any], key: str | None, prompt: str, max_tokens: int = 20
+    hass: HomeAssistant,
+    cfg: dict[str, Any],
+    key: str | None,
+    prompt: str,
+    max_tokens: int = DEFAULT_MAX_TOKENS,
 ) -> tuple[str | None, str | None]:
     """One provider call: (answer text, None) or (None, error code). Never raises."""
     provider = cfg["provider"]
@@ -474,7 +482,8 @@ async def _ask_raw(
             answer = await _call_ha(hass, cfg["ha_agent"], prompt)
         else:
             model = cfg["model"] or PROVIDERS[provider][1]
-            answer = await _call_http(hass, provider, model, key or "", prompt, max_tokens)
+            extra = (max_tokens,) if max_tokens != DEFAULT_MAX_TOKENS else ()
+            answer = await _call_http(hass, provider, model, key or "", prompt, *extra)
     except TimeoutError:
         return None, "timeout"
     except Exception as err:  # noqa: BLE001 - never leak provider text or the key

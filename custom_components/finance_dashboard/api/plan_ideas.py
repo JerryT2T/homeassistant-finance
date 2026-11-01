@@ -50,13 +50,9 @@ class FinanceDashboardSheetIdeasView(HomeAssistantView):
             if body.get("content_base64"):
                 workbook = decode_upload(str(body["content_base64"]))
             elif body.get("url"):
-                workbook = await fetch_google_sheet(
-                    async_get_clientsession(hass), str(body["url"])
-                )
+                workbook = await fetch_google_sheet(async_get_clientsession(hass), str(body["url"]))
             else:
-                return self.json(
-                    {"error": "Provide content_base64 or url"}, status_code=400
-                )
+                return self.json({"error": "Provide content_base64 or url"}, status_code=400)
         except SheetSourceError as err:
             return self.json({"error": str(err)}, status_code=400)
         except ClientError:
