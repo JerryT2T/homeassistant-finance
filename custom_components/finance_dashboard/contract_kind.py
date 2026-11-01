@@ -100,8 +100,9 @@ def suggest_kind(
         if any(_SUBSCRIPTION_WORDS.search(t) or _FITNESS.search(t) for t in texts):
             return KIND_SUBSCRIPTION
         return KIND_REGULAR
-    if category in _IRREGULAR_CATEGORIES and not any(_INSURANCE.search(t) for t in texts):
-        return KIND_IRREGULAR
+    if category in _IRREGULAR_CATEGORIES:
+        # Codex #112: an insurer is a contract even without a contract word
+        return KIND_CONTRACT if any(_INSURANCE.search(t) for t in texts) else KIND_IRREGULAR
     if any(_CONTRACT_WORDS.search(t) for t in texts):
         return KIND_CONTRACT
     if any(_SUBSCRIPTION_WORDS.search(t) for t in texts):

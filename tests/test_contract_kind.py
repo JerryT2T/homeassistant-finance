@@ -45,6 +45,7 @@ def _one(rows, store=None):
         ("Rezept", "health", KIND_IRREGULAR),
         ("Kartenzahlung Hausrat", "housing_cold", KIND_CONTRACT),
         ("Krankenversicherung Beitrag", "health", KIND_CONTRACT),
+        ("Techniker Krankenkasse", "health", KIND_CONTRACT),
         ("Pizzeria Roma", "leisure", KIND_REGULAR),
         ("Fitnessstudio Monatsbeitrag", "leisure", KIND_SUBSCRIPTION),
         ("Mobilfunk Rechnung", "media", KIND_CONTRACT),

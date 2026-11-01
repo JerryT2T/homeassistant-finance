@@ -35,7 +35,7 @@ to the counted transactions), `status` (`active` / `missing` > date tolerance ov
 Confidence (#129, `series_confidence.score_series`): every series carries `confidence {score 0-100, reasons[]}` and
 `candidate` (score < 50). Signals: contract reference / direct-debit marker (+), card-payment marker (-), contract keywords
 (Abo, Beitrag, Miete, Abschlag ...) (+), stable amount or one price step (+) vs varying (-), >= 4 payments (+) vs only 2 for
-weekly/monthly (-), day-of-month regularity on a 31-day circle, contract categories (+) vs everyday ones (food, health,
+weekly/monthly (-), day-of-month regularity on a 31-day circle, contract areas (+: housing_cold, housing_warm, media, finance; health with an insurance word) vs everyday ones (groceries, leisure; health otherwise,
 shopping) (-). Reasons are codes, never amounts or names. Review (#130): `Contract.review` = `contract` (confirmed, never a
 candidate again) or `not_contract` (the series is dropped from `build_contracts` for good); any stored contract fields
 also end the candidate status. The contracts page lists candidates for admins under "Prüfen" with the reason codes as a
@@ -56,8 +56,9 @@ Fields (all optional, `null` = prefilled default): `start`, `min_term_months`, `
 `kind_suggested` and `kind_trait` (`telecom` from the payment text) on every read; the stored `Contract.kind` overrides
 the suggestion, `null` follows it — nothing is migrated. Suggestion order: yearly/quarterly/half-yearly -> contract;
 contract word or number -> contract; subscription word -> subscription; not monthly or an everyday category -> regular;
-health -> irregular; contract category -> contract; fixed monthly price -> subscription; else regular.
-Defaults by kind: subscription 1/1 + 0 days; contract by category (insurance 12/12 + 3 months, utilities/loans/housing
+health without an insurance word -> irregular; leisure -> subscription with a subscription or gym word, else regular;
+contract area (or media with the telecom trait) -> contract; fixed monthly price -> subscription; else regular.
+Defaults by kind: subscription 1/1 + 0 days; contract by life area (health 12/12 + 3 months, housing_warm/finance/housing_cold
 12/12 + 1/3/3 months, telecom trait 24/12 + 1 month, else 12/12 + 1 month). `regular` and `irregular` have no notice:
 `next_deadline`, `effective_end`, `days_until_deadline` are `null`, `notice_due_soon` false, no notice event. The
 payload carries `kind`, `kind_suggested`, `kind_trait` and `contract.defaults` / `contract.has_notice`.

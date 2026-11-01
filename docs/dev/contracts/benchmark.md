@@ -56,7 +56,7 @@ A Reference plus:
 
 | Field | Type | Meaning |
 |---|---|---|
-| `category` | string | plan metric: `housing` (housing + utilities), `food`, `transport`, `subscriptions` |
+| `category` | string | plan metric (a life area, #112): `housing_cold` (cold + warm housing), `groceries`, `mobility`, `media` |
 | `dimension` | string | dataset dimension (`housing_energy`, `food`, `mobility`, `communication`) |
 | `user_value` | number | our planned monthly amount in EUR (or % of net income for `%` units) |
 | `our_amount` | number | numerator in EUR |
@@ -67,7 +67,7 @@ A Reference plus:
 | `fetch_date` | string | always `bundled` |
 | `text` | string | ready-made German line, e.g. `Nahrungsmittel, Getränke, Tabak: 520 EUR/month (DE Ø 505 EUR/month, Destatis 2024, 2 Pers.)` |
 
-Categories whose dimension has no sourced value (`insurance`, `loans`) are omitted, as are
+Categories whose dimension has no sourced value (`health`, `finance`) are omitted, as are
 categories with a zero planned amount.
 
 The manual water comparison (option `water_consumption_ratio`) keeps its legacy shape with
