@@ -36,6 +36,24 @@ def _gate(manager, today) -> dict:
     return pw.build_gate(pw.earliest_booked(ledger), today, pw.household_payday(manager.persons))
 
 
+async def _build_result(hass, manager) -> dict:
+    today = dt_util.now().date()
+    cycles = pw.full_cycles(
+        pw.household_payday(manager.persons),
+        pw.earliest_booked(getattr(manager, "_ledger", None)),
+        today,
+    )
+    txns = counted_transactions(manager._transactions, manager._accounts)  # noqa: SLF001
+    return pw.build_result(
+        manager.budget_plan,
+        # The auto Taschengeld pots ARE the remainder; counting them would shrink it.
+        [p for p in manager.pots if p.auto != "remainder"],
+        await goals_mod.async_get_goals(hass),
+        today,
+        pw.history_averages(txns, cycles),
+    )
+
+
 class FinanceDashboardPlanWizardView(HomeAssistantView):
     url = f"/api/{DOMAIN}/plan_wizard"
     name = f"api:{DOMAIN}:plan_wizard"
@@ -56,7 +74,7 @@ class FinanceDashboardPlanWizardView(HomeAssistantView):
         if (denied := admin_denied(self, request)) is not None:
             return denied
         hass = request.app["hass"]
-        _manager, err = _manager_or_404(self, request)
+        manager, err = _manager_or_404(self, request)
         if err:
             return err
         body = await _body(request)
@@ -65,12 +83,32 @@ class FinanceDashboardPlanWizardView(HomeAssistantView):
                 {"error": "invalid_body", "detail": "Body must be a JSON object"}, status_code=400
             )
         state = await wiz.async_load_state(hass)
+        if body.get("restart") is True:
+            if getattr(manager, "demo_mode", False):
+                return self.json({"error": "demo_mode"}, status_code=400)
+            # Rebuild: plan positions + income go, pots and goals stay.
+            plan = await manager._plan_store.async_load()  # noqa: SLF001
+            plan.positions = []
+            plan.income = {}
+            await manager._plan_store.async_save(plan)  # noqa: SLF001
+            state["plan_wizard"] = pw.restart_state()
+            await wiz.async_save_state(hass, state)
+            return self.json(pw.public_state(state["plan_wizard"]))
         try:
             state["plan_wizard"] = pw.apply_update(state["plan_wizard"], body)
         except pw.PlanWizardError as e:
             return self.json({"error": e.code, "detail": e.detail}, status_code=400)
+        remainder_pots = None
+        if body.get("complete") is True:
+            if getattr(manager, "demo_mode", False):
+                return self.json({"error": "demo_mode"}, status_code=400)
+            result = await _build_result(hass, manager)
+            remainder_pots = await pw.async_upsert_remainder_pots(manager, result)
         await wiz.async_save_state(hass, state)
-        return self.json(pw.public_state(state["plan_wizard"]))
+        payload = pw.public_state(state["plan_wizard"])
+        if remainder_pots is not None:
+            payload["remainder_pots"] = remainder_pots
+        return self.json(payload)
 
 
 class FinanceDashboardPlanWizardGateView(HomeAssistantView):
@@ -145,18 +183,4 @@ class FinanceDashboardPlanWizardResultView(HomeAssistantView):
         manager, err = _manager_or_404(self, request)
         if err:
             return err
-        today = dt_util.now().date()
-        cycles = pw.full_cycles(
-            pw.household_payday(manager.persons),
-            pw.earliest_booked(getattr(manager, "_ledger", None)),
-            today,
-        )
-        txns = counted_transactions(manager._transactions, manager._accounts)  # noqa: SLF001
-        result = pw.build_result(
-            manager.budget_plan,
-            manager.pots,
-            await goals_mod.async_get_goals(hass),
-            today,
-            pw.history_averages(txns, cycles),
-        )
-        return self.json(result)
+        return self.json(await _build_result(hass, manager))

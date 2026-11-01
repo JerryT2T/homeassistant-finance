@@ -391,3 +391,106 @@ async def test_ai_opt_in_routes_through_ai_consent(monkeypatch) -> None:
     assert await setup._ai_opt_in(None, {"ai_opt_in": False}) is True
     await setup._set_ai_opt_in(None, {}, False)
     assert calls == [("categorize", False)]
+
+
+# --- rebuild + remainder pots ---------------------------------------------------------------------
+
+
+def _pot_mgr(api):
+    """Give the fake manager a plan store and a pot list backed by the real Pot class."""
+    mgr = api.mgr
+    mgr.pots = []
+
+    async def load():
+        return mgr.budget_plan
+
+    async def save(plan):
+        mgr.budget_plan = plan
+
+    mgr._plan_store = SimpleNamespace(async_load=load, async_save=save)
+
+    async def save_pot(data, *, replace):
+        pot = Pot.from_dict({**data, "id": data.get("id") if replace else ""})
+        if replace:
+            mgr.pots[[p.id for p in mgr.pots].index(pot.id)] = pot
+        else:
+            base, n = pot.id, 2
+            while any(p.id == pot.id for p in mgr.pots):
+                pot.id = f"{base}_{n}"
+                n += 1
+            mgr.pots.append(pot)
+        return pot.to_dict()
+
+    mgr.async_save_pot = save_pot
+    return mgr
+
+
+def _goals_none(api, monkeypatch):
+    async def goals(hass):
+        return []
+
+    monkeypatch.setattr(api.mod.goals_mod, "async_get_goals", goals)
+    monkeypatch.setattr(api.mod, "counted_transactions", lambda t, a: [])
+
+
+async def test_restart_rebuilds_plan_and_keeps_pots(api, monkeypatch) -> None:
+    mgr = _pot_mgr(api)
+    _goals_none(api, monkeypatch)
+    mgr.pots.append(Pot(id="keep", name="Food", owner="shared", cycle_budget=100))
+    view = api.mod.FinanceDashboardPlanWizardView
+    await _view(view).put(_request(True, body={"step": "income"}))
+
+    r = await _view(view).put(_request(True, body={"restart": True}))
+    assert r._status == 200
+    assert r._data == {"current_step": "income", "completed": False,
+                       "steps": dict.fromkeys(pw.STEPS, "pending")}
+    assert mgr.budget_plan.positions == [] and mgr.budget_plan.income == {}
+    assert [p.id for p in mgr.pots] == ["keep"]
+
+    assert (await _view(view).put(_request(False, body={"restart": True})))._status == 403
+    mgr.demo_mode = True
+    r = await _view(view).put(_request(True, body={"restart": True}))
+    assert r._status == 400 and r._data["error"] == "demo_mode"
+
+
+async def test_complete_upserts_remainder_pots(api, monkeypatch) -> None:
+    mgr = _pot_mgr(api)
+    _goals_none(api, monkeypatch)
+    manual = Pot(id="manual", name="Taschengeld", owner="Anna", cycle_budget=5)
+    mgr.pots.append(manual)
+    view = api.mod.FinanceDashboardPlanWizardView
+
+    expected = {r["person"]: r["pocket_money"]
+                for r in pw.build_result(_plan(), [manual], [], TODAY, {})["per_person"]}
+    assert expected["Anna"] > 0
+
+    r = await _view(view).put(_request(True, body={"complete": True}))
+    assert r._status == 200 and r._data["completed"] is True
+    rp = {x["person"]: x for x in r._data["remainder_pots"]}
+    assert rp["Anna"]["cycle_budget"] == max(0, expected["Anna"])
+    assert rp["Anna"]["pot_id"] != "manual"
+    assert manual.cycle_budget == 5  # manual pot untouched
+    assert sorted(p.owner for p in mgr.pots if p.auto == "remainder") == ["Anna", "Max"]
+
+    # Second completion updates, never duplicates; a negative remainder floors at 0.
+    mgr.budget_plan.income["Max"] = IncomeEntry.from_dict({"person": "Max", "deposit": 0})
+    await _view(view).put(_request(True, body={"complete": True}))
+    assert len(mgr.pots) == 3
+    assert all(p.cycle_budget >= 0 for p in mgr.pots)
+    assert next(p for p in mgr.pots if p.auto and p.owner == "Max").cycle_budget == 0
+
+    # The result excludes auto pots and exposes the remainder (negative allowed).
+    r = await _view(api.mod.FinanceDashboardPlanWizardResultView).get(_request(True))
+    rem = r._data["remainder"]
+    assert rem["total"] == r._data["left_over"]
+    assert {x["person"]: x["amount"] for x in rem["per_person"]} == {
+        x["person"]: x["pocket_money"] for x in r._data["per_person"]}
+    assert min(x["amount"] for x in rem["per_person"]) < 0
+
+
+def test_pot_auto_field_roundtrip() -> None:
+    p = Pot.from_dict({"name": "Taschengeld", "owner": "Anna", "auto": "remainder"})
+    assert Pot.from_dict(p.to_dict()).auto == "remainder"
+    assert Pot.from_dict({"name": "x"}).auto is None
+    with pytest.raises(ValueError):
+        Pot.from_dict({"name": "x", "auto": "bogus"})
