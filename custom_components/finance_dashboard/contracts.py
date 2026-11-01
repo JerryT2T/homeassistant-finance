@@ -346,7 +346,8 @@ def build_contracts(
     )
     out: list[dict[str, Any]] = []
     for s in series_list:
-        store.learn_alias(s["alias_key"], s["id"])
+        for key in s.get("alias_keys") or [s["alias_key"]]:
+            store.learn_alias(key, s["id"])
         if s["direction"] != "out":
             continue
         if is_own_name(s["creditor"], own_names):

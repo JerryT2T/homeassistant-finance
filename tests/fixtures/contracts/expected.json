@@ -20,20 +20,17 @@
       ]
     },
     "two_loans_same_lender": {
-      "xfail": "#108",
       "contracts": [
         {"creditor": "musterbank", "interval": "monthly", "plan_amount": 250.00, "kind": "contract", "category": "finance_obligations"},
         {"creditor": "musterbank", "interval": "monthly", "plan_amount": 180.00, "kind": "contract", "category": "finance_obligations"}
       ]
     },
     "subscription_plus_oneoffs": {
-      "xfail": "#108",
       "contracts": [
         {"creditor": "appstore digital", "interval": "monthly", "plan_amount": 9.99, "kind": "subscription", "category": "media_communication"}
       ]
     },
     "bnpl_membership": {
-      "xfail": "#108",
       "contracts": [
         {"creditor": "klarnetta", "interval": "monthly", "plan_amount": 4.99, "kind": "subscription", "category": "finance_obligations"}
       ]
@@ -56,7 +53,6 @@
       ]
     },
     "energy_advance_and_settlement": {
-      "xfail": "#116",
       "contracts": [
         {"creditor": "stadtwerke musterstadt", "interval": "monthly", "plan_amount": 95.00, "kind": "contract", "category": "housing_warm"}
       ]
