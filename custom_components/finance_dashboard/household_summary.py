@@ -101,6 +101,20 @@ def owner_of(tx: dict[str, Any]) -> str:
     return str(tx.get("_account_person") or "") or OWNER_OPEN
 
 
+def pending_debits(transactions: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Pending expenses: proof of life for contract series, never amounts (#115)."""
+    out = []
+    for t in transactions:
+        if t.get("_status") != "pending":
+            continue
+        try:
+            if float((t.get("transactionAmount") or {}).get("amount", 0)) < 0:
+                out.append(t)
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
 def counted_transactions(
     transactions: list[dict[str, Any]], accounts: list[dict[str, Any]]
 ) -> list[dict[str, Any]]:

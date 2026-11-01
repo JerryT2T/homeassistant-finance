@@ -35,6 +35,9 @@ from .const import DOMAIN, STORAGE_VERSION
 from .contract_kind import CATEGORY_DEFAULTS as KIND_CATEGORY_DEFAULTS
 from .contract_kind import (
     KIND_CONTRACT,
+    KIND_IRREGULAR,
+    KIND_REGULAR,
+    KIND_SUBSCRIPTION,
     KINDS,
     NO_NOTICE_KINDS,
     SUBSCRIPTION_DEFAULTS,
@@ -452,6 +455,34 @@ def _contract_view(s: dict[str, Any], c: Contract, today: date) -> dict[str, Any
     }
 
 
+TOTAL_FIXED = "fixed"
+TOTAL_REGULAR = "regular"
+_TOTAL_GROUP = {
+    KIND_CONTRACT: TOTAL_FIXED,
+    KIND_SUBSCRIPTION: TOTAL_FIXED,
+    KIND_REGULAR: TOTAL_REGULAR,
+    KIND_IRREGULAR: TOTAL_REGULAR,
+}
+
+
+def contract_totals(contracts: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """Monthly and yearly sums per group (#115).
+
+    ``fixed`` = contracts and subscriptions, ``regular`` = regular and
+    irregular spending. Unconfirmed candidates and ended series never count.
+    """
+    out = {g: {"monthly": 0.0, "yearly": 0.0, "count": 0} for g in (TOTAL_FIXED, TOTAL_REGULAR)}
+    for c in contracts:
+        if c.get("candidate") or c.get("status") == "ended":
+            continue
+        group = out[_TOTAL_GROUP.get(c.get("kind") or KIND_CONTRACT, TOTAL_FIXED)]
+        group["yearly"] = round(group["yearly"] + float(c.get("annual_cost") or 0), 2)
+        group["count"] += 1
+    for group in out.values():
+        group["monthly"] = round(group["yearly"] / 12, 2)
+    return out
+
+
 def aggregate_view(item: dict[str, Any]) -> dict[str, Any]:
     """Reduced view for non-admins: no payment history, no amounts per payment."""
     keep = (
@@ -466,6 +497,8 @@ def aggregate_view(item: dict[str, Any]) -> dict[str, Any]:
         "annual_cost",
         "monthly_equivalent",
         "next_expected",
+        "last_seen",
+        "pending_since",
         "next_deadline",
         "effective_end",
         "days_until_deadline",

@@ -27,7 +27,7 @@ from ..account_identity import account_key
 from ..const import DEFAULT_CATEGORIES, DOMAIN, OPT_BENCHMARK_POSTCODE, OPT_BENCHMARK_STATE
 from ..contracts import async_get_store as async_get_contract_store
 from ..contracts import build_contracts, own_account_names
-from ..household_summary import counted_transactions
+from ..household_summary import counted_transactions, pending_debits
 from ..merchants import POINT_EVERY
 from ..pots import Pot
 from ..transfer_detector import get_effective_transactions
@@ -259,6 +259,7 @@ class FinanceDashboardPlanPrefillView(HomeAssistantView):
     async def _proposals(hass, manager) -> list[dict]:
         store = await async_get_contract_store(hass)
         txns = counted_transactions(manager._transactions, manager._accounts)  # noqa: SLF001
+        txns += pending_debits(manager._transactions)  # noqa: SLF001
         contracts = build_contracts(
             txns, store, own_names=own_account_names(manager._accounts)  # noqa: SLF001
         )

@@ -413,6 +413,11 @@ def detect_series(
 ) -> list[dict[str, Any]]:
     """Detect recurring series of any interval in booked transactions.
 
+    Pending debits in ``transactions`` never form or price a series; one that
+    lands about a period after the last booked payment proves the series is
+    alive (``pending_since``), so a debit still pending at month end does not
+    read as a missing payment (#115).
+
     ``overrides`` maps a series id to ``{"plan_mode", "plan_fixed_amount"}``.
     Amounts in the result are in the bank sign (expense negative).
 
@@ -426,8 +431,10 @@ def detect_series(
     today = today or date.today()
     overrides = overrides or {}
     groups: dict[tuple[str, bool], list[tuple[date, float, dict[str, Any]]]] = defaultdict(list)
+    pending: dict[tuple[str, bool], list[tuple[date, float, dict[str, Any]]]] = defaultdict(list)
     for txn in transactions:
-        if txn.get("_status") != "booked":
+        status = txn.get("_status")
+        if status not in ("booked", "pending"):
             continue
         raw = txn.get("creditorName", "") or txn.get("debtorName", "")
         day = effective_day(txn)
@@ -439,7 +446,8 @@ def detect_series(
             continue
         if amount == 0:
             continue
-        groups[(canonical_name(raw), amount < 0)].append((day, amount, txn))
+        bucket = groups if status == "booked" else pending
+        bucket[(canonical_name(raw), amount < 0)].append((day, amount, txn))
 
     known = set(known_ids) | set(overrides) | set((aliases or {}).values())
     aliases = aliases or {}
@@ -466,7 +474,16 @@ def detect_series(
             )
             used.add(sid)
             series = _build_series(
-                sid, name, negative, part.rows, part.interval, today, date_tolerance_days, overrides
+                sid,
+                name,
+                negative,
+                part.rows,
+                part.interval,
+                today,
+                date_tolerance_days,
+                overrides,
+                pending.get((key, negative), ()),
+                amount_tolerance,
             )
             keys = [alias_key(key, negative)] if i == base else []
             if part.tag:
@@ -715,6 +732,8 @@ def _build_series(
     today: date,
     date_tol: int,
     overrides: dict[str, dict[str, Any]],
+    pending: Any = (),
+    amount_tol: float = SERIES_AMOUNT_TOLERANCE,
 ) -> dict[str, Any]:
     nominal, per_year, _ = INTERVALS[interval]
     dates = [r[0] for r in rows]
@@ -724,7 +743,9 @@ def _build_series(
     fixed = ov.get("plan_fixed_amount")
     plan = plan_amount(amounts, mode, fixed)
 
-    next_expected = _add_period(dates[-1], interval)
+    alive = _pending_alive(dates[-1], pending, plan, nominal, amount_tol)
+    last_day = alive or dates[-1]
+    next_expected = _add_period(last_day, interval)
     pauses, pauses_recent, longest = _pauses(dates, interval, date_tol)
     # A series that paused before may pause again as long as it did then.
     slack = (longest - 1) * nominal if pauses_recent else 0
@@ -760,7 +781,8 @@ def _build_series(
         "period_days": nominal,
         "occurrences": len(rows),
         "first_seen": dates[0].isoformat(),
-        "last_seen": dates[-1].isoformat(),
+        "last_seen": last_day.isoformat(),
+        "pending_since": alive.isoformat() if alive else None,
         "expected_day": _most_common([d.day for d in dates]),
         "last_amount": round(amounts[-1], 2),
         "previous_amount": round(amounts[-2], 2) if len(amounts) >= 2 else None,
@@ -782,6 +804,29 @@ def _build_series(
         "account_type": _most_common_value([t.get("_account_type") for t in txns], "personal"),
         "account_person": _most_common_value([t.get("_account_person") for t in txns], ""),
     }
+
+
+def _pending_alive(
+    last_booked: date,
+    pending: Any,
+    plan: float,
+    nominal: int,
+    amount_tol: float,
+) -> date | None:
+    """Date of a pending debit that stands for the next payment, else None.
+
+    It must lie at least half a period after the last booked payment (not a
+    duplicate of it) and match the plan amount within the series tolerance
+    (not a one-off purchase at the same payee).
+    """
+    hits = [
+        day
+        for day, amount, _txn in pending
+        if (day - last_booked).days >= nominal / 2
+        and plan
+        and abs(abs(amount) - plan) / plan <= amount_tol
+    ]
+    return max(hits) if hits else None
 
 
 def add_months(day: date, months: int) -> date:

@@ -238,6 +238,8 @@ h3 { margin: 0 0 4px; font-size: 15px; font-weight: 500; }
 .tot > div { padding: 8px 10px; border-radius: 10px; background: var(--fd-sunk); }
 .tot span { display: block; font-size: 11px; color: var(--fd-t2); }
 .tot b { display: block; font-size: 22px; font-weight: 500; }
+.tl { margin: 0 0 2px; font-size: 13px; color: var(--fd-t2); }
+.tsep { height: 1px; margin: 12px 0; background: var(--fd-line); }
 .ct { display: block; width: 100%; padding: 10px 0; border: 0; background: transparent; text-align: left; }
 .ct + .ct { border-top: 1px solid var(--fd-line); }
 button.ct { min-height: var(--fd-touch); }
@@ -419,8 +421,6 @@ class FdContracts extends HTMLElement {
     if (this._kind !== "all" && !kinds.has(this._kind)) this._kind = "all";
     const shown = this._kind === "all" ? this._items : this._items.filter((c) => this._kindOf(c) === this._kind);
     const live = shown.filter((c) => c.status !== "ended");
-    const month = live.reduce((s, c) => s + (c.monthly_equivalent || 0), 0);
-    const year = live.reduce((s, c) => s + (c.annual_cost || 0), 0);
     const sorted = [...shown].sort((a, b) =>
       (a.status === "ended") - (b.status === "ended") || String(a.next_deadline || "9").localeCompare(String(b.next_deadline || "9")));
     const list = sorted.length
@@ -428,15 +428,35 @@ class FdContracts extends HTMLElement {
       : `<p class="muted">${e(tr("ct.empty"))}</p>`;
     return `<div>
   ${live.length || !this._isAdmin ? `<section class="card">
-    ${live.length ? `<div class="tot"><div><span>${e(tr("ct.total_month"))}</span><b>${e(this._m(month))}</b></div>
-      <div><span>${e(tr("ct.total_year"))}</span><b>${e(this._m(year))}</b></div></div>
-      <p class="muted" style="margin:8px 0 0">${e(tr("ct.total_note", { n: live.length }))}</p>` : ""}
+    ${live.length ? this._totalsHtml(live) : ""}
     ${this._isAdmin ? "" : `<p class="muted" style="margin:8px 0 0">${e(tr("ct.member_note"))}</p>`}
   </section>` : ""}
   <section class="card" aria-label="${e(tr("ct.title"))}">${this._kindFilterHtml()}${list}</section>
   ${this._reviewHtml()}
 </div>
 <div>${this._reservesHtml()}</div>`;
+  }
+
+  // Mirrors contracts.contract_totals (#115): fixed = contracts + subscriptions,
+  // regular = regular + irregular spending; candidates are never in _items.
+  _totalsHtml(live) {
+    const e = window._fd.escHtml;
+    const block = (items, label, note) => {
+      const year = items.reduce((s, c) => s + (c.annual_cost || 0), 0);
+      return `${label ? `<h3 class="tl">${e(label)}</h3>` : ""}<div class="tot"><div><span>${e(tr("ct.total_month"))}</span><b>${e(this._m(year / 12))}</b></div>
+      <div><span>${e(tr("ct.total_year"))}</span><b>${e(this._m(year))}</b></div></div>
+      <p class="muted" style="margin:8px 0 0">${e(note)}</p>`;
+    };
+    if (this._kind !== "all") {
+      return block(live, "", tr("ct.total_note_kind", { n: live.length, kind: tr(`ct.kind.${this._kind}`) }));
+    }
+    const regular = live.filter((c) => NO_NOTICE.has(this._kindOf(c)));
+    const fixed = live.filter((c) => !NO_NOTICE.has(this._kindOf(c)));
+    if (!regular.length) return block(fixed, "", tr("ct.total_note", { n: fixed.length }));
+    const parts = [];
+    if (fixed.length) parts.push(block(fixed, tr("ct.total_fixed"), tr("ct.total_note", { n: fixed.length })));
+    parts.push(block(regular, tr("ct.total_regular"), tr("ct.total_regular_note", { n: regular.length })));
+    return parts.join(`<div class="tsep"></div>`);
   }
 
   _reviewHtml() {

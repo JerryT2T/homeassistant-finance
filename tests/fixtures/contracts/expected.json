@@ -71,7 +71,6 @@
       }
     },
     "pending_debit_at_month_end": {
-      "xfail": "#115",
       "today": "2026-11-08",
       "contracts": [
         {"creditor": "fitnessclub kraftwerk", "interval": "monthly", "plan_amount": 45.00, "kind": "subscription", "category": "leisure", "status": "active", "last_seen": "2026-10-30"}
