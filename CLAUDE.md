@@ -43,8 +43,7 @@ Python 3.12+ (integration), vanilla Web Components (frontend), `cryptography` (F
 
 - Read `docs/dev/architecture.md` when touching the manager, config flow, refresh/rate limit, storage, API or frontend wiring.
 - Read `docs/dev/household-model.md` when touching split logic, month cycles, income or bonus detection.
-- Read `docs/dev/setup-and-plan-wizards.md` when touching the setup (Einrichtung) or plan wizard, or naming anything "Plan" vs. "Einrichtung".
-- Read `docs/dev/entities-and-services.md` when adding or changing entities, services, events or endpoints.
+- Read `docs/dev/entities-and-services.md` when adding or changing entities, services, events or endpoints; `docs/dev/setup-and-plan-wizards.md` when touching the setup (Einrichtung) or plan wizard.
 - Read `docs/dev/product-concept.md` (what Finance is for, decided interactions) and `docs/dev/roadmap.md` before planning new work; Phase 4/5 are gated on user approval.
 - Read `docs/dev/release.md` when bumping versions, writing BUILDLOG/CHANGELOG or validating.
 - Read `docs/dev/labels.md` when creating issues or PRs.
