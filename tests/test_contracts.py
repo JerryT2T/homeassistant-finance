@@ -361,7 +361,13 @@ def test_canonical_name_ignores_spelling_legal_form_and_encoding():
     assert {canonical_name(v) for v in variants} == {"streamly"}
     assert canonical_name("Autoclub Muster e.V.") == "autoclub muster"
     assert canonical_name("Müller GmbH & Co. KG") == "mueller"
+    assert canonical_name("PayPal Europe S.a.r.l. et Cie S.C.A") == "paypal europe"
     assert canonical_name("AG") == "ag"  # never empty for a real name
+    # numbered or lettered payees and non-latin names stay apart
+    assert canonical_name("Kita 1") != canonical_name("Kita 2")
+    assert canonical_name("Apotheke A") != canonical_name("Apotheke B")
+    assert canonical_name("Иван") != canonical_name("Петр")
+    assert canonical_name("Иван")
 
 
 def test_unchanged_payee_keeps_its_previous_id():

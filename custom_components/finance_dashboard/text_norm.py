@@ -14,7 +14,7 @@ import unicodedata
 _MOJIBAKE_MARKERS = ("Ã", "Â", "â€")
 _LEGAL_FORMS = {
     "gmbh", "mbh", "ag", "kg", "ohg", "ug", "se", "eg", "ev", "gbr", "kgaa", "co",
-    "inc", "ltd", "llc", "plc", "bv", "nv", "sa", "sarl", "rl", "sas", "sca", "cie", "et",
+    "inc", "ltd", "llc", "plc", "bv", "nv", "sa", "sarl", "sas", "sca", "cie", "et",
 }
 _UMLAUTS = str.maketrans({"ä": "ae", "ö": "oe", "ü": "ue", "ß": "ss"})
 
@@ -36,11 +36,14 @@ def repair_mojibake(text: str) -> str:
 
 def canonical_name(name: str) -> str:
     """Spelling-independent key of a counterparty name ("" for no name)."""
-    text = repair_mojibake(name or "").lower().translate(_UMLAUTS)
-    text = unicodedata.normalize("NFKD", text)
+    repaired = " ".join(repair_mojibake(name or "").lower().split())
+    text = unicodedata.normalize("NFKD", repaired.translate(_UMLAUTS))
     text = "".join(ch for ch in text if not unicodedata.combining(ch))
-    # "s.a.r.l." and "e.v." are one legal form each, not single letters
-    text = re.sub(r"\b([a-z])\.(?=[a-z]\.)", r"\1", text)
+    # dotted legal forms are one token each ("s.à r.l.", "s.c.a.", "e.v."), so
+    # the single letters of a real name ("Apotheke A", "Kita 1") stay apart
+    text = re.sub(r"\bs\.?\s?a\.?\s?r\.?\s?l\b\.?", " sarl ", text)
+    text = re.sub(r"\b([a-z])\.(?=[a-z](?:\.|\b))", r"\1", text)
     text = re.sub(r"[^a-z0-9]+", " ", text)
-    tokens = [t for t in text.split() if t not in _LEGAL_FORMS and len(t) > 1]
-    return " ".join(tokens) or " ".join(text.split())
+    tokens = [t for t in text.split() if t not in _LEGAL_FORMS]
+    # a name without latin letters or digits (Cyrillic, Greek) keeps itself
+    return " ".join(tokens) or " ".join(text.split()) or repaired
