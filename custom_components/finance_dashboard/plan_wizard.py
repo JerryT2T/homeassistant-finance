@@ -256,8 +256,6 @@ def validate_income(raw: Any, persons: set[str]) -> list[dict[str, Any]]:
             {
                 "person": person,
                 "deposit": round(float(amount), 2),
-                "insurance_mandatory": 0.0,
-                "tax_adjustment": 0.0,
             }
         )
     return out
