@@ -38,6 +38,12 @@ _SUBSCRIPTION = re.compile(
     r"|abschlag|miete|rate|versicherung|police|darlehen|kredit|mobilfunk|strom)\b",
     re.IGNORECASE,
 )
+# Money moved aside, not owed. Whole words only: "Sparkasse" is a bank, not savings.
+_SAVINGS = re.compile(
+    r"\b(sparen|sparrate|sparplan|sparbuch|rücklage\w*|tagesgeld|festgeld|taschengeld"
+    r"|haushaltsgeld|umbuchung|übertrag|savings)\b",
+    re.IGNORECASE,
+)
 _CONTRACT_CATEGORIES = {
     CATEGORY_HOUSING,
     CATEGORY_INSURANCE,
@@ -82,6 +88,8 @@ def score_series(
         add(-15, "card_payment")
     if any(_SUBSCRIPTION.search(t) for t in texts):
         add(15, "contract_keyword")
+    if any(_SAVINGS.search(t) for t in texts):
+        add(-10, "savings_text")
 
     distinct = {round(m, 2) for m in mags}
     if len(distinct) <= 2 and _is_step(mags):
@@ -125,10 +133,11 @@ def _is_step(mags: list[float]) -> bool:
 def own_name_contract(confidence: dict[str, Any]) -> bool:
     """A payment to an own name that still reads like a contract: a contract
     word or number in the text and a stable amount (a loan instalment to an
-    own account at an unlinked bank). Savings transfers carry neither."""
+    own account at an unlinked bank). Savings transfers carry neither, or
+    say so ("Sparplan Rate", "Rücklage Strom")."""
     reasons = set(confidence.get("reasons") or ())
     named = bool(reasons & {"contract_keyword", "contract_reference"})
-    return named and "stable_amount" in reasons
+    return named and "stable_amount" in reasons and "savings_text" not in reasons
 
 
 def is_candidate(confidence: dict[str, Any]) -> bool:

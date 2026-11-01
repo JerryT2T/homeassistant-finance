@@ -705,6 +705,15 @@ def test_savings_transfer_to_own_name_stays_hidden():
     assert build_contracts(_to_own("Sparen"), blank_store(), today=TODAY, own_names=own) == []
     varying = _to_own("Rate", amounts=(-100.0, -250.0, -80.0, -300.0))
     assert build_contracts(varying, blank_store(), today=TODAY, own_names=own) == []
+    # a contract word next to a savings word is still savings (QA #109)
+    for text in ("Sparplan Rate", "Rücklage Strom", "Sparen Kredit", "Umbuchung Miete Rücklage"):
+        assert build_contracts(_to_own(text), blank_store(), today=TODAY, own_names=own) == [], text
+
+
+def test_sparkasse_loan_to_own_name_is_still_a_candidate():
+    own = frozenset({"erika mustermann"})
+    (c,) = build_contracts(_to_own("Kredit Sparkasse"), blank_store(), today=TODAY, own_names=own)
+    assert c["candidate"] is True
 
 
 def test_confirmed_own_name_contract_counts():
