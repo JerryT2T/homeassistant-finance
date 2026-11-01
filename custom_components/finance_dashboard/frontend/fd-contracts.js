@@ -250,7 +250,7 @@ button.ct { min-height: var(--fd-touch); }
 .rv .sub { font-size: 12.5px; margin: 2px 0 8px; }
 .rvb { display: flex; gap: 8px; flex-wrap: wrap; }
 .kf { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 4px; }
-.kf button { min-height: 36px; padding: 0 12px; border: 1px solid var(--fd-line); border-radius: var(--fd-r-pill); background: transparent; font-size: 12.5px; }
+.kf button { min-height: 40px; padding: 0 12px; border: 1px solid var(--fd-line); border-radius: var(--fd-r-pill); background: transparent; font-size: 12.5px; }
 .kf button[aria-pressed="true"] { background: var(--fd-a50); border-color: var(--fd-a500); color: var(--fd-a900); font-weight: 500; }
 .btn.ghost { background: transparent; color: var(--fd-a700); border-color: var(--fd-a100); }
 .btn:disabled { opacity: .5; cursor: default; }
@@ -464,11 +464,12 @@ class FdContracts extends HTMLElement {
     const badges = [`<span class="badge">${e(tr(`ct.kind.${this._kindOf(c)}`))}</span>`];
     if (ended) badges.push(`<span class="badge">${e(tr("ct.ended"))}</span>`);
     else if (c.status === "missing") badges.push(`<span class="badge due">${e(tr("ct.missing"))}</span>`);
-    if (!ended && c.notice_due_soon) {
+    const notice = !ended && !NO_NOTICE.has(this._kindOf(c));
+    if (notice && c.notice_due_soon) {
       const n = c.days_until_deadline;
       const left = n <= 0 ? tr("ct.days_today") : n === 1 ? tr("ct.days_one") : tr("ct.days_left", { n });
       badges.push(`<span class="badge due">${e(tr("ct.notice_by", { date: this._date(c.next_deadline) }))} · ${e(left)}</span>`);
-    } else if (!ended && c.next_deadline) {
+    } else if (notice && c.next_deadline) {
       badges.push(`<span class="badge">${e(tr("ct.next_deadline"))}: ${e(this._date(c.next_deadline, true))}</span>`);
     }
     const pc = c.price_change;
