@@ -1,5 +1,13 @@
 # Build Log
 
+## 0.24.1 — 2026-11-01
+Version: 0.24.1
+Branch: chore/122-stable-contract-ids
+Changes:
+- fix(contracts): a payee whose name the bank spells differently (punctuation, legal form, broken encoding such as "S.Ã  r.l.") stays one contract with the same id, so term, notice, plan mode and category you entered are kept
+- feat(contracts): name variants are remembered in an alias table in the contract store (names only, no amounts), so a contract keeps its id after the old spelling has left the bank history
+- test: synthetic acceptance fixtures for contract detection measure recall, false positives and annual-total deviation for the Contract Detection milestone (#106)
+
 ## 0.24.0 — 2026-10-29
 Version: 0.24.0
 Branch: claude/ai-budget-points-history

@@ -20,7 +20,6 @@ import pytest
 
 from custom_components.finance_dashboard.categorizer import TransactionCategorizer
 from custom_components.finance_dashboard.contracts import (
-    ContractStore,
     build_contracts,
     own_account_names,
 )
@@ -31,6 +30,7 @@ from custom_components.finance_dashboard.transfer_detector import (
     enrich_transactions,
 )
 from tests.fixtures.contracts.cases import CASES, build
+from tests.test_contracts import blank_store
 
 EXPECTED = json.loads(
     (Path(__file__).parent / "fixtures" / "contracts" / "expected.json").read_text("utf-8")
@@ -50,8 +50,7 @@ def _detect(case: str) -> list[dict[str, Any]]:
         tx["category"] = categorizer.categorize(tx)
     chains, refunds = detect_transfer_chains(txns, accounts)
     txns = enrich_transactions(txns, chains, refunds)
-    store = ContractStore.__new__(ContractStore)
-    store.contracts, store.notified = {}, set()
+    store = blank_store()
     counted = counted_transactions(txns, accounts)
     return build_contracts(
         counted, store, today=_today(case), own_names=own_account_names(accounts)

@@ -38,7 +38,9 @@ async def _contracts_for(request: web.Request, manager):
     """
     store = await async_get_store(request.app["hass"])
     txns = counted_transactions(manager._transactions, manager._accounts)  # noqa: SLF001
-    return store, build_contracts(txns, store, own_names=own_account_names(manager._accounts))  # noqa: SLF001
+    contracts = build_contracts(txns, store, own_names=own_account_names(manager._accounts))  # noqa: SLF001
+    await store.async_save_if_changed()
+    return store, contracts
 
 
 class FinanceDashboardContractsView(HomeAssistantView):
