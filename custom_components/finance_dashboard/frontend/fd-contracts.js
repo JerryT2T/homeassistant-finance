@@ -197,7 +197,7 @@ function planAmount(amounts, mode, fixed) {
   if (mode === "average") return r2(m.reduce((a, b) => a + b, 0) / m.length);
   if (mode === "last") return r2(m[m.length - 1]);
   if (mode === "median") return r2(median(m));
-  if (mode === "highest") return r2(Math.max(...m));
+  if (mode === "highest" || mode === "fixed") return r2(Math.max(...m));  // fixed without amount: like the server
   const last = r2(m[m.length - 1]);
   let tail = 0;
   for (let i = m.length - 1; i >= 0 && r2(m[i]) === last; i--) tail++;

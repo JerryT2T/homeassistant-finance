@@ -329,6 +329,7 @@
   "ct.reason.contract_category": "typical contract category",
   "ct.reason.everyday_category": "everyday spending",
   "ct.reason.savings_text": "text reads like saving or a transfer",
+  "ct.reason.paused": "skips some periods",
   "ct.reason.own_name": "payment to an own name",
   "ct.kind.contract": "Contract",
   "ct.kind.subscription": "Subscription",

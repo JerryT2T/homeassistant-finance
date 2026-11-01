@@ -85,3 +85,23 @@ def test_quarterly_gaps_stay_strict():
     days = ("2025-01-10", "2025-04-10", "2025-10-10", "2026-01-10")
     rows = [txn(d, -99.0, "Versicherung") for d in days]
     assert all(s["interval"] != "quarterly" for s in detect_series(rows, today=TODAY))
+
+
+def test_varying_purchases_never_count_as_a_paused_series():
+    # QA #114: groceries a week or two apart at different amounts are no series
+    start = date(2026, 3, 6)
+    offsets = [0, 7, 21, 28, 35, 49, 56]
+    amounts = [-43.1, -38.9, -51.2, -40.0, -47.5, -39.4, -44.8]
+    rows = [
+        txn((start + timedelta(days=o)).isoformat(), a, "Supermarkt")
+        for o, a in zip(offsets, amounts, strict=True)
+    ]
+    assert all(s["interval"] != "weekly" for s in detect_series(rows, today=date(2026, 5, 5)))
+
+
+def test_a_paused_series_is_not_ended_inside_its_usual_pause():
+    rows = _weekly({2, 3, 6, 7, 10, 11}, weeks=16)  # pauses of two weeks
+    last = date.fromisoformat(rows[-1]["bookingDate"])
+    (s,) = detect_series(rows, today=last + timedelta(days=24))
+    assert s["pause_pattern"] is True
+    assert s["status"] != "ended"

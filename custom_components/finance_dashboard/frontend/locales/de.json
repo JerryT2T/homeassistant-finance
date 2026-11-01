@@ -329,6 +329,7 @@
   "ct.reason.contract_category": "typische Vertragskategorie",
   "ct.reason.everyday_category": "Alltagsausgabe",
   "ct.reason.savings_text": "Text klingt nach Sparen oder Umbuchung",
+  "ct.reason.paused": "Setzt zwischendurch aus",
   "ct.reason.own_name": "Zahlung an einen eigenen Namen",
   "ct.kind.contract": "Vertrag",
   "ct.kind.subscription": "Abo",

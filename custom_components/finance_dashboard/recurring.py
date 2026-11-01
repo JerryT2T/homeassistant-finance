@@ -189,6 +189,8 @@ MAX_PAUSE_PERIODS = 4
 PAUSE_PATTERN_MIN = 3  # skipped periods within the last 12 that make a pattern
 STEADY_PRICE_SPREAD = 1.01  # payments within 1 % count as one price
 CATCH_UP_RATIO = 1.8  # a single payment this much higher is a catch-up, not a new price
+# Pauses and a tolerated outlier only for a fixed price: random purchases vary (QA #114).
+FIXED_PRICE_TOLERANCE = 0.05
 
 PLAN_MODE_AUTO = "auto"  # new price after a confirmed step, else the median (#114)
 PLAN_MODE_HIGHEST = "highest"
@@ -331,7 +333,7 @@ def _gap_periods(gap: int, nominal: int, tol: int, pausable: bool) -> int:
     return 0
 
 
-def _classify_interval(dates: list[date], date_tol: int) -> str | None:
+def _classify_interval(dates: list[date], date_tol: int, allow_pauses: bool = False) -> str | None:
     """Return the interval name when every gap fits it, else None.
 
     Weekly and monthly series may skip whole periods (a paused meal kit), as
@@ -346,17 +348,19 @@ def _classify_interval(dates: list[date], date_tol: int) -> str | None:
             continue
         if len(dates) < min_occ:
             return None
-        spans = [_gap_periods(g, nominal, tol, name in PAUSABLE_INTERVALS) for g in gaps]
+        pausable = allow_pauses and name in PAUSABLE_INTERVALS
+        spans = [_gap_periods(g, nominal, tol, pausable) for g in gaps]
         if all(spans) and sum(1 for p in spans if p > 1) * 3 <= len(gaps):
             return name
         return None
     return None
 
 
-def _pauses(dates: list[date], interval: str, date_tol: int) -> tuple[int, int]:
-    """``(skipped periods overall, skipped within the last 12 periods)``."""
-    if interval not in PAUSABLE_INTERVALS:
-        return 0, 0
+def _pauses(dates: list[date], interval: str, date_tol: int) -> tuple[int, int, int]:
+    """``(skipped periods overall, skipped within the last 12 periods,
+    longest gap in periods)``."""
+    if interval not in PAUSABLE_INTERVALS or len(dates) < 2:
+        return 0, 0, 1
     nominal = INTERVALS[interval][0]
     tol = min(date_tol, 2) if interval == "weekly" else date_tol + 2
     spans = [
@@ -370,7 +374,7 @@ def _pauses(dates: list[date], interval: str, date_tol: int) -> tuple[int, int]:
             break
         recent += p - 1
         covered += p
-    return total, recent
+    return total, recent, max(spans)
 
 
 def _amounts_consistent(amounts: list[float], tolerance: float) -> bool:
@@ -380,9 +384,8 @@ def _amounts_consistent(amounts: list[float], tolerance: float) -> bool:
         return True
     if len(amounts) < 4:
         return False
-    return any(
-        _steady(amounts[:i] + amounts[i + 1 :], tolerance) for i in range(len(amounts) - 1)
-    )
+    tol = min(tolerance, FIXED_PRICE_TOLERANCE)
+    return any(_steady(amounts[:i] + amounts[i + 1 :], tol) for i in range(len(amounts) - 1))
 
 
 def _steady(amounts: list[float], tolerance: float) -> bool:
@@ -473,7 +476,7 @@ def detect_series(
             series["alias_key"] = keys[0]
             series["alias_keys"] = keys
             series["confidence"] = score_series(
-                part.rows, part.interval, series["category"], part.ref
+                part.rows, part.interval, series["category"], part.ref, series["pauses"]
             )
             series["candidate"] = is_candidate(series["confidence"])
             series["kind_suggested"] = suggest_kind(
@@ -564,8 +567,10 @@ def _as_series(rows, date_tol: int, amount_tol: float):
         dedup.append(row)
     if len(dedup) < 2:
         return None
-    interval = _classify_interval([r[0] for r in dedup], date_tol)
-    if interval is None or not _amounts_consistent([r[1] for r in dedup], amount_tol):
+    amounts = [r[1] for r in dedup]
+    fixed_price = _steady(amounts, min(amount_tol, FIXED_PRICE_TOLERANCE))
+    interval = _classify_interval([r[0] for r in dedup], date_tol, allow_pauses=fixed_price)
+    if interval is None or not _amounts_consistent(amounts, amount_tol):
         return None
     return dedup, interval
 
@@ -720,7 +725,10 @@ def _build_series(
     plan = plan_amount(amounts, mode, fixed)
 
     next_expected = _add_period(dates[-1], interval)
-    overdue = (today - next_expected).days
+    pauses, pauses_recent, longest = _pauses(dates, interval, date_tol)
+    # A series that paused before may pause again as long as it did then.
+    slack = (longest - 1) * nominal if pauses_recent else 0
+    overdue = (today - next_expected).days - slack
     if overdue > 2 * nominal:
         status = STATUS_ENDED
     elif overdue > date_tol:
@@ -728,7 +736,6 @@ def _build_series(
     else:
         status = STATUS_ACTIVE
 
-    pauses, pauses_recent = _pauses(dates, interval, date_tol)
     sign = -1.0 if negative else 1.0
     price_change = None
     if len(amounts) >= 2 and round(abs(amounts[-1]), 2) != round(abs(amounts[-2]), 2):
