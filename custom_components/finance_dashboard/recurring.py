@@ -20,6 +20,7 @@ from datetime import date, datetime, timedelta
 from typing import Any
 
 from .text_norm import canonical_name
+from .tx_dates import effective_day
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -313,13 +314,6 @@ def _amounts_consistent(amounts: list[float], tolerance: float) -> bool:
     return all(abs(a - after[-1]) / after[-1] <= tolerance for a in after)
 
 
-def _parse_day(value: Any) -> date | None:
-    try:
-        return datetime.strptime(str(value)[:10], "%Y-%m-%d").date()
-    except ValueError:
-        return None
-
-
 def detect_series(
     transactions: list[dict[str, Any]],
     *,
@@ -349,7 +343,7 @@ def detect_series(
         if txn.get("_status") != "booked":
             continue
         raw = txn.get("creditorName", "") or txn.get("debtorName", "")
-        day = _parse_day(txn.get("bookingDate", ""))
+        day = effective_day(txn)
         if not _normalize_name(raw) or day is None:
             continue
         try:

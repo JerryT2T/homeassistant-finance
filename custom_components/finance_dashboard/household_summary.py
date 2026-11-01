@@ -11,10 +11,12 @@ What is counted (and what is not):
   source leg is the one real expense and counts once, the rest is dropped
   (same rule as ``get_effective_transactions``). A chain the user rejected is
   counted as ordinary bookings. Bookings categorised ``transfers`` are dropped.
-- **PayPal mirror**: when a PayPal account is linked, the PayPal lines are the
-  truth, so a debit on another account to PayPal is a funding of the PayPal
-  balance and is dropped (it would otherwise count twice). Without a linked
-  PayPal account the debit is the only trace of the purchase and counts.
+- **PayPal mirror**: when a PayPal account is linked, its dated lines are the
+  truth, so a debit on another account to PayPal that a PayPal line of the
+  same amount (within a few days) shows is a funding and is dropped. Without
+  such a line - PayPal not linked, or its lines carry no date - the debit is
+  the only trace of the purchase and counts. Dates come from
+  ``tx_dates.effective_day`` (PayPal lines often carry only a transaction date).
 - **Refunds** (``_refund_role == "refund"``) are netted against expenses, they
   are not income.
 - Only booked lines count; pending ones are ignored.
@@ -43,6 +45,8 @@ from typing import Any
 from .budget_plan import BudgetPlan
 from .const import OWNER_SHARED, POSITION_KIND_FIXED
 from .cycle import calendar_cycle, household_cycle, household_starts
+from .text_norm import canonical_name, processor_merchant_text
+from .tx_dates import effective_day
 
 CYCLES = ("current", "previous")
 OWNER_OPEN = "open"
@@ -55,13 +59,6 @@ _SKIP_CATEGORIES = {"transfers"}
 # ---------------------------------------------------------------------------
 
 
-def _to_date(value: Any) -> date | None:
-    try:
-        return date.fromisoformat(str(value)[:10])
-    except (TypeError, ValueError):
-        return None
-
-
 def _amount(tx: dict[str, Any]) -> float:
     try:
         return float((tx.get("transactionAmount") or {}).get("amount", 0) or 0)
@@ -70,7 +67,7 @@ def _amount(tx: dict[str, Any]) -> float:
 
 
 def _day(tx: dict[str, Any]) -> date | None:
-    return _to_date(tx.get("bookingDate")) or _to_date(tx.get("valueDate"))
+    return effective_day(tx)
 
 
 def _name(tx: dict[str, Any]) -> str:
@@ -115,6 +112,7 @@ def counted_transactions(
         if t.get("_transfer_role") == "intermediate" and t.get("_transfer_confirmed") is not False
     }
     pp_ids = paypal_account_ids(accounts)
+    mirrors = _paypal_mirrors(booked, pp_ids)
     out: list[dict[str, Any]] = []
     for tx in booked:
         if _day(tx) is None:
@@ -126,12 +124,83 @@ def counted_transactions(
                 continue
         elif str(tx.get("category") or "") in _SKIP_CATEGORIES:
             continue
-        if pp_ids and _amount(tx) < 0 and str(tx.get("_account_id") or "") not in pp_ids:
-            # Funding debit of the PayPal balance, mirrored by PayPal's own lines.
-            if _is_paypal(f"{tx.get('creditorName', '')} {tx.get('debtorName', '')}"):
-                continue
+        if id(tx) in mirrors:
+            continue
         out.append(tx)
     return out
+
+
+PAYPAL_MIRROR_DAYS = 5
+
+
+def _paypal_mirrors(booked: list[dict[str, Any]], pp_ids: set[str]) -> set[int]:
+    """Lines that only move money between a bank account and PayPal.
+
+    A debit on another account to PayPal funds a purchase that PayPal's own
+    line shows, or tops up the PayPal balance (PayPal then shows a funding
+    credit). The debit is dropped only when such a dated PayPal line exists
+    (same amount, within ``PAYPAL_MIRROR_DAYS``, each line used once); a
+    matched funding credit is dropped with it, it is no income. Without a
+    counterpart - PayPal not linked, or its lines carry no date - the debit
+    is the only trace of the purchase and counts.
+    """
+    if not pp_ids:
+        return set()
+    purchases: dict[int, list[dict[str, Any]]] = defaultdict(list)
+    credits: dict[int, list[dict[str, Any]]] = defaultdict(list)
+    for tx in booked:
+        if _day(tx) is None or str(tx.get("_account_id") or "") not in pp_ids:
+            continue
+        cents = round(_amount(tx) * 100)
+        if cents < 0:
+            purchases[cents].append(tx)
+        elif cents > 0:
+            credits[-cents].append(tx)
+    mirrors: set[int] = set()
+    debits = sorted(
+        (
+            tx
+            for tx in booked
+            if _amount(tx) < 0
+            and _day(tx) is not None
+            and str(tx.get("_account_id") or "") not in pp_ids
+            and _is_paypal(f"{tx.get('creditorName', '')} {tx.get('debtorName', '')}")
+        ),
+        key=_day,
+    )
+
+    def near(day: date, other: date) -> int | None:
+        gap = abs((other - day).days)
+        return gap if gap <= PAYPAL_MIRROR_DAYS else None
+
+    for tx in debits:
+        day, cents = _day(tx), round(_amount(tx) * 100)
+        funding = [c for c in credits.get(cents, []) if near(day, _day(c)) is not None]
+        if funding:
+            credit = min(funding, key=lambda c: near(day, _day(c)))
+            credits[cents].remove(credit)
+            mirrors.add(id(credit))
+        merchant = canonical_name(
+            processor_merchant_text(str(tx.get("remittanceInformationUnstructured") or ""))
+        )
+        bought = [
+            p
+            for p in purchases.get(cents, [])
+            if near(day, _day(p)) is not None and _same_merchant(merchant, p)
+        ]
+        if bought:
+            purchases[cents].remove(min(bought, key=lambda p: near(day, _day(p))))
+        if funding or bought:
+            mirrors.add(id(tx))
+    return mirrors
+
+
+def _same_merchant(merchant: str, line: dict[str, Any]) -> bool:
+    """The bank debit names no merchant, or the PayPal line's payee shares a word with it."""
+    if not merchant:
+        return True
+    payee = canonical_name(str(line.get("creditorName") or line.get("debtorName") or ""))
+    return not payee or bool(set(merchant.split()) & set(payee.split()))
 
 
 # ---------------------------------------------------------------------------

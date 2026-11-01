@@ -14,13 +14,12 @@ from custom_components.finance_dashboard.freshness import (
     derivation_check,
     make_entry,
     monthly_validity,
+    undated_accounts,
 )
 from tests.test_admin_gating import _FakeJsonMixin, _make_request
 from tests.test_lifelong_history import _archive, _client, _manager, eb_tx
 
-BAL = {
-    "balances": [{"balance_type": "CLBD", "balance_amount": {"amount": "5", "currency": "EUR"}}]
-}
+BAL = {"balances": [{"balance_type": "CLBD", "balance_amount": {"amount": "5", "currency": "EUR"}}]}
 
 
 def _tx(d, amount, **extra):
@@ -107,7 +106,9 @@ def test_last_import_falls_back_to_bank_fetch_before_the_log_existed():
     out = build_freshness(admin=True, log=reprocess_only, last_bank_success="B", **kw)
     assert out["last_import"] == "B"
     logged = [make_entry("import_attended", at="T", processing_version=2, outcome="ok")]
-    assert build_freshness(admin=False, log=logged, last_bank_success="B", **kw)["last_import"] == "T"
+    assert (
+        build_freshness(admin=False, log=logged, last_bank_success="B", **kw)["last_import"] == "T"
+    )
     assert build_freshness(admin=False, log=[], **kw)["last_import"] is None
 
 
@@ -162,3 +163,26 @@ async def test_views_gate_admin():
         resp = await fv.get(req)
     mgr.get_freshness.assert_called_once_with(admin=False)
     assert resp._data["as_of"] == "A"
+
+
+def test_undated_bookings_are_reported_per_account():
+    accounts = {
+        "pp": {
+            "transactions": [
+                _tx("", "-5"),
+                _tx("", "-6", transactionDate="2026-04-02"),
+                _tx("2026-04-03", "-1"),
+            ]
+        },
+        "giro": {"transactions": [_tx("2026-04-03", "-1")]},
+    }
+    assert undated_accounts(accounts, {"pp": "PayPal", "giro": "Giro"}) == [
+        {"account_name": "PayPal", "undated": 1, "total": 3}
+    ]
+
+
+def test_data_quality_is_admin_only():
+    q = [{"account_name": "PayPal", "undated": 2, "total": 3}]
+    kw = {"as_of": "x", "log": [], "processing_version": 1, "validity": [], "check": {}}
+    assert build_freshness(**kw, admin=True, data_quality=q)["data_quality"] == q
+    assert "data_quality" not in build_freshness(**kw, admin=False, data_quality=q)

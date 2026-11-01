@@ -179,19 +179,29 @@ class PersistenceMixin:
 
         from ..account_identity import account_key
         from ..const import PROCESSING_VERSION
-        from ..freshness import LOG_KEY, build_freshness, derivation_check, monthly_validity
+        from ..freshness import (
+            LOG_KEY,
+            build_freshness,
+            derivation_check,
+            monthly_validity,
+            undated_accounts,
+        )
 
         meta = self._ledger.meta
         log = list(meta.get(LOG_KEY) or [])
         as_of = self._last_refresh.isoformat() if self._last_refresh else self._utc_iso()
         validity: list = []
         check: dict = {}
+        quality: list = []
         if admin:
-            names = {account_key(a): a.get("custom_name") or a.get("name", "") for a in self._accounts}
+            names = {
+                account_key(a): a.get("custom_name") or a.get("name", "") for a in self._accounts
+            }
             accounts = self._ledger.data.get("accounts", {})
             validity = monthly_validity(accounts, names, today=date.today())
             ledger_txs = [t for a in accounts.values() for t in a.get("transactions") or []]
             check = derivation_check(ledger_txs, self._transactions)
+            quality = undated_accounts(accounts, names)
         return build_freshness(
             as_of=as_of,
             log=log,
@@ -199,6 +209,7 @@ class PersistenceMixin:
             validity=validity,
             check=check,
             admin=admin,
+            data_quality=quality,
             last_bank_success=max(
                 (b["last_success"] for b in self.get_bank_status() if b.get("last_success")),
                 default=None,

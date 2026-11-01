@@ -4,7 +4,8 @@
  *
  *   GET finance_dashboard/freshness    (cache read; contract: docs/dev/contracts/reprocess.md)
  *     non-admin: {as_of, last_import}
- *     admin:     + last_reprocess, processing_version, log[], validity[], derivation
+ *     admin:     + last_reprocess, processing_version, log[], validity[], derivation,
+ *                data_quality[] (accounts with undated bookings)
  *   GET finance_dashboard/bank_status  (cache read) bank connections: consent,
  *                                      per-bank budget, last fetch, block, error
  *
@@ -443,6 +444,14 @@ class FdFreshness extends HTMLElement {
   ${list.length > 3 ? `<details><summary>${escHtml(tr("fr.valid.more", { n: list.length - 3 }))}</summary>${list.slice(3).map(vrow).join("")}</details>` : ""}`).join("");
     h += `<div class="card"><h3>${tr("fr.valid.title")}</h3><p class="say">${escHtml(vsum || tr("fr.valid.say"))}</p>
   ${val.length ? vbody : `<div class="empty">${tr("fr.valid.empty")}</div>`}</div>`;
+
+    // Data quality: bookings without any date never reach cycles or contracts
+    const dq = d.data_quality || [];
+    if (dq.length) {
+      const rows = dq.map((q) => `<div class="row"><div class="l">${escHtml(q.account_name)}</div>
+  <div class="r"><span class="chip near">${escHtml(tr("fr.dq.count", { n: q.undated, total: q.total }))}</span></div></div>`).join("");
+      h += `<div class="card"><h3>${tr("fr.dq.title")}</h3><p class="say">${tr("fr.dq.say")}</p>${rows}</div>`;
+    }
 
     // Derivation check
     const dv = d.derivation;

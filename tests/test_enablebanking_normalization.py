@@ -169,6 +169,13 @@ class TestNormalizeTransaction:
         )
         assert "�" not in result["debtorName"]
 
+    def test_transaction_date_is_kept_beside_an_empty_booking_date(self):
+        txn = _txn(amount="13.99", indicator="DBDT")
+        txn.update(booking_date=None, value_date=None, transaction_date="2026-08-12")
+        result = EnableBankingClient._normalize_transaction(txn)
+        assert result["bookingDate"] == ""
+        assert result["transactionDate"] == "2026-08-12"
+
 
 class TestNormalizeBalance:
     """ISO 20022 balance codes must survive normalization."""

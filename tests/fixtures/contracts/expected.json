@@ -14,7 +14,6 @@
       ]
     },
     "paypal_subscription": {
-      "xfail": "#107",
       "contracts": [
         {"creditor": "streamly", "interval": "monthly", "plan_amount": 17.99, "kind": "subscription", "category": "media_communication"}
       ]
