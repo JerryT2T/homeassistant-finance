@@ -281,9 +281,10 @@ class FinanceDashboardTransactionsView(HomeAssistantView):
                 "account_key": txn.get("_account_key", ""),
             }
             # Contract link, inherited category and labels (#113)
-            info = resolved.get(txn.get("_ledger_id") or "")
+            key = f"{txn.get('_account_key') or ''}|{txn['_ledger_id']}" if txn.get("_ledger_id") else ""
+            info = resolved.get(key)
             if info:
-                entry["ledger_id"] = txn["_ledger_id"]
+                entry["ledger_id"] = key
                 entry["own_category"] = entry["category"]
                 entry.update(info)
 

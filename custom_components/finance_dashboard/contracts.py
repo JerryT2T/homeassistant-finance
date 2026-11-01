@@ -156,10 +156,14 @@ class Contract:
     @classmethod
     def from_dict(cls, sid: str, data: dict[str, Any]) -> Contract:
         c = cls(series_id=sid)
+        fields = {k: v for k, v in data.items() if k in cls._FIELDS}
         try:
-            c.apply({k: v for k, v in data.items() if k in cls._FIELDS})
+            c.apply(fields)
         except ContractError:
-            _LOGGER.warning("Skipping unreadable contract fields")
+            try:  # labels are an add-on: never lose the contract terms over them
+                c.apply({k: v for k, v in fields.items() if k != "labels"})
+            except ContractError:
+                _LOGGER.warning("Skipping unreadable contract fields")
         return c
 
 

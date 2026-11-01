@@ -66,14 +66,14 @@ AUTO_LABELS: tuple[str, ...] = (
 )
 
 _PAYPAL = re.compile(r"paypal", re.IGNORECASE)
-_BNPL = re.compile(r"\b(klarna|afterpay|ratepay|billie|riverty|scalapay|paypal ratenzahlung"
+_BNPL = re.compile(r"\b(klarna|afterpay|ratepay|riverty|scalapay|paypal ratenzahlung"
                    r"|später bezahlen|spaeter bezahlen)\b", re.IGNORECASE)
 _CARD = re.compile(
-    r"\b(visa|mastercard|maestro|debitkarte|kreditkarte|girocard|ec[- ]?karte"
+    r"\b(visa ?(debit|card|karte)|mastercard|maestro|debitkarte|kreditkarte|girocard|ec[- ]?karte"
     r"|kartenzahlung|apple ?pay|google ?pay|card payment)\b",
     re.IGNORECASE,
 )
-_DIRECT_DEBIT = re.compile(r"\b(lastschrift|sepa[- ]?basis|mandat\w*|mref|einzug|direct debit)\b",
+_DIRECT_DEBIT = re.compile(r"\b(lastschrift|sepa[- ]?basis\w*|mandat\w*|mref|direct debit)\b",
                            re.IGNORECASE)
 
 
@@ -96,6 +96,12 @@ def _text(txn: dict[str, Any]) -> str:
         txn.get("proprietaryBankTransactionCode") or "",
     ]
     return " ".join(str(p) for p in parts if p)
+
+
+def booking_key(txn: dict[str, Any]) -> str | None:
+    """Stable booking key: the ledger id is unique per account only (QA #113)."""
+    lid = txn.get("_ledger_id")
+    return f"{txn.get('_account_key') or ''}|{lid}" if lid else None
 
 
 def booking_auto_labels(txn: dict[str, Any]) -> list[str]:
@@ -249,7 +255,7 @@ def resolve_bookings(
     """Per ledger id: the contract it belongs to and what it inherits.
 
     ``contracts`` are contract views (``build_contracts``) carrying
-    ``ledger_ids``. A booking of a contract takes the contract's category
+    ``ledger_ids`` (booking keys, see ``booking_key``). A booking of a contract takes the contract's category
     (``category_source = "contract"``) and its labels as ``inherited``;
     its own labels stay separate, the automatic channel label is added.
     """
@@ -267,7 +273,7 @@ def resolve_bookings(
             }
     out: dict[str, dict[str, Any]] = {}
     for txn in transactions:
-        lid = txn.get("_ledger_id")
+        lid = booking_key(txn)
         if not lid:
             continue
         link = by_ledger.get(lid)

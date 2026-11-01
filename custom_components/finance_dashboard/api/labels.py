@@ -7,7 +7,7 @@ from homeassistant.components.http import HomeAssistantView
 
 from ..const import DOMAIN
 from ..contracts import async_get_store
-from ..labels import LabelError, async_get_label_store
+from ..labels import LabelError, async_get_label_store, booking_key
 from ._helpers import _get_manager, admin_denied
 
 
@@ -107,7 +107,7 @@ class FinanceDashboardBookingLabelsView(HomeAssistantView):
             return self.json({"error": "invalid_body"}, status_code=400)
         manager = _get_manager(request.app["hass"])
         known = manager and any(
-            t.get("_ledger_id") == ledger_id for t in manager._transactions  # noqa: SLF001
+            booking_key(t) == ledger_id for t in manager._transactions  # noqa: SLF001
         )
         if not known:
             return self.json({"error": "unknown_booking"}, status_code=404)

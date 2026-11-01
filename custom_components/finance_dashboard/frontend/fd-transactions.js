@@ -407,7 +407,8 @@ class FdTransactions extends HTMLElement {
   async _createLabel() {
     const d = this._dlg;
     const name = ((d && d.newName) || "").trim();
-    if (!d || !name) return;
+    if (!d || !name || d.creating) return;
+    d.creating = true;
     try {
       const r = await this._hass.callApi("POST", `${DOMAIN}/labels`, { name });
       this._labels = (r && r.labels) || this._labels;
@@ -419,6 +420,8 @@ class FdTransactions extends HTMLElement {
       const code = err && err.body && err.body.error;
       d.error = code && tr(`lb.err.${code}`) !== `lb.err.${code}` ? tr(`lb.err.${code}`) : tr("lb.err.generic");
     }
+    d.creating = false;
+    if (this._dlg !== d) return; // closed or replaced meanwhile
     this._paintDialog();
     this._focusDialog("#newlb");
   }
@@ -432,10 +435,11 @@ class FdTransactions extends HTMLElement {
     try {
       const r = await this._hass.callApi("PUT", `${DOMAIN}/transactions/${encodeURIComponent(d.x.ledger_id)}/labels`, { labels: [...d.sel] });
       d.x.labels_own = (r && r.labels_own) || [...d.sel];
-      this._closeDialog();
+      if (this._dlg === d) this._closeDialog();
       this._paintList();
     } catch (_) {
       d.saving = false;
+      if (this._dlg !== d) return;
       d.error = tr("tx.save_failed");
       this._paintDialog();
     }

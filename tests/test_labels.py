@@ -129,22 +129,41 @@ def test_bookings_inherit_the_contracts_category_and_labels():
     store.contracts[sid] = Contract(sid, category="health", labels=["membership"])
     contracts = build_contracts(rows, store, today=TODAY)
     assert contracts[0]["labels"] == ["membership"]
-    assert sorted(contracts[0]["ledger_ids"]) == [f"gym{i}" for i in range(5)]
+    assert sorted(contracts[0]["ledger_ids"]) == [f"|gym{i}" for i in range(5)]
 
-    out = resolve_bookings([*rows, loose], contracts, {"gym2": ["refundable"]})
-    linked = out["gym2"]
+    out = resolve_bookings([*rows, loose], contracts, {"|gym2": ["refundable"]})
+    linked = out["|gym2"]
     assert linked["contract_id"] == sid and linked["category_source"] == "contract"
     assert linked["category"] == "health"
     assert linked["labels_inherited"] == ["membership"]
     assert linked["labels_own"] == ["refundable"]
     assert linked["labels_auto"] == [AUTO_DIRECT_DEBIT]
-    own = out["x1"]
+    own = out["|x1"]
     assert own["contract_id"] is None and own["category"] == "groceries"
     assert own["category_source"] == "own" and own["labels_inherited"] == []
 
 
 def test_a_candidate_passes_nothing_on():
     rows = _gym_rows()
-    contracts = [{"id": "s", "candidate": True, "ledger_ids": ["gym0"], "category": "health",
+    contracts = [{"id": "s", "candidate": True, "ledger_ids": ["|gym0"], "category": "health",
                   "contract": {"stored": {"labels": ["membership"]}}}]
-    assert resolve_bookings(rows[:1], contracts, {})["gym0"]["category_source"] == "own"
+    assert resolve_bookings(rows[:1], contracts, {})["|gym0"]["category_source"] == "own"
+
+
+def test_same_booking_on_two_accounts_keeps_its_own_labels():
+    # QA #113: the ledger id is unique per account only
+    a = {"_ledger_id": "fp:abc", "_account_key": "A", "category": "other"}
+    b = {"_ledger_id": "fp:abc", "_account_key": "B", "category": "other"}
+    out = resolve_bookings([a, b], [], {"A|fp:abc": ["energy"]})
+    assert out["A|fp:abc"]["labels_own"] == ["energy"]
+    assert out["B|fp:abc"]["labels_own"] == []
+
+
+@pytest.mark.parametrize("text", ["Visa Antrag Botschaft", "Einzug Umzugsfirma", "Billie Eilish Ticket"])
+def test_channel_patterns_do_not_fire_on_lookalikes(text):
+    assert booking_auto_labels({"remittanceInformationUnstructured": text}) == []
+
+
+def test_a_bad_stored_label_never_voids_the_contract_terms():
+    c = Contract.from_dict("s1", {"min_term_months": 24, "labels": ["Bad Label"]})
+    assert c.min_term_months == 24 and c.labels is None
