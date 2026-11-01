@@ -38,8 +38,20 @@ events and the contracts page list/totals; non-admin views carry `candidate` too
 ## Contract model (`contracts.Contract`, stored in `.storage/finance_dashboard_contracts`)
 Fields (all optional, `null` = prefilled default): `start`, `min_term_months`, `renewal_months`, `notice_value`,
 `notice_unit` (days/weeks/months), `notice_reference` (`end_of_term`/`end_of_month`), `owner`, `category`,
-`plan_position_id`, `special_termination` (null = derive), `plan_mode`, `plan_fixed_amount`, `review` (#130).
-Category defaults: insurance 12/12 + 3 months; telecom 24/12 + 1 month; subscriptions 1/1 + 0; utilities/loans/housing 12/12 + 1/3/3 months; else 1/1 + 0.
+`plan_position_id`, `special_termination` (null = derive), `plan_mode`, `plan_fixed_amount`, `review` (#130), `kind` (#111).
+
+### Kinds (#111, `contract_kind.py`)
+`kind` is how binding a payment is, separate from its category: `contract` (term, renewal, notice), `subscription`
+(cancelable monthly), `regular` (habit without contract), `irregular` (recurring but irregular). `detect_series` sets
+`kind_suggested` and `kind_trait` (`telecom` from the payment text) on every read; the stored `Contract.kind` overrides
+the suggestion, `null` follows it — nothing is migrated. Suggestion order: yearly/quarterly/half-yearly -> contract;
+contract word or number -> contract; subscription word -> subscription; not monthly or an everyday category -> regular;
+health -> irregular; contract category -> contract; fixed monthly price -> subscription; else regular.
+Defaults by kind: subscription 1/1 + 0 days; contract by category (insurance 12/12 + 3 months, utilities/loans/housing
+12/12 + 1/3/3 months, telecom trait 24/12 + 1 month, else 12/12 + 1 month). `regular` and `irregular` have no notice:
+`next_deadline`, `effective_end`, `days_until_deadline` are `null`, `notice_due_soon` false, no notice event. The
+payload carries `kind`, `kind_suggested`, `kind_trait` and `contract.defaults` / `contract.has_notice`.
+`contracts.category_defaults` is kept for old callers.
 Start falls back to the first seen payment. Deadline = (term end, or month end of it) - notice; rolls to the next renewal if passed.
 Special termination prefill: last 3 payments, traits amount / booking day / gap; >=2 traits differing -> unchecked, else checked.
 `special_termination_available` = latest price change is an increase and the (stored or prefilled) flag is checked.

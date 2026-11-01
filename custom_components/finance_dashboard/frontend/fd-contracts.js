@@ -9,6 +9,9 @@
  *   PUT  finance_dashboard/accounts/{key}/savings {savings:bool} (admin)
  *   GET  finance_dashboard/balances             account list for the savings toggles (admin)
  *
+ * Every series carries a `kind` (contract · subscription · regular · irregular,
+ * #111); regular and irregular spending has no notice deadline.
+ *
  * Properties: hass (required).
  * Events (bubbling, composed): fd-toast {message, type}.
  */
@@ -169,7 +172,7 @@ const FB = {
   }
 };
 
-// Mirrors contracts.CATEGORY_DEFAULTS: shown as "usual for ..." next to the fields.
+// Old servers without `contract.defaults`: mirrors contracts.CATEGORY_DEFAULTS.
 const CAT_DEFAULTS = {
   insurance: [12, 12, 3, "months"],
   telecom: [24, 12, 1, "months"],
@@ -179,6 +182,9 @@ const CAT_DEFAULTS = {
   housing: [12, 12, 3, "months"],
 };
 const FALLBACK_DEFAULTS = [1, 1, 0, "days"];
+const KINDS = ["contract", "subscription", "regular", "irregular"];
+const NO_NOTICE = new Set(["regular", "irregular"]);
+const TERM_FIELDS = ["min_term_months", "renewal_months", "notice_value", "notice_unit", "notice_reference"];
 
 function tr(key, vars = {}) {
   let s = window._fd.tSync(key, vars);
@@ -244,6 +250,9 @@ button.ct { min-height: var(--fd-touch); }
 .rv + .rv { border-top: 1px solid var(--fd-line); }
 .rv .sub { font-size: 12.5px; margin: 2px 0 8px; }
 .rvb { display: flex; gap: 8px; flex-wrap: wrap; }
+.kf { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 4px; }
+.kf button { min-height: 40px; padding: 0 12px; border: 1px solid var(--fd-line); border-radius: var(--fd-r-pill); background: transparent; font-size: 12.5px; }
+.kf button[aria-pressed="true"] { background: var(--fd-a50); border-color: var(--fd-a500); color: var(--fd-a900); font-weight: 500; }
 .btn.ghost { background: transparent; color: var(--fd-a700); border-color: var(--fd-a100); }
 .btn:disabled { opacity: .5; cursor: default; }
 .scrim { position: fixed; inset: 0; z-index: 50; display: flex; align-items: flex-end; justify-content: center; background: rgba(0,0,0,.4); }
@@ -272,6 +281,7 @@ class FdContracts extends HTMLElement {
     this.attachShadow({ mode: "open" });
     this._hass = null;
     this._items = null;
+    this._kind = "all";
     this._reserves = null;
     this._coverage = null;
     this._accounts = [];
@@ -365,12 +375,26 @@ class FdContracts extends HTMLElement {
     if (!this._wired) { this._wired = true; this._wire(); }
   }
 
+  _kindOf(c) { return c.kind || "contract"; }
+
+  _kindFilterHtml() {
+    const e = window._fd.escHtml;
+    const count = (k) => this._items.filter((c) => this._kindOf(c) === k).length;
+    const kinds = KINDS.filter((k) => count(k));
+    if (kinds.length < 2) return "";
+    const btn = (k, label, n) => `<button type="button" data-kind="${k}" aria-pressed="${this._kind === k}">${e(label)} · ${n}</button>`;
+    return `<div class="kf" role="group" aria-label="${e(tr("ct.kind.filter"))}">${btn("all", tr("ct.kind.all"), this._items.length)}${kinds.map((k) => btn(k, tr(`ct.kind.${k}`), count(k))).join("")}</div>`;
+  }
+
   _main() {
     const e = window._fd.escHtml;
-    const live = this._items.filter((c) => c.status !== "ended");
+    const kinds = new Set(this._items.map((c) => this._kindOf(c)));
+    if (this._kind !== "all" && !kinds.has(this._kind)) this._kind = "all";
+    const shown = this._kind === "all" ? this._items : this._items.filter((c) => this._kindOf(c) === this._kind);
+    const live = shown.filter((c) => c.status !== "ended");
     const month = live.reduce((s, c) => s + (c.monthly_equivalent || 0), 0);
     const year = live.reduce((s, c) => s + (c.annual_cost || 0), 0);
-    const sorted = [...this._items].sort((a, b) =>
+    const sorted = [...shown].sort((a, b) =>
       (a.status === "ended") - (b.status === "ended") || String(a.next_deadline || "9").localeCompare(String(b.next_deadline || "9")));
     const list = sorted.length
       ? sorted.map((c) => this._row(c)).join("")
@@ -382,7 +406,7 @@ class FdContracts extends HTMLElement {
       <p class="muted" style="margin:8px 0 0">${e(tr("ct.total_note", { n: live.length }))}</p>` : ""}
     ${this._isAdmin ? "" : `<p class="muted" style="margin:8px 0 0">${e(tr("ct.member_note"))}</p>`}
   </section>` : ""}
-  <section class="card" aria-label="${e(tr("ct.title"))}">${list}</section>
+  <section class="card" aria-label="${e(tr("ct.title"))}">${this._kindFilterHtml()}${list}</section>
   ${this._reviewHtml()}
 </div>
 <div>${this._reservesHtml()}</div>`;
@@ -438,14 +462,15 @@ class FdContracts extends HTMLElement {
   _row(c) {
     const e = window._fd.escHtml;
     const ended = c.status === "ended";
-    const badges = [];
+    const badges = [`<span class="badge">${e(tr(`ct.kind.${this._kindOf(c)}`))}</span>`];
     if (ended) badges.push(`<span class="badge">${e(tr("ct.ended"))}</span>`);
     else if (c.status === "missing") badges.push(`<span class="badge due">${e(tr("ct.missing"))}</span>`);
-    if (!ended && c.notice_due_soon) {
+    const notice = !ended && !NO_NOTICE.has(this._kindOf(c));
+    if (notice && c.notice_due_soon) {
       const n = c.days_until_deadline;
       const left = n <= 0 ? tr("ct.days_today") : n === 1 ? tr("ct.days_one") : tr("ct.days_left", { n });
       badges.push(`<span class="badge due">${e(tr("ct.notice_by", { date: this._date(c.next_deadline) }))} · ${e(left)}</span>`);
-    } else if (!ended && c.next_deadline) {
+    } else if (notice && c.next_deadline) {
       badges.push(`<span class="badge">${e(tr("ct.next_deadline"))}: ${e(this._date(c.next_deadline, true))}</span>`);
     }
     const pc = c.price_change;
@@ -508,8 +533,13 @@ class FdContracts extends HTMLElement {
   }
 
   // ---- edit sheet ---------------------------------------------------------
-  _defaultsFor(cat) {
-    const [term, renewal, notice, unit] = CAT_DEFAULTS[cat] || FALLBACK_DEFAULTS;
+  _defaultsFor(c, kind) {
+    const k = c.contract || {};
+    const byKind = k.defaults_by_kind || {};
+    // Kinds without notice keep the contract terms for a later switch back.
+    const d = byKind[kind] || byKind.contract || k.defaults;
+    if (d) return { ...d };
+    const [term, renewal, notice, unit] = CAT_DEFAULTS[c.category] || FALLBACK_DEFAULTS;
     return { min_term_months: term, renewal_months: renewal, notice_value: notice, notice_unit: unit, notice_reference: "end_of_term" };
   }
 
@@ -518,12 +548,13 @@ class FdContracts extends HTMLElement {
     if (!c || !c.contract) return;
     const k = c.contract;
     this._sheet = {
-      id, c, error: "", saving: false,
+      id, c, error: "", saving: false, touched: new Set(),
       d: {
         start: k.start || c.first_seen || "",
         min_term_months: k.min_term_months, renewal_months: k.renewal_months,
         notice_value: k.notice_value, notice_unit: k.notice_unit, notice_reference: k.notice_reference,
         owner: c.owner || "shared", special_termination: !!k.special_termination,
+        kind: this._kindOf(c),
       },
     };
     this._paintSheet();
@@ -549,24 +580,27 @@ class FdContracts extends HTMLElement {
     if (!s || !el) return;
     const e = window._fd.escHtml;
     const d = s.d;
-    const def = this._defaultsFor(s.c.category);
+    const def = this._defaultsFor(s.c, d.kind);
+    const notice = !NO_NOTICE.has(d.kind);
     const opt = (grp, val, label, cur) => `<button type="button" role="radio" aria-checked="${cur === val}" data-grp="${grp}" data-val="${e(val)}">${e(label)}</button>`;
     el.innerHTML = `<div class="scrim" data-act="scrim"><div class="sheet" role="dialog" aria-modal="true" aria-label="${e(tr("ct.edit"))}">
   <h3>${e(s.c.display_name || s.c.creditor)}</h3>
   <p class="muted" style="margin:0">${e(this._catLabel(s.c.category))} · ${e(tr(`ct.interval.${s.c.interval}`))}</p>
-  <label for="f-start">${e(tr("ct.f.start"))}</label><input id="f-start" type="date" data-f="start" value="${e(d.start)}">
+  <div class="lbl">${e(tr("ct.f.kind"))}</div>
+  <div class="opts" role="radiogroup" aria-label="${e(tr("ct.f.kind"))}">${KINDS.map((k) => opt("kind", k, tr(`ct.kind.${k}`), d.kind)).join("")}</div>
+  ${notice ? `<label for="f-start">${e(tr("ct.f.start"))}</label><input id="f-start" type="date" data-f="start" value="${e(d.start)}">
   <label for="f-term">${e(tr("ct.f.min_term"))}</label><input id="f-term" type="number" min="0" max="240" data-f="min_term_months" value="${d.min_term_months ?? ""}">
   <label for="f-ren">${e(tr("ct.f.renewal"))}</label><input id="f-ren" type="number" min="1" max="240" data-f="renewal_months" value="${d.renewal_months ?? ""}">
   <div class="lbl">${e(tr("ct.f.notice"))}</div>
   <div class="nrow"><input type="number" min="0" max="3650" data-f="notice_value" value="${d.notice_value ?? ""}" aria-label="${e(tr("ct.f.notice"))}">
     <div class="opts" role="radiogroup">${["days", "weeks", "months"].map((u) => opt("notice_unit", u, tr("ct.unit." + u), d.notice_unit)).join("")}</div></div>
   <div class="lbl">${e(tr("ct.f.reference"))}</div>
-  <div class="opts" role="radiogroup">${["end_of_term", "end_of_month"].map((u) => opt("notice_reference", u, tr("ct.ref." + u), d.notice_reference)).join("")}</div>
+  <div class="opts" role="radiogroup">${["end_of_term", "end_of_month"].map((u) => opt("notice_reference", u, tr("ct.ref." + u), d.notice_reference)).join("")}</div>` : `<div class="hint">${e(tr("ct.kind.no_notice"))}</div>`}
   <div class="lbl">${e(tr("ct.f.owner"))}</div>
   <div class="opts" role="radiogroup">${this._owners(s).map((o) => opt("owner", o, this._ownerLabel(o), d.owner)).join("")}</div>
-  <div class="rw" style="margin-top:8px"><span><b>${e(tr("ct.f.special"))}</b>${s.c.contract.special_termination_prefilled ? `<span class="muted">${e(tr("ct.special_prefilled"))}</span>` : ""}</span>
+  ${notice ? `<div class="rw" style="margin-top:8px"><span><b>${e(tr("ct.f.special"))}</b>${s.c.contract.special_termination_prefilled ? `<span class="muted">${e(tr("ct.special_prefilled"))}</span>` : ""}</span>
     <span class="hit"><button type="button" class="sw" role="switch" aria-checked="${d.special_termination}" data-grp="special" aria-label="${e(tr("ct.f.special"))}"></button></span></div>
-  <div class="hint">${e(tr("ct.defaults", { cat: this._catLabel(s.c.category), term: def.min_term_months, renewal: def.renewal_months, notice: def.notice_value, unit: tr("ct.unit." + def.notice_unit) }))}</div>
+  <div class="hint">${e(tr("ct.defaults", { cat: d.kind === "contract" ? this._catLabel(s.c.category) : tr(`ct.kind.${d.kind}`), term: def.min_term_months, renewal: def.renewal_months, notice: def.notice_value, unit: tr("ct.unit." + def.notice_unit) }))}</div>` : ""}
   <div class="err" id="sheeterr" role="alert">${e(s.error)}</div>
   <div class="acts"><button type="button" class="btn ghost" data-act="reset">${e(tr("ct.reset"))}</button>
     <button type="button" class="btn ghost" data-act="cancel">${e(tr("ct.cancel"))}</button>
@@ -581,7 +615,8 @@ class FdContracts extends HTMLElement {
     const d = s.d;
     const num = (v) => (v === "" || v == null ? null : Number(v));
     const body = {};
-    // Only fields that differ from what the contract currently shows are sent.
+    // Only fields the user edited and that differ from what the contract shows
+    // are sent: terms prefilled by a kind switch must not overwrite stored ones.
     const same = (a, b) => (a ?? null) === (b ?? null);
     const next = {
       start: d.start || null,
@@ -590,13 +625,16 @@ class FdContracts extends HTMLElement {
     };
     for (const f of Object.keys(next)) {
       const before = f === "start" ? (k.start || s.c.first_seen || null) : k[f];
-      if (!same(next[f], before)) body[f] = next[f];
+      if (s.touched.has(f) && !same(next[f], before)) body[f] = next[f];
     }
     if (d.owner !== (s.c.owner || "shared")) body.owner = d.owner;
+    // The suggested kind is stored as null, so a better suggestion later still applies.
+    if (d.kind !== this._kindOf(s.c)) body.kind = d.kind === s.c.kind_suggested ? null : d.kind;
     if (s.reset) {
-      // After "reset": fields still at the category default go back to null (= follow the default).
-      const def = this._defaultsFor(s.c.category);
+      // After "reset": fields still at the kind's default go back to null (= follow the default).
+      const def = this._defaultsFor(s.c, d.kind);
       for (const f of Object.keys(def)) body[f] = next[f] === def[f] ? null : next[f];
+      if (d.kind === s.c.kind_suggested && (s.c.contract.stored || {}).kind) body.kind = null;
     }
     s.saving = true;
     this._paintSheet();
@@ -642,9 +680,18 @@ class FdContracts extends HTMLElement {
       if (t.dataset.edit) return this._openSheet(t.dataset.edit);
       if (t.dataset.sav) return this._toggleSavings(t.dataset.sav);
       if (t.dataset.review) return this._review(t.dataset.id, t.dataset.review);
+      if (t.dataset.kind) { this._kind = t.dataset.kind; return this._render(); }
       if (t.dataset.grp && s) {
-        if (t.dataset.grp === "special") s.d.special_termination = !s.d.special_termination;
-        else s.d[t.dataset.grp] = t.dataset.val;
+        const grp = t.dataset.grp;
+        if (grp === "special") s.d.special_termination = !s.d.special_termination;
+        else if (grp === "kind" && s.d.kind !== t.dataset.val) {
+          // Untouched terms the user never stored follow the new kind's defaults.
+          const def = this._defaultsFor(s.c, t.dataset.val);
+          const stored = s.c.contract.stored || {};
+          for (const f of TERM_FIELDS) if (!s.touched.has(f) && stored[f] == null) s.d[f] = def[f];
+          s.d.kind = t.dataset.val;
+        } else s.d[grp] = t.dataset.val;
+        if (grp !== "kind" && grp !== "owner") s.touched.add(grp === "special" ? "special_termination" : grp);
         return this._paintSheet();
       }
       switch (t.dataset.act) {
@@ -654,9 +701,9 @@ class FdContracts extends HTMLElement {
         case "save": this._save(); break;
         case "reset": {
           if (!s) break;
-          // null = back to the category default; the sheet shows those values right away.
-          const def = this._defaultsFor(s.c.category);
-          Object.assign(s.d, def);
+          // null = back to the kind's default; the sheet shows those values right away.
+          const kind = s.c.kind_suggested || s.d.kind;
+          Object.assign(s.d, this._defaultsFor(s.c, kind), { kind });
           s.reset = true;
           this._paintSheet();
           break;
@@ -666,7 +713,10 @@ class FdContracts extends HTMLElement {
     });
     sh.addEventListener("input", (ev) => {
       const f = ev.target.dataset && ev.target.dataset.f;
-      if (f && this._sheet) this._sheet.d[f] = ev.target.value;
+      if (f && this._sheet) {
+        this._sheet.d[f] = ev.target.value;
+        this._sheet.touched.add(f);
+      }
     });
     sh.addEventListener("keydown", (ev) => {
       if (ev.key === "Escape" && this._sheet) { ev.stopPropagation(); this._closeSheet(); }

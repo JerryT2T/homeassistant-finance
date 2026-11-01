@@ -1,5 +1,13 @@
 # Build Log
 
+## 0.28.0 — 2026-11-01
+Version: 0.28.0
+Branch: feat/111-contract-kinds
+Changes:
+- feat(contracts): every recurring payment has a kind — Vertrag, Abo, Regelmäßige Ausgabe or Unregelmäßig — suggested from the payments (yearly, contract words and numbers, subscription words, weekly or everyday spending) and changeable in the edit sheet; the choice survives new imports
+- feat(contracts): the contracts page shows the kind on every row and filters the list and its totals by kind
+- feat(contracts): regular and irregular spending no longer shows a notice deadline or sends a notice reminder; notice defaults follow the kind (subscriptions monthly without notice, phone and internet contracts 24 months)
+
 ## 0.27.1 — 2026-11-01
 Version: 0.27.1
 Branch: fix/109-own-name-candidates
