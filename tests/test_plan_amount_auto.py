@@ -82,5 +82,6 @@ def test_monthly_skip_counts_as_a_pause():
 
 
 def test_quarterly_gaps_stay_strict():
-    rows = [txn(d, -99.0, "Versicherung") for d in ("2025-01-10", "2025-04-10", "2025-10-10", "2026-01-10")]
+    days = ("2025-01-10", "2025-04-10", "2025-10-10", "2026-01-10")
+    rows = [txn(d, -99.0, "Versicherung") for d in days]
     assert all(s["interval"] != "quarterly" for s in detect_series(rows, today=TODAY))
