@@ -12,10 +12,12 @@
  * Sections: persons, accounts, payday, region, notifications, ai, points, goals, banks, advanced.
  *
  *   GET/PUT finance_dashboard/assignments
- *     {persons:[{name, display_name, ha_users:[id]}], ha_users:[...], accounts:[{key,name,institution,iban_last4,owner}],
- *      plan_persons:[names]}   PUT: {persons:[{name,display_name,ha_users}], accounts:[{key,owner}]}
+ *     {persons:[{name, display_name, ha_users:[id]}], ha_users:[...],
+ *      accounts:[{key,name,institution,iban_last4,owner,account_type,earliest_booked}]}   PUT: {persons:[{name,display_name,ha_users}], accounts:[{key,owner}]}
  *   GET/PUT finance_dashboard/setup            payday, region, notifications
  *   GET/PUT finance_dashboard/setup/ai         provider, model, api key (write-only), monthly budget
+ *   GET/PUT finance_dashboard/setup/ai/consents  per-purpose consent {consents:{p:{granted,mode,granted_at,used_at}}, purposes:{p:{mode,pros,risks}}}
+ *                                              PUT {purpose, granted}; the setup shows only "categorize", Settings lists all
  *   GET/PUT finance_dashboard/setup/points     {entity_id}
  *   GET/POST finance_dashboard/setup/goals, DELETE setup/goals/{id}
  *   POST finance_dashboard/demo/toggle
@@ -54,9 +56,9 @@ const NOTIF = ["large_debit", "double_charge", "missing_salary", "consent_expiri
 const FB = {
   de: {
     "settings.title": "Personen & Konten",
-    "settings.intro": "Lege fest, wer zum Haushalt gehört und welchem Konto wer zugeordnet ist. Die Zuordnung ist nur der Standard – Budgetposten und Korrekturen gehen vor.",
+    "settings.intro": "Lege fest, wer zum Haushalt gehört und welchem Konto wer zugeordnet ist. Die Zuordnung ist nur der Standard – Haushaltsplan und Korrekturen gehen vor.",
     "settings.step1": "Wer gehört zum Haushalt?",
-    "settings.step1_hint": "Jeder Home-Assistant-Benutzer, der zum Haushalt gehört, wird zu einer Person. Der Kurzname wird überall angezeigt.",
+    "settings.step1_hint": "Jeder Home-Assistant-Benutzer, der zum Haushalt gehört, wird zu einer Person. Der Anzeigename wird überall angezeigt.",
     "settings.user_toggle": "Gehört zum Haushalt",
     "settings.suggested": "Vorgeschlagen",
     "settings.admin": "Admin",
@@ -67,17 +69,32 @@ const FB = {
     "settings.reason.no_person": "Keine Person in Home Assistant",
     "settings.more_users": "Weitere Benutzer ($n)",
     "settings.person_name": "Name der Person",
-    "settings.nickname": "Kurzname",
-    "settings.nickname_ph": "z. B. Ben",
+    "settings.nickname": "Anzeigename",
     "settings.person_remove": "Person entfernen",
     "settings.persons_free": "Personen ohne Benutzer",
-    "settings.plan_persons": "Aus dem Budgetplan",
     "settings.add_person": "Person hinzufügen",
     "settings.step2": "Welches Konto gehört wem?",
     "settings.step2_hint": "Offen heißt: noch nicht entschieden. Haushalt = gemeinsames Konto.",
     "settings.owner_shared": "Haushalt",
     "settings.owner_none": "Offen",
     "settings.no_accounts": "Noch keine Konten verbunden.",
+    "settings.connect_bank": "Bank verbinden",
+    "settings.acc.since": "Daten ab $month",
+    "settings.acc.type.CACC": "Girokonto",
+    "settings.acc.type.SVGS": "Sparkonto",
+    "settings.acc.type.CARD": "Kreditkarte",
+    "settings.ai.consent_title": "Zustimmung je Zweck",
+    "settings.ai.consent_on": "Zugestimmt am $date",
+    "settings.ai.consent_off": "Nicht zugestimmt",
+    "settings.ai.used": "Zuletzt genutzt: $date",
+    "settings.ai.used_never": "Noch nie genutzt",
+    "settings.ai.pros": "Vorteile",
+    "settings.ai.risks": "Risiken",
+    "settings.ai.consent_err": "Zustimmung konnte nicht gespeichert werden",
+    "ai.mode.once": "einmalig",
+    "ai.mode.recurring": "regelmäßig",
+    "ai.purpose.categorize.title": "Buchungen kategorisieren",
+    "ai.purpose.sheet_analysis.title": "Haushaltstabelle analysieren",
     "settings.no_persons": "Lege zuerst oben mindestens eine Person fest.",
     "settings.save": "Speichern",
     "settings.saving": "Speichere…",
@@ -87,12 +104,12 @@ const FB = {
     "settings.err_dup": "Jeder Name darf nur einmal vorkommen.",
     "settings.load_error": "Konnte nicht geladen werden.",
     "settings.nav": "Bereiche",
-    "settings.sec.persons": "Personen & Kurznamen",
+    "settings.sec.persons": "Personen",
     "settings.sec.accounts": "Konten",
     "settings.sec.payday": "Zahltag",
     "settings.sec.region": "Region",
     "settings.sec.notifications": "Benachrichtigungen",
-    "settings.sec.ai": "KI-Kategorisierung",
+    "settings.sec.ai": "KI",
     "settings.sec.points": "Punkte",
     "settings.sec.goals": "Sparziele",
     "settings.sec.banks": "Banken",
@@ -183,9 +200,9 @@ const FB = {
   },
   en: {
     "settings.title": "People & accounts",
-    "settings.intro": "Decide who belongs to the household and which account belongs to whom. This is only the default – budget positions and corrections take precedence.",
+    "settings.intro": "Decide who belongs to the household and which account belongs to whom. This is only the default – the household plan and corrections take precedence.",
     "settings.step1": "Who is part of the household?",
-    "settings.step1_hint": "Every Home Assistant user who belongs to the household becomes a person. The nickname is shown everywhere.",
+    "settings.step1_hint": "Every Home Assistant user who belongs to the household becomes a person. The display name is shown everywhere.",
     "settings.user_toggle": "Part of the household",
     "settings.suggested": "Suggested",
     "settings.admin": "Admin",
@@ -196,17 +213,32 @@ const FB = {
     "settings.reason.no_person": "No person in Home Assistant",
     "settings.more_users": "More users ($n)",
     "settings.person_name": "Person name",
-    "settings.nickname": "Nickname",
-    "settings.nickname_ph": "e.g. Ben",
+    "settings.nickname": "Display name",
     "settings.person_remove": "Remove person",
     "settings.persons_free": "People without a user",
-    "settings.plan_persons": "From the budget plan",
     "settings.add_person": "Add person",
     "settings.step2": "Which account belongs to whom?",
     "settings.step2_hint": "Open means not decided yet. Household = shared account.",
     "settings.owner_shared": "Household",
     "settings.owner_none": "Open",
     "settings.no_accounts": "No accounts connected yet.",
+    "settings.connect_bank": "Connect a bank",
+    "settings.acc.since": "Data from $month",
+    "settings.acc.type.CACC": "Current account",
+    "settings.acc.type.SVGS": "Savings account",
+    "settings.acc.type.CARD": "Credit card",
+    "settings.ai.consent_title": "Consent per purpose",
+    "settings.ai.consent_on": "Consent given on $date",
+    "settings.ai.consent_off": "No consent",
+    "settings.ai.used": "Last used: $date",
+    "settings.ai.used_never": "Never used",
+    "settings.ai.pros": "Advantages",
+    "settings.ai.risks": "Risks",
+    "settings.ai.consent_err": "Consent could not be saved",
+    "ai.mode.once": "one-time",
+    "ai.mode.recurring": "recurring",
+    "ai.purpose.categorize.title": "Categorise transactions",
+    "ai.purpose.sheet_analysis.title": "Analyse household spreadsheet",
     "settings.no_persons": "Add at least one person above first.",
     "settings.save": "Save",
     "settings.saving": "Saving…",
@@ -216,12 +248,12 @@ const FB = {
     "settings.err_dup": "Each name may appear only once.",
     "settings.load_error": "Could not be loaded.",
     "settings.nav": "Sections",
-    "settings.sec.persons": "People & nicknames",
+    "settings.sec.persons": "People",
     "settings.sec.accounts": "Accounts",
     "settings.sec.payday": "Payday",
     "settings.sec.region": "Region",
     "settings.sec.notifications": "Notifications",
-    "settings.sec.ai": "AI categorisation",
+    "settings.sec.ai": "AI",
     "settings.sec.points": "Points",
     "settings.sec.goals": "Savings goals",
     "settings.sec.banks": "Banks",
@@ -373,6 +405,9 @@ summary { min-height: var(--fd-touch); display: flex; align-items: center; color
 @container (min-width: 520px) { .states { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 .states button { min-height: var(--fd-touch); padding: 4px 10px; border: 1px solid var(--fd-line); border-radius: 12px; background: transparent; text-align: left; overflow-wrap: anywhere; }
 .states button[aria-checked="true"] { background: var(--fd-a50); border-color: var(--fd-a500); color: var(--fd-a900); font-weight: 500; }
+.cons { padding: 6px 0 10px; border-top: 1px solid var(--fd-line); }
+.cons ul.pc { margin: 2px 0 8px; padding-left: 18px; font-size: 12.5px; color: var(--fd-t2); }
+.cons ul.pc li { margin: 2px 0; }
 .bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 10px; margin-top: 16px; }
 .err { margin-right: auto; color: var(--fd-over); font-size: 12px; min-width: 0; overflow-wrap: anywhere; }
 .ok { color: var(--fd-ok); font-size: 12px; }
@@ -494,7 +529,7 @@ class FdSettings extends HTMLElement {
     const need = {
       payday: [["setup", "setup"]], region: [["setup", "setup"]], notifications: [["setup", "setup"]],
       goals: [["setup", "setup"], ["goals", "setup/goals"]],
-      ai: [["ai", "setup/ai"]], points: [["points", "setup/points"]],
+      ai: [["ai", "setup/ai"], ["consents", "setup/ai/consents"]], points: [["points", "setup/points"]],
     }[sec] || [];
     for (const [key, path] of need) {
       if (this._loaded.has(key)) continue;
@@ -526,7 +561,7 @@ class FdSettings extends HTMLElement {
     } else if (key === "ai") {
       this._dr.ai = {
         provider: v.provider || "ha", model: v.model || "", ha_agent: v.ha_agent || "",
-        budget_cap: (v.budget || {}).cap ?? 100, api_key: "", opt_in: !!v.opt_in,
+        budget_cap: (v.budget || {}).cap ?? 100, api_key: "",
       };
     } else if (key === "points") {
       this._dr.points = { entity_id: v.entity_id || "", q: "" };
@@ -658,22 +693,20 @@ class FdSettings extends HTMLElement {
     const main = users.filter((u) => u.suggested || this._personOf(u.id));
     const more = users.filter((u) => !main.includes(u));
     const free = this._draft.persons.filter((p) => !p.ha_users.length);
-    const planChips = (d.plan_persons || []).filter((n) => !this._draft.persons.some((p) => p.name === n));
     return `${legacy ? `<h4>1 · ${escHtml(tr("settings.step1"))}</h4>` : ""}
   <p class="muted">${escHtml(tr("settings.step1_hint"))}</p>
   <div>${main.map((u) => this._userRow(u)).join("")}</div>
   ${more.length ? `<details><summary>${escHtml(tr("settings.more_users", { n: more.length }))}</summary>${more.map((u) => this._userRow(u)).join("")}</details>` : ""}
   ${free.length ? `<h4>${escHtml(tr("settings.persons_free"))}</h4>${free.map((p) => this._freeRow(p)).join("")}` : ""}
-  ${planChips.length ? `<p class="muted" style="margin-top:12px">${escHtml(tr("settings.plan_persons"))}</p>
-    <div class="chips">${planChips.map((n) => `<button type="button" data-plan="${escHtml(n)}">+ ${escHtml(n)}</button>`).join("")}</div>` : ""}
   <div class="chips"><button type="button" id="addp">+ ${escHtml(tr("settings.add_person"))}</button></div>
   <p class="err" id="err-persons" role="alert">${escHtml(this._error)}</p>
   ${legacy ? "" : this._bar("assign")}`;
   }
 
+  /** One field per person: the display name (shown everywhere). `name` stays the internal key. */
   _nick(p, attr) {
     const { escHtml } = window._fd;
-    return `<div class="f"><label>${escHtml(tr("settings.nickname"))}<input type="text" ${attr} value="${escHtml(p.display_name || "")}" placeholder="${escHtml(tr("settings.nickname_ph"))}" maxlength="40"></label></div>`;
+    return `<div class="f"><label>${escHtml(tr("settings.nickname"))}<input type="text" ${attr} value="${escHtml(p.isNew ? p.name : (p.display_name || p.name))}" maxlength="40"></label></div>`;
   }
 
   _userRow(u) {
@@ -687,7 +720,7 @@ class FdSettings extends HTMLElement {
     <span>${escHtml(u.suggested ? tr("settings.suggested") + " · " : "")}${escHtml(reason)}</span></div>
   <span class="hit"><button type="button" class="sw" role="switch" aria-checked="${on}" data-sw="${escHtml(u.id)}"
     aria-label="${escHtml(tr("settings.user_toggle") + ": " + u.name)}"></button></span>
-  ${on ? `<div class="flds"><div class="f"><label>${escHtml(tr("settings.person_name"))}<input type="text" data-name="${escHtml(u.id)}" value="${escHtml(p.name)}"></label></div>${this._nick(p, `data-nick-user="${escHtml(u.id)}"`)}</div>` : ""}
+  ${on ? `<div class="flds">${this._nick(p, `data-nick-user="${escHtml(u.id)}"`)}</div>` : ""}
 </div>`;
   }
 
@@ -695,8 +728,7 @@ class FdSettings extends HTMLElement {
     const { escHtml } = window._fd;
     const i = this._draft.persons.indexOf(p);
     return `<div class="row">
-  <div class="flds"><div class="f"><label>${escHtml(tr("settings.person_name"))}<input type="text" data-free="${i}" value="${escHtml(p.name)}"></label></div>
-  ${this._nick(p, `data-nick-free="${i}"`)}</div>
+  <div class="flds">${this._nick(p, p.isNew ? `data-free="${i}"` : `data-nick-free="${i}"`)}</div>
   <button type="button" class="btn ghost sm" data-rm="${i}">${escHtml(tr("settings.person_remove"))}</button>
 </div>`;
   }
@@ -705,7 +737,8 @@ class FdSettings extends HTMLElement {
     const { escHtml } = window._fd;
     const head = `${legacy ? `<h4>2 · ${escHtml(tr("settings.step2"))}</h4>` : ""}<p class="muted">${escHtml(tr("settings.step2_hint"))}</p>`;
     const accounts = this._data.accounts || [];
-    if (!accounts.length) return `${head}<p class="muted">${escHtml(tr("settings.no_accounts"))}</p>`;
+    if (!accounts.length) return `${head}<p class="muted">${escHtml(tr("settings.no_accounts"))}</p>
+      <a class="btn" href="/config/integrations/integration/${DOMAIN}">${escHtml(tr("settings.connect_bank"))}</a>`;
     const persons = this._draft.persons;
     // Suggested users that are not persons yet are offered right here.
     const candidates = (this._data.ha_users || []).filter((u) => u.suggested && !this._personOf(u.id));
@@ -717,10 +750,22 @@ class FdSettings extends HTMLElement {
       const opts = persons.map((p) => opt(p.name, this._dn(p), this._color(p.name), p.name))
         .concat(candidates.map((u, i) => opt(`user:${u.id}`, u.name, PERSON_COLORS[(persons.length + i) % PERSON_COLORS.length])))
         .concat([opt("shared", tr("settings.owner_shared"), "var(--fd-household)"), opt("", tr("settings.owner_none"), "var(--fd-t3)")]);
-      return `<div class="acc"><div class="nm"><b>${escHtml(a.name)}</b><span>${escHtml(a.institution || "")}${a.iban_last4 ? ` · ••${escHtml(a.iban_last4)}` : ""}</span></div>
+      const kind = a.account_type && tr(`settings.acc.type.${a.account_type}`) !== `settings.acc.type.${a.account_type}` ? tr(`settings.acc.type.${a.account_type}`) : "";
+      const since = this._sinceText(a.earliest_booked);
+      const meta = [a.institution || "", kind, since].filter(Boolean).join(" · ");
+      return `<div class="acc"><div class="nm"><b>${escHtml(a.name)}</b><span>${escHtml(meta)}${a.iban_last4 ? ` · ••${escHtml(a.iban_last4)}` : ""}</span></div>
   <div class="seg" role="radiogroup" aria-label="${escHtml(a.name)}">${opts.join("")}</div></div>`;
     }).join("");
     return `${head}${note}${rows}${this._bar("assign")}`;
+  }
+
+  /** "Daten ab Oktober 2025" from a YYYY-MM-DD date; empty without one. */
+  _sinceText(iso) {
+    const m = /^(\d{4})-(\d{2})/.exec(iso || "");
+    if (!m) return "";
+    const lang = (this._hass && this._hass.language) || navigator.language || "en";
+    const month = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, 1)).toLocaleDateString(lang, { month: "long", year: "numeric", timeZone: "UTC" });
+    return tr("settings.acc.since", { month });
   }
 
   _loading(sec) {
@@ -785,7 +830,7 @@ class FdSettings extends HTMLElement {
           ${v.has_key ? `<button type="button" class="btn ghost sm" data-ai-rmkey>${escHtml(tr("settings.ai.key_remove"))}</button>` : ""}</div>`;
     }
     return `<div class="note">${escHtml(tr("settings.ai.privacy"))}</div>
-      ${this._sw("ai.opt_in", !!a.opt_in, tr("settings.ai.toggle"))}
+      ${this._consentsHtml()}
       <div class="lbl" style="margin-top:8px" id="ai-prov">${escHtml(tr("settings.ai.provider"))}</div>
       <div class="opts" role="radiogroup" aria-labelledby="ai-prov">${opts}</div>
       ${prov}
@@ -797,6 +842,48 @@ class FdSettings extends HTMLElement {
         <span>${escHtml(tr("settings.ai.test_hint"))}</span></div>
         <button type="button" class="btn ghost sm" data-ai-test ${this._aiTesting ? "disabled aria-busy=\"true\"" : ""}>${escHtml(tr(this._aiTesting ? "settings.ai.test_busy" : "settings.ai.test"))}</button></div>
       ${this._bar("ai")}`;
+  }
+
+  /** Per-purpose consent: switch, mode, pros/risks, consent date and last use. Setup shows "categorize" only. */
+  _consentsHtml() {
+    const { escHtml, fmtDate } = window._fd;
+    const c = this._d.consents;
+    if (!c) return "";
+    const purposes = c.purposes || {};
+    let ids = Object.keys(purposes);
+    if (!ids.length) ids = Object.keys(c.consents || {});
+    if (this._embedded) ids = ids.filter((id) => id === "categorize");
+    const line = (key, purpose) => {
+      const k = String(key).includes(".") ? String(key) : `ai.purpose.${purpose}.${key}`;
+      return `<li>${escHtml(tr(k))}</li>`;
+    };
+    const blocks = ids.map((id) => {
+      const info = purposes[id] || {};
+      const st = (c.consents || {})[id] || {};
+      const on = !!st.granted;
+      const mode = st.mode || info.mode;
+      const tk = `ai.purpose.${id}.title`;
+      const title = tr(tk) === tk ? id : tr(tk);
+      const meta = [on && st.granted_at ? tr("settings.ai.consent_on", { date: fmtDate(st.granted_at, true) }) : tr("settings.ai.consent_off"),
+        st.used_at ? tr("settings.ai.used", { date: fmtDate(st.used_at, true) }) : tr("settings.ai.used_never")].join(" · ");
+      const pros = (info.pros || []).slice(0, 3), risks = (info.risks || []).slice(0, 3);
+      return `<div class="cons"><div class="row" style="border:0"><div class="who"><b>${escHtml(title)}${mode ? `<span class="chip">${escHtml(tr("ai.mode." + mode))}</span>` : ""}</b><span>${escHtml(meta)}</span></div>
+          <span class="hit"><button type="button" class="sw" role="switch" aria-checked="${on}" data-consent="${escHtml(id)}" aria-label="${escHtml(title)}"></button></span></div>
+        ${pros.length ? `<div class="lbl">${escHtml(tr("settings.ai.pros"))}</div><ul class="pc">${pros.map((k) => line(k, id)).join("")}</ul>` : ""}
+        ${risks.length ? `<div class="lbl">${escHtml(tr("settings.ai.risks"))}</div><ul class="pc">${risks.map((k) => line(k, id)).join("")}</ul>` : ""}</div>`;
+    }).join("");
+    return this._embedded ? blocks : `<div class="lbl" style="margin-top:8px">${escHtml(tr("settings.ai.consent_title"))}</div>${blocks}`;
+  }
+
+  async _toggleConsent(purpose) {
+    const cur = ((this._d.consents || {}).consents || {})[purpose] || {};
+    try {
+      const res = await this._put("setup/ai/consents", { purpose, granted: !cur.granted });
+      this._d.consents = res && res.consents ? res : await this._hass.callApi("GET", `${DOMAIN}/setup/ai/consents`);
+      this._msg.ai = "";
+      this._renderSec("ai");
+      this._toast(tr("settings.saved"), "success");
+    } catch (e) { this._fail(`${tr("settings.ai.consent_err")}${this._errText(e).replace(tr("settings.error"), "")}`, "ai"); }
   }
 
   async _testAi() {
@@ -921,11 +1008,8 @@ class FdSettings extends HTMLElement {
       if (d.sw) {
         const u = (this._data.ha_users || []).find((x) => x.id === d.sw);
         if (u) { this._toggleUser(u); this._renderSec("persons"); this._renderSec("accounts"); }
-      } else if (d.plan) {
-        this._draft.persons.push({ name: d.plan, ha_users: [], display_name: "" });
-        this._renderSec("persons"); this._renderSec("accounts");
       } else if (t.id === "addp") {
-        this._draft.persons.push({ name: "", ha_users: [], display_name: "" });
+        this._draft.persons.push({ name: "", ha_users: [], display_name: "", isNew: true });
         this._renderSec("persons");
         const inputs = sh.querySelectorAll("[data-free]");
         inputs[inputs.length - 1]?.focus();
@@ -962,6 +1046,8 @@ class FdSettings extends HTMLElement {
       } else if (d.ptClear !== undefined) {
         this._dr.points.entity_id = "";
         this._renderSec("points");
+      } else if (d.consent) {
+        this._toggleConsent(d.consent);
       } else if (d.aiRmkey !== undefined) {
         this._removeKey();
       } else if (d.aiTest !== undefined) {
@@ -1082,7 +1168,7 @@ class FdSettings extends HTMLElement {
     const cap = Number(a.budget_cap);
     const hard = (this._d.ai.budget || {}).hard_cap || 1000;
     if (!Number.isInteger(cap) || cap < 0 || cap > hard) return this._fail(tr("settings.ai.budget_err", { cap: hard }), "ai"), false;
-    const body = { provider: a.provider, budget_cap: cap, ai_opt_in: !!a.opt_in };
+    const body = { provider: a.provider, budget_cap: cap };
     if (a.provider === "ha") body.ha_agent = (a.ha_agent || "").trim();
     else body.model = (a.model || "").trim();
     if (a.api_key) body.api_key = a.api_key;
