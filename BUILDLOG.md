@@ -1,5 +1,14 @@
 # Build Log
 
+## 0.24.3 — 2026-11-01
+Version: 0.24.3
+Branch: fix/108-payee-split
+Changes:
+- fix(contracts): two loans or contracts at one payee are two contracts with their full amounts when the transfer text names different contract, loan, customer or mandate numbers that run in parallel; a number that only changes once stays one contract
+- fix(contracts): a subscription at a payee that also sells one-off purchases (app store, BNPL provider) is found on its own; the one-offs and finite instalments ("Teil 1/3") stay out, a real price step is still one series
+- fix(contracts): energy advances stay one contract even when a yearly settlement from the same supplier sits between them
+- feat(contracts): split parts keep their ids through hashed reference and amount-band keys in the alias table (no numbers or amounts stored in clear)
+
 ## 0.24.2 — 2026-11-01
 Version: 0.24.2
 Branch: fix/120-processor-merchants

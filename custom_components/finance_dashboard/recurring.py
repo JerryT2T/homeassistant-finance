@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import re
 import statistics
 from collections import defaultdict
 from datetime import date, datetime, timedelta
@@ -303,9 +304,7 @@ def _amounts_consistent(amounts: list[float], tolerance: float) -> bool:
     mags = [abs(a) for a in amounts]
     if not mags or min(mags) == 0:
         return False
-    jumps = [
-        i for i in range(1, len(mags)) if abs(mags[i] - mags[i - 1]) / mags[i - 1] > tolerance
-    ]
+    jumps = [i for i in range(1, len(mags)) if abs(mags[i] - mags[i - 1]) / mags[i - 1] > tolerance]
     if not jumps:
         return True
     if len(jumps) > 1:
@@ -362,28 +361,233 @@ def detect_series(
         groups[(canonical_name(raw), amount < 0)].append((day, amount, txn))
 
     known = set(known_ids) | set(overrides) | set((aliases or {}).values())
+    aliases = aliases or {}
     out: list[dict[str, Any]] = []
     for key, negative, rows in _keep_known_apart(groups, known):
         names = _names_first_seen(rows)
-        sid = resolve_series_id(key, names, negative, aliases or {}, known)
         name = names[-1]
-        dedup: list[tuple[date, float, dict[str, Any]]] = []
-        for row in rows:  # same-day duplicates carry no interval information
-            if dedup and dedup[-1][0] == row[0]:
-                continue
-            dedup.append(row)
-        if len(dedup) < 2:
+        parts = _series_parts(rows, date_tolerance_days, amount_tolerance)
+        if not parts:
             continue
-        interval = _classify_interval([r[0] for r in dedup], date_tolerance_days)
-        if interval is None or not _amounts_consistent([r[1] for r in dedup], amount_tolerance):
-            continue
-        series = _build_series(
-            sid, name, negative, dedup, interval, today, date_tolerance_days, overrides
-        )
-        series["alias_key"] = alias_key(key, negative)
-        out.append(series)
+        # earliest payment keeps the payee id; same day -> the tag decides, not input order
+        base = min(range(len(parts)), key=lambda i: (parts[i].rows[0][0], parts[i].tag))
+        used: set[str] = set()
+        for i, part in enumerate(parts):
+            sid = _part_id(
+                part,
+                is_base=i == base,
+                canonical=key,
+                names=names,
+                negative=negative,
+                aliases=aliases,
+                known=known,
+                used=used,
+            )
+            used.add(sid)
+            series = _build_series(
+                sid, name, negative, part.rows, part.interval, today, date_tolerance_days, overrides
+            )
+            keys = [alias_key(key, negative)] if i == base else []
+            if part.tag:
+                keys.append(alias_key(key + part.tag, negative))
+            if part.ref:
+                keys.append(_ref_alias_key(part.ref, negative))
+            series["alias_key"] = keys[0]
+            series["alias_keys"] = keys
+            out.append(series)
     out.sort(key=lambda s: s["annual_cost"], reverse=True)
     return out
+
+
+# ---------------------------------------------------------------------------
+# One payee, several series (#108)
+# ---------------------------------------------------------------------------
+#
+# A lender with two loans, an app store with a subscription and one-off
+# purchases, a BNPL provider with a membership and instalments: one payee
+# name, several payment streams. A payee group is split
+#  - by contract reference (loan / contract / customer / mandate number in the
+#    remittance text) when two or more references each recur and run at the
+#    same time - a reference that merely changes once (new mandate) is a
+#    successor, not a second contract;
+#  - else, only when the whole group is no series, into amount bands; finite
+#    instalments ("Teil 1/3", "Rate 2 von 6") never form a band.
+# A real price step is therefore never split: the whole group is a series.
+
+_REF_KEYWORDS = (
+    r"darlehen(?:skonto|s?-?nr)?|kredit(?:konto|-?nr)?|vertrag(?:s?nummer|s?-?nr)?"
+    r"|vertragskonto|kunden-?(?:nr|nummer)|kd-?nr|mandat(?:s?referenz)?|mref"
+    r"|police(?:n-?nr)?|versicherungs(?:schein|nummer)(?:-?nr)?"
+    r"|mitglieds-?(?:nr|nummer)|loan|contract"
+)
+_REF = re.compile(
+    rf"\b(?:{_REF_KEYWORDS})\b\.?[\s:#.-]*(?:(?:nr|no)\b\.?[\s:#.-]*)?"
+    r"([a-z]{0,4}-?\d[\d/-]{3,}\w*)",
+    re.IGNORECASE,
+)
+MIN_BAND_OCCURRENCES = 3
+_FINITE_INSTALMENT = re.compile(r"\b(?:teil|rate)\s*\d+\s*(?:/|von|of)\s*\d+\b", re.IGNORECASE)
+
+
+def contract_reference(remittance: str) -> str:
+    """Contract / loan / customer / mandate number named in ``remittance``.
+
+    Only a number that follows a contract keyword counts, so a varying order
+    or invoice number never splits a payee ("" when none).
+    """
+    match = _REF.search(remittance or "")
+    return match.group(1).lower().rstrip("/-") if match else ""
+
+
+def _remittance(txn: dict[str, Any]) -> str:
+    text = str(txn.get("remittanceInformationUnstructured") or "")
+    if not text:
+        arr = txn.get("remittanceInformationUnstructuredArray") or []
+        text = " ".join(str(a) for a in arr)
+    return text
+
+
+def _digest(value: str) -> str:
+    return hashlib.sha1(value.encode()).hexdigest()[:10]  # noqa: S324 - not security
+
+
+def _ref_alias_key(ref: str, negative: bool) -> str:
+    """Name-independent alias key of a contract reference (hashed, never the number)."""
+    return alias_key("#ref:" + _digest(ref), negative)
+
+
+class _Part:
+    """One series inside a payee group."""
+
+    __slots__ = ("interval", "ref", "rows", "tag")
+
+    def __init__(self, rows, interval: str, tag: str = "", ref: str = "") -> None:
+        self.rows = rows
+        self.interval = interval
+        self.tag = tag  # "" for the whole group, else "#<ref hash>" / "~<band hash>"
+        self.ref = ref
+
+
+def _as_series(rows, date_tol: int, amount_tol: float):
+    """``(deduplicated rows, interval)`` when ``rows`` form a series, else None."""
+    dedup: list[tuple[date, float, dict[str, Any]]] = []
+    for row in rows:  # same-day duplicates carry no interval information
+        if dedup and dedup[-1][0] == row[0]:
+            continue
+        dedup.append(row)
+    if len(dedup) < 2:
+        return None
+    interval = _classify_interval([r[0] for r in dedup], date_tol)
+    if interval is None or not _amounts_consistent([r[1] for r in dedup], amount_tol):
+        return None
+    return dedup, interval
+
+
+def _amount_bands(rows, tolerance: float):
+    """Rows clustered by amount (each band within ``tolerance`` of its smallest)."""
+    bands: list[list[tuple[date, float, dict[str, Any]]]] = []
+    for row in sorted(rows, key=lambda r: abs(r[1])):
+        if bands and abs(row[1]) <= abs(bands[-1][0][1]) * (1 + tolerance):
+            bands[-1].append(row)
+        else:
+            bands.append([row])
+    return [sorted(b, key=lambda r: r[0]) for b in bands]
+
+
+def _whole_or_bands(rows, date_tol: int, amount_tol: float, tag: str = "", ref: str = ""):
+    whole = _as_series(rows, date_tol, amount_tol)
+    if whole:
+        return [_Part(whole[0], whole[1], tag, ref)]
+    plain = [r for r in rows if not _FINITE_INSTALMENT.search(_remittance(r[2]))]
+    found = [_as_series(band, date_tol, amount_tol) for band in _amount_bands(plain, amount_tol)]
+    streams = sorted(
+        (f for f in found if f and _band_is_regular(f[0], f[1], date_tol)),
+        key=lambda f: f[0][0][0],
+    )
+    parts = []
+    for rows_, interval in _join_successors(streams, date_tol, amount_tol):
+        mid = statistics.median(abs(r[1]) for r in rows_[:MIN_BAND_OCCURRENCES])
+        # a band never claims the reference: two bands would fight over it
+        parts.append(_Part(rows_, interval, f"{tag}~{_digest(f'{mid:.0f}')}"))
+    return parts
+
+
+def _band_is_regular(rows, interval: str, date_tol: int) -> bool:
+    """A band cut out of a mixed payee needs more evidence than a whole payee:
+    at least three payments, each within ``date_tol`` days of the date the one
+    before it predicts. Two similar purchases a month apart are chance."""
+    if len(rows) < MIN_BAND_OCCURRENCES:
+        return False
+    return all(
+        abs((rows[i][0] - _add_period(rows[i - 1][0], interval)).days) <= date_tol
+        for i in range(1, len(rows))
+    )
+
+
+def _join_successors(streams, date_tol: int, amount_tol: float):
+    """Join a band that continues where an earlier one stopped (a price step
+    beside a one-off purchase splits a series into two bands)."""
+    joined: list = []
+    for rows_, interval in streams:
+        if joined and joined[-1][1] == interval and rows_[0][0] > joined[-1][0][-1][0]:
+            gap = (rows_[0][0] - joined[-1][0][-1][0]).days
+            merged = _as_series(joined[-1][0] + rows_, date_tol, amount_tol)
+            if gap <= INTERVALS[interval][0] + date_tol + 2 and merged:
+                joined[-1] = merged
+                continue
+        joined.append((rows_, interval))
+    return joined
+
+
+def _series_parts(rows, date_tol: int, amount_tol: float) -> list[_Part]:
+    """The series inside one payee group (date-sorted ``rows``)."""
+    by_ref: dict[str, list[tuple[date, float, dict[str, Any]]]] = defaultdict(list)
+    for row in rows:
+        by_ref[contract_reference(_remittance(row[2]))].append(row)
+    recurring = {ref: rs for ref, rs in by_ref.items() if ref and len(rs) >= 2}
+    if len(recurring) >= 2 and _run_in_parallel(list(recurring.values())):
+        parts: list[_Part] = []
+        for ref, part_rows in recurring.items():
+            parts += _whole_or_bands(part_rows, date_tol, amount_tol, "#" + _digest(ref), ref)
+        rest = sorted(
+            (r for ref, rs in by_ref.items() if ref not in recurring for r in rs),
+            key=lambda r: r[0],
+        )
+        return parts + _whole_or_bands(rest, date_tol, amount_tol, "#-")
+    single_ref = next(iter(by_ref)) if len(by_ref) == 1 else ""
+    return _whole_or_bands(rows, date_tol, amount_tol, ref=single_ref)
+
+
+def _run_in_parallel(streams) -> bool:
+    """Two of the date-sorted ``streams`` overlap in time."""
+    spans = sorted((s[0][0], s[-1][0]) for s in streams)
+    return any(spans[i][0] <= spans[i - 1][1] for i in range(1, len(spans)))
+
+
+def _part_id(
+    part: _Part,
+    *,
+    is_base: bool,
+    canonical: str,
+    names: list[str],
+    negative: bool,
+    aliases: dict[str, str],
+    known: set[str],
+    used: set[str],
+) -> str:
+    """Id of one part: its own remembered alias first; the earliest part keeps
+    the payee's id, every other part gets an id derived from its tag."""
+    candidates = []
+    if part.ref:
+        candidates.append(aliases.get(_ref_alias_key(part.ref, negative)))
+    if part.tag:
+        candidates.append(aliases.get(alias_key(canonical + part.tag, negative)))
+    if is_base:
+        candidates.append(resolve_series_id(canonical, names, negative, aliases, known))
+    for sid in candidates:
+        if sid and sid not in used:
+            return sid
+    return series_id(f"{names[0]} {part.tag or part.ref}", negative)
 
 
 def _most_common_value(values: list[Any], default: Any) -> Any:
