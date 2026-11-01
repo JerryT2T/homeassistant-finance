@@ -33,7 +33,7 @@ TRAIT_TELECOM = "telecom"
 
 _CONTRACT_WORDS = re.compile(
     r"\b(darlehen\w*|kredit|miete|kaltmiete|versicherung\w*|police|abschlag\w*|mobilfunk"
-    r"|strom|vertrag\w*|tilgung|leasing|rate|ratenzahlung)\b",
+    r"|strom|\w*vertrag\w*|tilgung|leasing|rate|ratenzahlung|beitrag)\b",
     re.IGNORECASE,
 )
 _SUBSCRIPTION_WORDS = re.compile(
@@ -47,7 +47,7 @@ _TELECOM = re.compile(
 )
 # Category slugs as the categorizer writes them.
 _CONTRACT_CATEGORIES = {"housing", "insurance", "loans", "utilities", "telecom"}
-_HABIT_CATEGORIES = {"food", "groceries", "gastro", "shopping"}
+_HABIT_CATEGORIES = {"food", "shopping"}
 _IRREGULAR_CATEGORIES = {"health"}
 _YEAR_BASED = ("quarterly", "half_yearly", "yearly")
 
@@ -88,14 +88,19 @@ def suggest_kind(
     texts = _texts(rows)
     if interval in _YEAR_BASED:
         return KIND_CONTRACT  # nobody pays a yearly habit
-    if "contract_reference" in reasons or any(_CONTRACT_WORDS.search(t) for t in texts):
+    if "contract_reference" in reasons:
         return KIND_CONTRACT
-    if any(_SUBSCRIPTION_WORDS.search(t) for t in texts):
-        return KIND_SUBSCRIPTION
-    if interval != "monthly" or category in _HABIT_CATEGORIES:
+    # Everyday spending wins over loose words ("Brötchen Rate", "Praxis Dr. Strom").
+    if category in _HABIT_CATEGORIES or "savings_text" in reasons:
         return KIND_REGULAR
     if category in _IRREGULAR_CATEGORIES:
         return KIND_IRREGULAR
+    if any(_CONTRACT_WORDS.search(t) for t in texts):
+        return KIND_CONTRACT
+    if any(_SUBSCRIPTION_WORDS.search(t) for t in texts):
+        return KIND_SUBSCRIPTION
+    if interval != "monthly":
+        return KIND_REGULAR
     if category in _CONTRACT_CATEGORIES:
         return KIND_CONTRACT
     if "stable_amount" in reasons:

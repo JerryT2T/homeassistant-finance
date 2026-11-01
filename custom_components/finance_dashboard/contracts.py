@@ -437,6 +437,7 @@ def _contract_view(s: dict[str, Any], c: Contract, today: date) -> dict[str, Any
             "special_termination": special_checked,
             "special_termination_prefilled": c.special_termination is None,
             "defaults": defaults,
+            "defaults_by_kind": {k: kind_defaults(k, category, trait) for k in KINDS},
             "has_notice": has_notice,
             "stored": c.to_dict(),
         },

@@ -44,6 +44,12 @@ def _one(rows, store=None):
         ("Kartenzahlung", "food", KIND_REGULAR),
         ("Rezept", "health", KIND_IRREGULAR),
         ("Kartenzahlung", "insurance", KIND_CONTRACT),
+        # QA #111: loose words never beat everyday spending, compounds still count
+        ("Brötchen Rate 3 von 5", "food", KIND_REGULAR),
+        ("Praxis Dr. Strom", "health", KIND_IRREGULAR),
+        ("Handyvertrag Erika", "other", KIND_CONTRACT),
+        ("Kita Beitrag", "other", KIND_CONTRACT),
+        ("Taschengeld Max", "other", KIND_REGULAR),
     ],
 )
 def test_kind_is_suggested_from_text_and_category(text, category, kind):
@@ -96,6 +102,8 @@ def test_defaults_follow_the_kind_and_the_telecom_trait():
     sub = _one(_with_text(monthly([-9.99] * 5), "Abo Cloud"))
     assert sub["contract"]["notice_value"] == 0
     assert sub["contract"]["defaults"]["renewal_months"] == 1
+    assert sub["contract"]["defaults_by_kind"][KIND_CONTRACT]["min_term_months"] == 12
+    assert sub["contract"]["defaults_by_kind"][KIND_REGULAR] is None
     assert kind_defaults(KIND_REGULAR, "food") is None
     assert kind_defaults(KIND_CONTRACT, "unknown")["min_term_months"] == 12
 

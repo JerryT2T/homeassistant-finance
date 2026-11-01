@@ -184,6 +184,7 @@ const CAT_DEFAULTS = {
 const FALLBACK_DEFAULTS = [1, 1, 0, "days"];
 const KINDS = ["contract", "subscription", "regular", "irregular"];
 const NO_NOTICE = new Set(["regular", "irregular"]);
+const TERM_FIELDS = ["min_term_months", "renewal_months", "notice_value", "notice_unit", "notice_reference"];
 
 function tr(key, vars = {}) {
   let s = window._fd.tSync(key, vars);
@@ -532,8 +533,12 @@ class FdContracts extends HTMLElement {
   }
 
   // ---- edit sheet ---------------------------------------------------------
-  _defaultsFor(c) {
-    if (c.contract && c.contract.defaults) return { ...c.contract.defaults };
+  _defaultsFor(c, kind) {
+    const k = c.contract || {};
+    const byKind = k.defaults_by_kind || {};
+    // Kinds without notice keep the contract terms for a later switch back.
+    const d = byKind[kind] || byKind.contract || k.defaults;
+    if (d) return { ...d };
     const [term, renewal, notice, unit] = CAT_DEFAULTS[c.category] || FALLBACK_DEFAULTS;
     return { min_term_months: term, renewal_months: renewal, notice_value: notice, notice_unit: unit, notice_reference: "end_of_term" };
   }
@@ -543,7 +548,7 @@ class FdContracts extends HTMLElement {
     if (!c || !c.contract) return;
     const k = c.contract;
     this._sheet = {
-      id, c, error: "", saving: false,
+      id, c, error: "", saving: false, touched: new Set(),
       d: {
         start: k.start || c.first_seen || "",
         min_term_months: k.min_term_months, renewal_months: k.renewal_months,
@@ -575,7 +580,7 @@ class FdContracts extends HTMLElement {
     if (!s || !el) return;
     const e = window._fd.escHtml;
     const d = s.d;
-    const def = this._defaultsFor(s.c);
+    const def = this._defaultsFor(s.c, d.kind);
     const notice = !NO_NOTICE.has(d.kind);
     const opt = (grp, val, label, cur) => `<button type="button" role="radio" aria-checked="${cur === val}" data-grp="${grp}" data-val="${e(val)}">${e(label)}</button>`;
     el.innerHTML = `<div class="scrim" data-act="scrim"><div class="sheet" role="dialog" aria-modal="true" aria-label="${e(tr("ct.edit"))}">
@@ -610,7 +615,8 @@ class FdContracts extends HTMLElement {
     const d = s.d;
     const num = (v) => (v === "" || v == null ? null : Number(v));
     const body = {};
-    // Only fields that differ from what the contract currently shows are sent.
+    // Only fields the user edited and that differ from what the contract shows
+    // are sent: terms prefilled by a kind switch must not overwrite stored ones.
     const same = (a, b) => (a ?? null) === (b ?? null);
     const next = {
       start: d.start || null,
@@ -619,14 +625,14 @@ class FdContracts extends HTMLElement {
     };
     for (const f of Object.keys(next)) {
       const before = f === "start" ? (k.start || s.c.first_seen || null) : k[f];
-      if (!same(next[f], before)) body[f] = next[f];
+      if (s.touched.has(f) && !same(next[f], before)) body[f] = next[f];
     }
     if (d.owner !== (s.c.owner || "shared")) body.owner = d.owner;
     // The suggested kind is stored as null, so a better suggestion later still applies.
     if (d.kind !== this._kindOf(s.c)) body.kind = d.kind === s.c.kind_suggested ? null : d.kind;
     if (s.reset) {
-      // After "reset": fields still at the category default go back to null (= follow the default).
-      const def = this._defaultsFor(s.c);
+      // After "reset": fields still at the kind's default go back to null (= follow the default).
+      const def = this._defaultsFor(s.c, d.kind);
       for (const f of Object.keys(def)) body[f] = next[f] === def[f] ? null : next[f];
       if (d.kind === s.c.kind_suggested && (s.c.contract.stored || {}).kind) body.kind = null;
     }
@@ -676,8 +682,16 @@ class FdContracts extends HTMLElement {
       if (t.dataset.review) return this._review(t.dataset.id, t.dataset.review);
       if (t.dataset.kind) { this._kind = t.dataset.kind; return this._render(); }
       if (t.dataset.grp && s) {
-        if (t.dataset.grp === "special") s.d.special_termination = !s.d.special_termination;
-        else s.d[t.dataset.grp] = t.dataset.val;
+        const grp = t.dataset.grp;
+        if (grp === "special") s.d.special_termination = !s.d.special_termination;
+        else if (grp === "kind" && s.d.kind !== t.dataset.val) {
+          // Untouched terms the user never stored follow the new kind's defaults.
+          const def = this._defaultsFor(s.c, t.dataset.val);
+          const stored = s.c.contract.stored || {};
+          for (const f of TERM_FIELDS) if (!s.touched.has(f) && stored[f] == null) s.d[f] = def[f];
+          s.d.kind = t.dataset.val;
+        } else s.d[grp] = t.dataset.val;
+        if (grp !== "kind" && grp !== "owner") s.touched.add(grp === "special" ? "special_termination" : grp);
         return this._paintSheet();
       }
       switch (t.dataset.act) {
@@ -687,9 +701,9 @@ class FdContracts extends HTMLElement {
         case "save": this._save(); break;
         case "reset": {
           if (!s) break;
-          // null = back to the category default; the sheet shows those values right away.
-          const def = this._defaultsFor(s.c);
-          Object.assign(s.d, def, { kind: s.c.kind_suggested || s.d.kind });
+          // null = back to the kind's default; the sheet shows those values right away.
+          const kind = s.c.kind_suggested || s.d.kind;
+          Object.assign(s.d, this._defaultsFor(s.c, kind), { kind });
           s.reset = true;
           this._paintSheet();
           break;
@@ -699,7 +713,10 @@ class FdContracts extends HTMLElement {
     });
     sh.addEventListener("input", (ev) => {
       const f = ev.target.dataset && ev.target.dataset.f;
-      if (f && this._sheet) this._sheet.d[f] = ev.target.value;
+      if (f && this._sheet) {
+        this._sheet.d[f] = ev.target.value;
+        this._sheet.touched.add(f);
+      }
     });
     sh.addEventListener("keydown", (ev) => {
       if (ev.key === "Escape" && this._sheet) { ev.stopPropagation(); this._closeSheet(); }
