@@ -3,29 +3,29 @@
  *
  *   GET/PUT finance_dashboard/setup                {current_step, steps{}, completed, ai_opt_in, notifications{}, persons[{name,payday}]}
  *   GET     finance_dashboard/setup/payday_suggestions   {suggestions:[{person, confirmed_day, suggested_day, source, amount}]}
- *   GET/POST finance_dashboard/setup/pot_suggestions     {suggestions:[{owner, category, name, cycle_budget, samples}]}
+ *   GET     finance_dashboard/plan_wizard/gate           {ready, cycles, required, earliest_booked, ready_from}
+ *   GET     finance_dashboard/setup/ai/consents          {consents:{purpose:{granted,...}}} (summary only)
  *
- *   GET/POST finance_dashboard/setup/plan_prefill       {proposals:[{series_id,name,owner,category,interval,amount,plan_mode,already_in_plan}]} / {accept:[...]}
- *   GET/POST/DELETE finance_dashboard/setup/goals, GET/PUT setup/points, GET/PUT setup/ai  (via <fd-settings section="goals|points|ai">)
- *
- * Steps: persons, accounts, goals, points, ai (all embed <fd-settings section="...">), payday, region, pots, plan,
- * notifications, done. Every "Weiter" stores the step on the server, so the wizard
+ * Steps: persons, accounts, payday, region, notifications, ai, points, done. persons, accounts, ai and points
+ * embed <fd-settings section="...">. Pots, plan and goals live in the plan wizard (fd-plan-wizard); the
+ * done step reads GET finance_dashboard/plan_wizard/gate and offers "Haushaltsplan erstellen"
+ * (event fd-open-plan-wizard) or the expected date. Every "Weiter" stores the step on the server, so the wizard
  * resumes at the first unresolved step. Nothing here talks to the bank.
  *
- *   POST finance_dashboard/budget_plan/upload       {content_base64} → {ok, report}
- *   POST finance_dashboard/budget_plan/import_url   {url}            → {ok, report}  (Google Sheets)
+   {url}            → {ok, report}  (Google Sheets)
  *
  * Properties: hass (required).
  * Events (bubbling, composed):
+ *   fd-open-plan-wizard           — done step, plan gate ready; the panel opens the plan wizard
  *   fd-setup-close   {completed}  — panel removes the overlay and reloads Start
  *   fd-toast         {message, type}
  */
 
 const DOMAIN = "finance_dashboard";
-const STEPS = ["persons", "accounts", "payday", "region", "pots", "plan", "goals", "points", "notifications", "ai", "done"];
-const SKIPPABLE = new Set(["payday", "region", "pots", "plan", "goals", "points", "notifications", "ai"]);
-// region, goals and points have no backend step status: the wizard only walks through them.
-const CLIENT_ONLY = new Set(["region", "goals", "points"]);
+const STEPS = ["persons", "accounts", "payday", "region", "notifications", "ai", "points", "done"];
+const SKIPPABLE = new Set(["payday", "region", "notifications", "ai", "points"]);
+// region and points have no backend step status: the wizard only walks through them.
+const CLIENT_ONLY = new Set(["region", "points"]);
 
 // Fallback texts: used until locales/*.json carry the setup.* keys.
 // Federal states (ISO 3166-2:DE) for the benchmark comparison.
@@ -50,10 +50,10 @@ const FB = {
     "setup.retry": "Erneut versuchen",
     "setup.admin_only": "Die Einrichtung übernimmt ein Administrator. Du musst nichts tun.",
     "setup.persons.title": "Wer gehört zum Haushalt?",
-    "setup.persons.body": "Jeder Home-Assistant-Benutzer, der mitmacht, wird eine Person. Namen kannst du anpassen.",
+    "setup.persons.body": "Jeder Home-Assistant-Benutzer, der mitmacht, wird eine Person. Den Anzeigenamen kannst du anpassen.",
     "setup.persons.need_one": "Wähle mindestens eine Person.",
     "setup.accounts.title": "Welches Konto gehört wem?",
-    "setup.accounts.body": "Das ist nur der Standard. Budgetposten und Korrekturen gehen vor. Offene Konten kannst du später zuordnen.",
+    "setup.accounts.body": "Das ist nur der Standard. Haushaltsplan und Korrekturen gehen vor. Offene Konten kannst du später zuordnen.",
     "setup.payday.title": "Wann ist Zahltag?",
     "setup.payday.body": "Dein Monat beginnt mit dem Gehalt. Wir haben auf deinen Konten nach dem größten regelmäßigen Eingang gesucht.",
     "setup.payday.day": "Tag im Monat",
@@ -70,44 +70,10 @@ const FB = {
     "setup.region.postcode": "Postleitzahl (optional)",
     "setup.region.err_postcode": "Die Postleitzahl hat 5 Ziffern.",
     "setup.summary.region": "Region",
-    "setup.pots.title": "Töpfe aus deiner Historie",
-    "setup.pots.body": "So viel hast du in den letzten Monaten typischerweise ausgegeben. Wähle, was zu Töpfen werden soll, und passe die Beträge an.",
-    "setup.pots.samples": "aus $n Monaten",
-    "setup.pots.per_cycle": "pro Monat",
-    "setup.pots.amount": "Betrag",
-    "setup.pots.empty": "Noch nicht genug Historie für Vorschläge. Töpfe legst du später auf Start an, sobald ein paar Monate Daten da sind.",
-    "setup.pots.created": "$n Töpfe angelegt",
-    "setup.pots.owner_shared": "Haushalt",
-    "setup.plan.prefill_title": "Vorschläge aus deiner Historie",
-    "setup.plan.prefill_body": "Das sind regelmäßige Zahlungen, die wir in deinen Buchungen gefunden haben. Wähle, was in den Plan soll, und passe Betrag und Besitzer an.",
-    "setup.plan.prefill_empty": "Keine Vorschläge gefunden. Dafür braucht es ein paar Monate Buchungen.",
-    "setup.plan.in_plan": "schon im Plan",
-    "setup.plan.per_month": "pro Monat",
-    "setup.plan.amount": "Betrag",
-    "setup.plan.owner": "Besitzer",
-    "setup.plan.accepted": "$n Posten in den Plan übernommen",
-    "setup.plan.alt": "Oder aus einer Tabelle",
-    "setup.plan.owner_shared": "Haushalt",
-    "setup.goals.title": "Sparziele",
-    "setup.goals.body": "Ein Betrag bis zu einem Datum, ein Limit für eine Kategorie, eine Sparquote oder eine Rücklage zum Auffüllen. Alles optional.",
     "setup.points.title": "Punkte",
     "setup.points.body": "Wenn ihr ein eigenes Punktesystem zuhause habt, kann Finance es füttern.",
-    "setup.summary.goals": "Sparziele",
     "setup.summary.points": "Punkte",
     "setup.summary.none": "keine",
-    "setup.plan.title": "Budgetplan",
-    "setup.plan.body": "Der Plan hält fest, was ihr fest eingeplant habt: Fixkosten und Einkommen pro Person. Er ist ein Extra und für den Start nicht nötig.",
-    "setup.plan.import": "Hast du eure Haushaltstabelle? Lade die .xlsx-Datei hoch oder füge einen Google-Sheets-Link ein. Der Import ersetzt den bisherigen Plan.",
-    "setup.plan.file": "Datei hochladen (.xlsx)",
-    "setup.plan.url_label": "Google-Sheets-Link",
-    "setup.plan.url_import": "Importieren",
-    "setup.plan.url_hint": "Die Tabelle muss auf „Jeder mit dem Link“ freigegeben sein. Solange das gilt, kann sie jeder mit dem Link lesen. Nach dem Import kannst du die Freigabe wieder zurücknehmen.",
-    "setup.plan.url_err": "Bitte einen Link auf docs.google.com/spreadsheets einfügen.",
-    "setup.plan.importing": "Importiere…",
-    "setup.plan.done": "Importiert: $positions Posten, $persons Personen",
-    "setup.plan.warnings": "$n Hinweise beim Import – Details im Budgetplan.",
-    "setup.plan.failed": "Import fehlgeschlagen",
-    "setup.plan.later": "Du kannst das jederzeit nachholen. Ohne Plan funktionieren Töpfe und Zyklus trotzdem.",
     "setup.notif.title": "Benachrichtigungen",
     "setup.notif.body": "Ruhig und selten: nur Ausnahmen und eine Wochenübersicht. Alles lässt sich abschalten.",
     "setup.notif.enabled": "Benachrichtigungen",
@@ -126,6 +92,10 @@ const FB = {
     "setup.done.title": "Fertig",
     "setup.done.body": "Das ist dein Stand. Alles Übersprungene findest du später unter Einrichtung.",
     "setup.done.cta": "Zur Startseite",
+    "setup.gate.cta": "Haushaltsplan erstellen",
+    "setup.gate.wait": "Haushaltsplan ab ca. $date möglich – dafür braucht es $required volle Monate Buchungen (bisher $cycles).",
+    "setup.gate.wait_nodate": "Haushaltsplan möglich, sobald $required volle Monate Buchungen da sind (bisher $cycles).",
+    "setup.gate.no_data": "Noch keine Buchungen. Für den Haushaltsplan braucht es $required volle Monate Buchungen.",
     "setup.status.done": "erledigt",
     "setup.status.skipped": "übersprungen",
     "setup.status.pending": "offen",
@@ -134,8 +104,6 @@ const FB = {
     "setup.summary.persons": "Personen",
     "setup.summary.accounts": "Konten",
     "setup.summary.payday": "Zahltag",
-    "setup.summary.pots": "Töpfe",
-    "setup.summary.plan": "Budgetplan",
     "setup.summary.notifications": "Benachrichtigungen",
     "setup.summary.ai": "KI-Kategorisierung",
   },
@@ -152,10 +120,10 @@ const FB = {
     "setup.retry": "Try again",
     "setup.admin_only": "An administrator takes care of the setup. You do not need to do anything.",
     "setup.persons.title": "Who is part of the household?",
-    "setup.persons.body": "Every Home Assistant user who takes part becomes a person. You can adjust the names.",
+    "setup.persons.body": "Every Home Assistant user who takes part becomes a person. You can adjust the display name.",
     "setup.persons.need_one": "Pick at least one person.",
     "setup.accounts.title": "Which account belongs to whom?",
-    "setup.accounts.body": "This is only the default. Budget positions and corrections take precedence. You can assign open accounts later.",
+    "setup.accounts.body": "This is only the default. The household plan and corrections take precedence. You can assign open accounts later.",
     "setup.payday.title": "When is payday?",
     "setup.payday.body": "Your month starts with your salary. We looked for the largest regular deposit on your accounts.",
     "setup.payday.day": "Day of month",
@@ -172,44 +140,10 @@ const FB = {
     "setup.region.postcode": "Postcode (optional)",
     "setup.region.err_postcode": "The postcode has 5 digits.",
     "setup.summary.region": "Region",
-    "setup.pots.title": "Pots from your history",
-    "setup.pots.body": "This is what you typically spent in recent months. Choose what becomes a pot and adjust the amounts.",
-    "setup.pots.samples": "from $n months",
-    "setup.pots.per_cycle": "per month",
-    "setup.pots.amount": "Amount",
-    "setup.pots.empty": "Not enough history for suggestions yet. You can add pots later on Start once a few months of data are in.",
-    "setup.pots.created": "$n pots created",
-    "setup.pots.owner_shared": "Household",
-    "setup.plan.prefill_title": "Suggestions from your history",
-    "setup.plan.prefill_body": "These are recurring payments we found in your bookings. Choose what goes into the plan and adjust amount and owner.",
-    "setup.plan.prefill_empty": "No suggestions found. That needs a few months of bookings.",
-    "setup.plan.in_plan": "already in the plan",
-    "setup.plan.per_month": "per month",
-    "setup.plan.amount": "Amount",
-    "setup.plan.owner": "Owner",
-    "setup.plan.accepted": "$n positions added to the plan",
-    "setup.plan.alt": "Or from a spreadsheet",
-    "setup.plan.owner_shared": "Household",
-    "setup.goals.title": "Savings goals",
-    "setup.goals.body": "An amount by a date, a cap for a category, a savings rate or a reserve to top up. All optional.",
     "setup.points.title": "Points",
     "setup.points.body": "If your household has its own points system, Finance can feed it.",
-    "setup.summary.goals": "Savings goals",
     "setup.summary.points": "Points",
     "setup.summary.none": "none",
-    "setup.plan.title": "Budget plan",
-    "setup.plan.body": "The plan records what you set aside: fixed costs and income per person. It is an extra and not needed to start.",
-    "setup.plan.import": "Got your household spreadsheet? Upload the .xlsx file or paste a Google Sheets link. The import replaces the current plan.",
-    "setup.plan.file": "Upload file (.xlsx)",
-    "setup.plan.url_label": "Google Sheets link",
-    "setup.plan.url_import": "Import",
-    "setup.plan.url_hint": "The sheet must be shared as “Anyone with the link”. While it is, anyone with the link can read it. You can revoke the sharing after the import.",
-    "setup.plan.url_err": "Please paste a link to docs.google.com/spreadsheets.",
-    "setup.plan.importing": "Importing…",
-    "setup.plan.done": "Imported: $positions positions, $persons people",
-    "setup.plan.warnings": "$n notes from the import – details in the budget plan.",
-    "setup.plan.failed": "Import failed",
-    "setup.plan.later": "You can do this any time. Pots and cycle work without a plan.",
     "setup.notif.title": "Notifications",
     "setup.notif.body": "Quiet and rare: only exceptions and a weekly overview. Everything can be turned off.",
     "setup.notif.enabled": "Notifications",
@@ -228,6 +162,10 @@ const FB = {
     "setup.done.title": "All set",
     "setup.done.body": "This is where you stand. Anything skipped can be done later under Setup.",
     "setup.done.cta": "Go to Start",
+    "setup.gate.cta": "Create household plan",
+    "setup.gate.wait": "Household plan possible from about $date – it needs $required full months of bookings (so far $cycles).",
+    "setup.gate.wait_nodate": "Household plan possible once $required full months of bookings are in (so far $cycles).",
+    "setup.gate.no_data": "No bookings yet. The household plan needs $required full months of bookings.",
     "setup.status.done": "done",
     "setup.status.skipped": "skipped",
     "setup.status.pending": "open",
@@ -236,8 +174,6 @@ const FB = {
     "setup.summary.persons": "People",
     "setup.summary.accounts": "Accounts",
     "setup.summary.payday": "Payday",
-    "setup.summary.pots": "Pots",
-    "setup.summary.plan": "Budget plan",
     "setup.summary.notifications": "Notifications",
     "setup.summary.ai": "AI categorisation",
   },
@@ -327,10 +263,8 @@ class FdSetup extends HTMLElement {
     this._busy = false;
     this._loadFailed = false;
     this._paydaySug = null;
-    this._potSug = null;
-    this._plan = { busy: false, report: null, url: "", accepted: 0 };
-    this._prefill = null;
-    this._goalsN = null;
+    this._gate = null;
+    this._consents = null;
     this._draft = {};
     this._wired = false;
   }
@@ -373,26 +307,13 @@ class FdSetup extends HTMLElement {
       try { this._paydaySug = (await this._hass.callApi("GET", `${DOMAIN}/setup/payday_suggestions`)).suggestions || []; }
       catch (e) { this._paydaySug = []; }
       this._initPaydays();
-    } else if (step === "pots" && this._potSug === null) {
-      try {
-        this._potSug = ((await this._hass.callApi("GET", `${DOMAIN}/setup/pot_suggestions`)).suggestions || [])
-          .map((s) => ({ ...s, on: true, amount: s.cycle_budget }));
-      } catch (e) { this._potSug = []; }
-    } else if (step === "plan" && this._prefill === null) {
-      await this._loadPrefill();
     } else if (step === "done") {
       try { this._st = await this._hass.callApi("GET", `${DOMAIN}/setup`); } catch (e) { this._toast(tr("setup.reload_error")); }
-      try { this._goalsN = ((await this._hass.callApi("GET", `${DOMAIN}/setup/goals`)).goals || []).length; } catch (e) { this._goalsN = null; }
+      try { this._gate = await this._hass.callApi("GET", `${DOMAIN}/plan_wizard/gate`); } catch (e) { this._gate = null; }
+      try { this._consents = (await this._hass.callApi("GET", `${DOMAIN}/setup/ai/consents`)).consents || {}; } catch (e) { this._consents = null; }
     }
     if (step === this._step) this._render();
     this.shadowRoot.querySelector("h2")?.focus();
-  }
-
-  async _loadPrefill() {
-    try {
-      this._prefill = ((await this._hass.callApi("GET", `${DOMAIN}/setup/plan_prefill`)).proposals || [])
-        .map((p) => ({ ...p, on: !p.already_in_plan, amount: p.amount, owner: p.owner || "shared" }));
-    } catch (e) { this._prefill = []; }
   }
 
   _dn(p) { return (p.display_name || "").trim() || p.name; }
@@ -442,7 +363,7 @@ class FdSetup extends HTMLElement {
     const dots = STEPS.map((s, i) => `<li class="${i === this._idx ? "cur" : i < this._idx ? "on" : ""}"${i === this._idx ? ' aria-current="step"' : ""}></li>`).join("");
     const skip = SKIPPABLE.has(step) ? `<button type="button" class="btn text" data-a="skip">${escHtml(tr("setup.skip"))}</button>` : "";
     const foot = last
-      ? `<button type="button" class="btn ghost" data-a="back">${escHtml(tr("setup.back"))}</button><span class="sp"></span><button type="button" class="btn" data-a="finish">${escHtml(tr("setup.done.cta"))}</button>`
+      ? `<button type="button" class="btn ghost" data-a="back">${escHtml(tr("setup.back"))}</button><span class="sp"></span>${this._gate && this._gate.ready ? `<button type="button" class="btn ghost" data-a="finish">${escHtml(tr("setup.done.cta"))}</button><button type="button" class="btn" data-a="finish_plan">${escHtml(tr("setup.gate.cta"))}</button>` : `<button type="button" class="btn" data-a="finish">${escHtml(tr("setup.done.cta"))}</button>`}`
       : `<button type="button" class="btn ghost" data-a="back"${this._idx === 0 ? " disabled" : ""}>${escHtml(tr("setup.back"))}</button><span class="sp"></span>${skip}<button type="button" class="btn" data-a="next">${escHtml(tr("setup.next"))}</button>`;
     sh.innerHTML = `${head}<div class="root">
   <div class="top"><span class="lbl">${escHtml(tr("setup.title"))} · ${escHtml(tr("setup.step_of", { n: this._idx + 1, total: STEPS.length }))}</span>${closeBtn}</div>
@@ -462,12 +383,10 @@ class FdSetup extends HTMLElement {
     const { escHtml } = window._fd;
     const sw = (id, on, label) => `<div class="row"><div class="who"><b>${escHtml(label)}</b></div><span class="hit"><button type="button" class="sw" role="switch" aria-checked="${on}" data-sw="${id}" aria-label="${escHtml(label)}"></button></span></div>`;
     switch (step) {
-      case "persons": case "accounts": case "goals": case "points": case "ai":
+      case "persons": case "accounts": case "points": case "ai":
         return `${this._head(step)}<div id="embed"></div>`;
       case "payday": return this._paydayBody();
       case "region": return this._regionBody();
-      case "pots": return this._potsBody();
-      case "plan": return this._planBody();
       case "notifications": {
         const n = this._draft.notifications || {};
         const detail = n.enabled === false ? "" : `
@@ -508,92 +427,6 @@ class FdSetup extends HTMLElement {
     return `${this._head("payday")}${rows}`;
   }
 
-  _planBody() {
-    const { escHtml } = window._fd;
-    const p = this._plan;
-    const dis = p.busy ? " disabled" : "";
-    const rep = p.report;
-    const result = p.busy ? `<p class="muted" role="status">${escHtml(tr("setup.plan.importing"))}</p>`
-      : rep ? `<div class="ok" role="status">${escHtml(tr("setup.plan.done", {
-          positions: rep.positions_imported ?? 0,
-          persons: Array.isArray(rep.persons) ? rep.persons.length : (rep.persons ?? 0) }))}${
-          (rep.warnings || []).length ? `<br>${escHtml(tr("setup.plan.warnings", { n: rep.warnings.length }))}` : ""}</div>` : "";
-    return `${this._head("plan")}${this._prefillHtml()}<h3 class="alt">${escHtml(tr("setup.plan.alt"))}</h3><p>${escHtml(tr("setup.plan.import"))}</p>
-      <div class="imp"><input type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" data-plan-file hidden>
-        <button type="button" class="btn ghost" data-a="plan_file"${dis}>${escHtml(tr("setup.plan.file"))}</button></div>
-      <div class="imp"><label for="sheet-url">${escHtml(tr("setup.plan.url_label"))}</label>
-        <input type="url" id="sheet-url" inputmode="url" autocomplete="off" placeholder="https://docs.google.com/spreadsheets/d/…" data-sheet-url value="${escHtml(p.url)}"${dis}>
-        <button type="button" class="btn ghost" data-a="plan_url"${dis}>${escHtml(tr("setup.plan.url_import"))}</button></div>
-      <p class="muted">${escHtml(tr("setup.plan.url_hint"))}</p>
-      ${result}<p class="muted">${escHtml(tr("setup.plan.later"))}</p>`;
-  }
-
-  _prefillHtml() {
-    const { escHtml } = window._fd;
-    const fmt = new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR", maximumFractionDigits: 0 });
-    if (this._prefill === null) return `<p class="muted">…</p>`;
-    const head = `<h3>${escHtml(tr("setup.plan.prefill_title"))}</h3><p class="muted">${escHtml(tr("setup.plan.prefill_body"))}</p>`;
-    if (!this._prefill.length) return `${head}<div class="note">${escHtml(tr("setup.plan.prefill_empty"))}</div>`;
-    const owners = [["shared", tr("setup.plan.owner_shared")]].concat((this._st.persons || []).map((p) => [p.name, this._dn(p)]));
-    const cats = window._fd.CAT_LABELS || {};
-    const rows = this._prefill.map((p, i) => {
-      const dis = p.already_in_plan;
-      const chips = owners.map(([v, l]) => `<button type="button" role="radio" aria-checked="${p.owner === v}" data-pf-owner="${i}" data-v="${escHtml(v)}"${p.on ? "" : " disabled"}><span class="lb">${escHtml(l)}</span></button>`).join("");
-      return `<div class="pf ${p.on ? "" : "off"}"><div class="row"><span class="hit"><button type="button" class="sw" role="switch" aria-checked="${p.on}" data-pf="${i}" aria-label="${escHtml(p.name)}"${dis ? " disabled" : ""}></button></span>
-        <div class="who"><b>${escHtml(p.name)}</b><span>${escHtml(cats[p.category] || p.category || "")} · ${escHtml(p.interval || "")}${dis ? ` · ${escHtml(tr("setup.plan.in_plan"))}` : ` · ${escHtml(fmt.format(Math.abs(Number(p.amount) || 0)))} ${escHtml(tr("setup.plan.per_month"))}`}</span></div>
-        <input type="number" step="any" inputmode="decimal" data-pf-amt="${i}" value="${escHtml(p.amount)}" aria-label="${escHtml(tr("setup.plan.amount") + ": " + p.name)}"${p.on ? "" : " disabled"}></div>
-        ${dis ? "" : `<div class="own" role="radiogroup" aria-label="${escHtml(tr("setup.plan.owner") + ": " + p.name)}">${chips}</div>`}</div>`;
-    }).join("");
-    return head + rows;
-  }
-
-  /** POST the toggled proposals; existing positions are never overwritten by the server. */
-  async _acceptPrefill() {
-    const accept = (this._prefill || []).filter((p) => p.on && !p.already_in_plan && p.amount !== "" && Number.isFinite(Number(p.amount)))
-      .map((p) => ({ series_id: p.series_id, name: p.name, owner: p.owner, amount: Number(p.amount) }));
-    if (!accept.length) return;
-    const res = await this._hass.callApi("POST", `${DOMAIN}/setup/plan_prefill`, { accept });
-    const n = Array.isArray(res.created) ? res.created.length : Number(res.created) || 0;
-    this._plan.accepted += n;
-    this._prefill = null;
-    if (n) this._toast(tr("setup.plan.accepted", { n }), "success");
-  }
-
-  /** Upload or link import: both replace the plan and return the import report. */
-  async _importPlan(path, body) {
-    if (this._plan.busy) return;
-    this._err = "";
-    this._plan.busy = true;
-    this._render();
-    try {
-      const res = await this._hass.callApi("POST", `${DOMAIN}/${path}`, body);
-      this._plan.report = res.report || {};
-      this._toast(tr("setup.plan.done", {
-        positions: this._plan.report.positions_imported ?? 0,
-        persons: Array.isArray(this._plan.report.persons) ? this._plan.report.persons.length : 0 }), "success");
-    } catch (e) {
-      const detail = (e && e.body && (e.body.error || e.body.message)) || (e && e.message) || "";
-      this._err = detail ? `${tr("setup.plan.failed")}: ${detail}` : tr("setup.plan.failed");
-    }
-    this._plan.busy = false;
-    await this._loadPrefill();
-    this._render();
-  }
-
-  _uploadPlan(file) {
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => this._importPlan("budget_plan/upload", { content_base64: String(reader.result || "") });
-    reader.onerror = () => this._fail(tr("setup.plan.failed"));
-    reader.readAsDataURL(file);
-  }
-
-  _importSheetUrl() {
-    const url = (this._plan.url || "").trim();
-    if (!/^https:\/\/docs\.google\.com\/spreadsheets\/d\//i.test(url)) return this._fail(tr("setup.plan.url_err"));
-    this._importPlan("budget_plan/import_url", { url });
-  }
-
   _regionBody() {
     const { escHtml } = window._fd;
     const r = this._draft.region || {};
@@ -601,21 +434,6 @@ class FdSetup extends HTMLElement {
     return `${this._head("region")}<div class="states" role="radiogroup" aria-label="${escHtml(tr("setup.region.state"))}">${chips}</div>
       <div class="row"><div class="who"><b>${escHtml(tr("setup.region.postcode"))}</b></div>
       <input type="text" inputmode="numeric" maxlength="5" autocomplete="postal-code" data-postcode value="${escHtml(r.postcode || "")}" aria-label="${escHtml(tr("setup.region.postcode"))}"></div>`;
-  }
-
-  _potsBody() {
-    const { escHtml } = window._fd;
-    if (this._potSug === null) return `${this._head("pots")}<p class="muted">…</p>`;
-    if (!this._potSug.length) return `${this._head("pots")}<div class="note">${escHtml(tr("setup.pots.empty"))}</div>`;
-    const cats = window._fd.CAT_LABELS || {};
-    const rows = this._potSug.map((s, i) => {
-      const owner = s.owner === "shared" ? tr("setup.pots.owner_shared") : this._dnOf(s.owner);
-      const label = s.name || cats[s.category] || s.category;
-      return `<div class="row pot ${s.on ? "" : "off"}"><span class="hit"><button type="button" class="sw" role="switch" aria-checked="${s.on}" data-pot="${i}" aria-label="${escHtml(label)}"></button></span>
-        <div class="who"><b>${escHtml(label)}</b><span>${escHtml(owner)} · ${escHtml(tr("setup.pots.samples", { n: s.samples }))}</span></div>
-        <input type="number" min="0" step="10" inputmode="decimal" data-pot-amt="${i}" value="${escHtml(s.amount)}" aria-label="${escHtml(tr("setup.pots.amount") + ": " + label + " (" + tr("setup.pots.per_cycle") + ")")}"${s.on ? "" : " disabled"}></div>`;
-    }).join("");
-    return `${this._head("pots")}${rows}`;
   }
 
   _regionLabel() {
@@ -636,14 +454,27 @@ class FdSetup extends HTMLElement {
       ["accounts", mark("accounts")],
       ["payday", persons.length ? `${paydays} / ${persons.length}` : mark("payday")],
       ["region", escHtml(this._regionLabel())],
-      ["pots", mark("pots")],
-      ["plan", mark("plan")],
-      ["goals", this._goalsN ? String(this._goalsN) : escHtml(tr("setup.summary.none"))],
       ["points", this._st.points_target ? escHtml(this._st.points_target) : escHtml(tr("setup.status.skipped"))],
       ["notifications", escHtml(tr(n.enabled === false ? "setup.status.off" : "setup.status.on"))],
-      ["ai", escHtml(tr(this._st.ai_opt_in ? "setup.status.on" : "setup.status.off"))],
+      ["ai", escHtml(tr(this._aiOn() ? "setup.status.on" : "setup.status.off"))],
     ];
-    return `${this._head("done")}${rows.map(([k, v]) => `<div class="sum"><span>${escHtml(tr("setup.summary." + k))}</span><span>${v}</span></div>`).join("")}`;
+    return `${this._head("done")}${rows.map(([k, v]) => `<div class="sum"><span>${escHtml(tr("setup.summary." + k))}</span><span>${v}</span></div>`).join("")}${this._gateNote()}`;
+  }
+
+  /** Categorisation consent when known, else the legacy opt-in flag. */
+  _aiOn() {
+    const c = this._consents && this._consents.categorize;
+    return c ? !!c.granted : !!this._st.ai_opt_in;
+  }
+
+  /** Plan gate: ready -> the footer offers the plan wizard; otherwise say when it becomes possible. */
+  _gateNote() {
+    const { escHtml, fmtDate } = window._fd;
+    const g = this._gate;
+    if (!g || g.ready) return "";
+    if (!g.earliest_booked) return `<div class="note">${escHtml(tr("setup.gate.no_data", { required: g.required || 3 }))}</div>`;
+    const when = g.ready_from ? (fmtDate ? fmtDate(g.ready_from) : g.ready_from) : "";
+    return `<div class="note">${escHtml(tr(when ? "setup.gate.wait" : "setup.gate.wait_nodate", { date: when, cycles: g.cycles || 0, required: g.required || 3 }))}</div>`;
   }
 
   /** persons / accounts steps reuse fd-settings in "section" mode (its own Save bar hidden). */
@@ -668,18 +499,7 @@ class FdSetup extends HTMLElement {
       if (!t) return;
       if (t.dataset.a) this._action(t.dataset.a);
       else if (t.dataset.sw) this._toggle(t.dataset.sw);
-      else if (t.dataset.pf !== undefined) {
-        const p = this._prefill[Number(t.dataset.pf)];
-        p.on = !p.on;
-        this._render();
-      } else if (t.dataset.pfOwner !== undefined) {
-        this._prefill[Number(t.dataset.pfOwner)].owner = t.dataset.v;
-        this._render();
-      } else if (t.dataset.pot !== undefined) {
-        const s = this._potSug[Number(t.dataset.pot)];
-        s.on = !s.on;
-        this._render();
-      } else if (t.dataset.state) {
+      else if (t.dataset.state) {
         const r = this._draft.region;
         r.state = r.state === t.dataset.state ? "" : t.dataset.state;
         this._render();
@@ -691,19 +511,11 @@ class FdSetup extends HTMLElement {
     sh.addEventListener("input", (ev) => {
       const el = ev.target;
       if (el.dataset.dayOf !== undefined) this._draft.paydays[el.dataset.dayOf] = el.value;
-      else if (el.dataset.pfAmt !== undefined) this._prefill[Number(el.dataset.pfAmt)].amount = el.value;
-      else if (el.dataset.potAmt !== undefined) this._potSug[Number(el.dataset.potAmt)].amount = el.value;
       else if (el.dataset.postcode !== undefined) this._draft.region.postcode = el.value.trim();
-      else if (el.dataset.sheetUrl !== undefined) this._plan.url = el.value;
       else if (el.dataset.num) this._draft.notifications[el.dataset.num] = el.value === "" ? "" : Number(el.value);
-    });
-    sh.addEventListener("change", (ev) => {
-      const el = ev.target;
-      if (el.dataset.planFile !== undefined) { this._uploadPlan(el.files && el.files[0]); el.value = ""; }
     });
     this.onkeydown = (ev) => {
       if (ev.key === "Escape") this._close(false);
-      else if (ev.key === "Enter" && ev.composedPath()[0]?.dataset?.sheetUrl !== undefined) this._importSheetUrl();
     };
   }
 
@@ -724,8 +536,7 @@ class FdSetup extends HTMLElement {
     else if (a === "skip") this._advance("skipped");
     else if (a === "next") this._advance("done");
     else if (a === "finish") this._finish();
-    else if (a === "plan_file") this.shadowRoot.querySelector("[data-plan-file]")?.click();
-    else if (a === "plan_url") this._importSheetUrl();
+    else if (a === "finish_plan") this._finish(true);
   }
 
   _go(i) {
@@ -760,11 +571,6 @@ class FdSetup extends HTMLElement {
     buttons.forEach((b) => { b.disabled = true; });
     if (CLIENT_ONLY.has(step) && status === "skipped") { this._busy = false; return this._go(this._idx + 1); }
     try {
-      // The import itself already stored the plan; the step is done only if one ran.
-      if (step === "plan") {
-        if (status === "done") await this._acceptPrefill();
-        status = this._plan.report || this._plan.accepted ? "done" : "skipped";
-      }
       let body = { step, status };
       if (status === "done") {
         if (step === "persons" || step === "accounts") {
@@ -790,21 +596,13 @@ class FdSetup extends HTMLElement {
           this._st = await this._put({ region: { state: r.state, ...(r.postcode ? { postcode: r.postcode } : {}) } });
           this._busy = false;
           return this._go(this._idx + 1);
-        } else if (step === "pots") {
-          const accept = (this._potSug || []).filter((s) => s.on && Number(s.amount) > 0)
-            .map((s) => ({ category: s.category, owner: s.owner, cycle_budget: Number(s.amount), name: s.name }));
-          if (accept.length) {
-            await this._hass.callApi("POST", `${DOMAIN}/setup/pot_suggestions`, { accept });
-            this._potSug = null;
-            this._toast(tr("setup.pots.created", { n: accept.length }), "success");
-          } else body.status = "skipped";
         } else if (step === "notifications") {
           body.notifications = this._cleanNotifications();
         } else if (step === "ai") {
           // Provider, key and budget are stored by the embedded section; nothing else to send.
           const s = this._settingsEl;
           if (s && !(await s.save())) return this._unbusy();
-        } else if (step === "goals" || step === "points") {
+        } else if (step === "points") {
           const s = this._settingsEl;
           if (s && !(await s.save())) return this._unbusy();
         }
@@ -832,12 +630,13 @@ class FdSetup extends HTMLElement {
     return n;
   }
 
-  async _finish() {
+  async _finish(openPlan = false) {
     if (this._busy) return;
     this._busy = true;
     try {
       await this._put({ complete: true });
       this._busy = false;
+      if (openPlan) this.dispatchEvent(new CustomEvent("fd-open-plan-wizard", { bubbles: true, composed: true }));
       this._close(true);
     } catch (e) {
       this._busy = false;

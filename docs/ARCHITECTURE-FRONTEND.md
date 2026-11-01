@@ -25,8 +25,8 @@ finance-dashboard-panel            shell: fd-home + subpage router + toast host
       |-- fd-questions             (own header) Fragen / flash cards
       |-- fd-contracts             (own header) Verträge
       |-- fd-benchmark             (own header) Vergleich
-      '-- fd-budget-plan           (own header) Budgetplan
- fd-setup                          guided wizard, its own full-screen layer
+      '-- fd-budget-plan           (own header) Haushaltsplan
+ fd-setup                          Einrichtung wizard (persons, accounts, payday, region, notifications, AI, points, done), its own full-screen layer
  fd-categorize (dialog)            desktop link from Fragen
 ```
 
@@ -55,7 +55,7 @@ Horizons (person view = own items only; household view = shared pots + persons a
 | Heute | coloured "noch frei" figure (no status chip), meter of what is left, today's spend, per day; "Deine/Gemeinsame Töpfe" with "+" and up to two suggestion chips when empty; persons totals in the household view |
 | Woche | verdict band, carry-over "+x € aus KW nn mitgenommen", day bars vs. the Soll line, thin dashed zero-carry line, day amounts for past days only, "wird diese Woche noch abgebucht" |
 | Zyklus | tank with Soll-Linie (info button flips the card to the cycle rule), fd-cycle-detail strip (mobile), Fixkosten gedeckt or "Plan fehlt → Plan anlegen", Wusstest du schon, Als Nächstes (top 3 + mehr), Rücklagen |
-| Jahr | Jan–Dec status squares of the calendar year ("keine Daten" for empty months), vs. Vorjahr, entries Verträge · Vergleich · Budgetplan |
+| Jahr | Jan–Dec status squares of the calendar year ("keine Daten" for empty months), vs. Vorjahr, entries Verträge · Vergleich · Haushaltsplan |
 
 **Spielraum without pots** (spec § 1.4): with no pot budget the screen never collapses to "Noch keine Töpfe".
 It shows the view's own Spielraum: `person_budget {budget, spent, remaining, source}` from `/home` (person view),
@@ -91,7 +91,7 @@ Opening a subpage pushes a history entry `#sub=<target>`; browser back and the h
 a reload with the hash reopens it. Esc closes it too. Legacy close events `fd-questions-close` and
 `fd-freshness-back` are honoured.
 
-The Budgetplan subpage gets its actuals from `GET /household_summary` (mapped onto the `data` shape
+The Haushaltsplan subpage gets its actuals from `GET /household_summary` (mapped onto the `data` shape
 fd-budget-plan reads), not from the retired sensor tree.
 
 ## Bank calls and data actions
@@ -113,6 +113,7 @@ transaction list.
 | Event | Source | Handled by | Purpose |
 |---|---|---|---|
 | `fd-navigate {target, section?}` | fd-home, fd-freshness, fd-subpage-header, fd-cycle-detail, fd-settings, … | shell | subpage router (above) |
+| `fd-open-plan-wizard` | fd-setup (done step), fd-home, fd-budget-plan, fd-cycle-detail | shell | open the plan wizard ("Haushaltsplan erstellen"); entry points show the expected date instead of a button while `GET /plan_wizard/gate` is not ready |
 | `fd-refresh-requested` | fd-freshness | shell | Neu importieren (attended bank fetch) |
 | `fd-reprocess-requested` | fd-freshness | shell | Aktualisieren (`POST /reprocess`) |
 | `fd-toast {message, type}` | any | shell | toast host |
