@@ -25,7 +25,12 @@ gaps are pauses; quarterly and longer gaps stay strict. Fields: `id`, `alias_key
 two payments at it, or one after a steady price that is below 1.8x - else the median, so a single catch-up never moves the
 plan; explicit `highest` / `average` / `last` / `median` / `fixed`), `annual_cost` (always the full rhythm, pauses ignored),
 `pauses` (skipped periods), `pauses_recent` (within the last 12 periods), `pause_pattern` (>= 3 recent; the question whether
-to project with the pause rate belongs to the review flow #117), `status` (`active` / `missing` > date tolerance overdue / `ended` > 2 periods overdue),
+to project with the pause rate belongs to the review flow #117), `pending_since` (#115: a pending debit of the payee at
+most 14 days old, on the expected next date (+- a quarter period, at least the date tolerance) and within the amount tolerance
+of the plan counts as the next payment; with several series per payee it goes to the one with its contract reference, else
+the closest amount (a tie proves nothing) -
+it moves `last_seen`, `next_expected` and the status, never the amounts; callers add `household_summary.pending_debits`
+to the counted transactions), `status` (`active` / `missing` > date tolerance overdue / `ended` > 2 periods overdue),
 `price_change {previous,last,change_pct,increase,date}`, `category`, `account_key`, `account_type`, `account_person`.
 Confidence (#129, `series_confidence.score_series`): every series carries `confidence {score 0-100, reasons[]}` and
 `candidate` (score < 50). Signals: contract reference / direct-debit marker (+), card-payment marker (-), contract keywords
@@ -64,7 +69,9 @@ Special termination prefill: last 3 payments, traits amount / booking day / gap;
 ## Endpoints
 - `GET /api/finance_dashboard/contracts` - expense series + `contract` block + `next_deadline`, `effective_end`, `days_until_deadline`,
   `notice_due_soon`, `special_termination_available`, `monthly_equivalent`; sorted by next deadline. Admin full; non-admin only
-  shared/own, reduced to aggregates (`aggregate_view`: no payment history).
+  shared/own, reduced to aggregates (`aggregate_view`: no payment history). `totals` (#115, `contracts.contract_totals`):
+  `{fixed, regular}` each `{monthly, yearly, count}` - fixed = contracts + subscriptions, regular = regular + irregular;
+  candidates and ended series excluded; members get the totals of what they see.
 - `PUT /api/finance_dashboard/contracts/{series_id}` (admin) partial edit; 400 `{error,detail}` on invalid, 404 `unknown_series`. Returns the updated contract.
 - `GET /api/finance_dashboard/reserves` - `{reserves:{items,by_owner,total_monthly}, coverage}`; coverage is admin-only (`null` for others).
 - `PUT /api/finance_dashboard/accounts/{key}/savings` `{savings: bool}` (admin) - sets `savings` on the account record via `async_set_accounts`; kept across `async_refresh_accounts`.

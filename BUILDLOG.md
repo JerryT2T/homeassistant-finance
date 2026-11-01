@@ -1,5 +1,12 @@
 # Build Log
 
+## 0.30.0 — 2026-11-01
+Version: 0.30.0
+Branch: feat/115-pending-and-kind-totals
+Changes:
+- feat(contracts): the contracts page shows "Fixkosten" (contracts and subscriptions) and "Regelmäßige Ausgaben" (regular and irregular spending) as separate totals; uncertain detections never count, and the API returns both totals
+- fix(contracts): a debit still pending at the turn of the month counts as the current payment, so the contract shows it as last payment and no longer reports "Zahlung fehlt"; amounts still come only from booked payments
+
 ## 0.29.0 — 2026-11-01
 Version: 0.29.0
 Branch: feat/114-plan-amount-auto

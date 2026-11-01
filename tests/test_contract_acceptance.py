@@ -23,7 +23,7 @@ from custom_components.finance_dashboard.contracts import (
     build_contracts,
     own_account_names,
 )
-from custom_components.finance_dashboard.household_summary import counted_transactions
+from custom_components.finance_dashboard.household_summary import counted_transactions, pending_debits
 from custom_components.finance_dashboard.recurring import INTERVALS
 from custom_components.finance_dashboard.transfer_detector import (
     detect_transfer_chains,
@@ -51,7 +51,7 @@ def _detect(case: str) -> list[dict[str, Any]]:
     chains, refunds = detect_transfer_chains(txns, accounts)
     txns = enrich_transactions(txns, chains, refunds)
     store = blank_store()
-    counted = counted_transactions(txns, accounts)
+    counted = counted_transactions(txns, accounts) + pending_debits(txns)  # as the API (#115)
     return build_contracts(
         counted, store, today=_today(case), own_names=own_account_names(accounts)
     )

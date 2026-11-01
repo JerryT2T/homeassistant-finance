@@ -14,6 +14,7 @@ from ..contracts import (
     own_account_names,
     ContractError,
     aggregate_view,
+    contract_totals,
     async_get_store,
     build_contracts,
     build_reserves,
@@ -21,7 +22,7 @@ from ..contracts import (
     visible_to,
 )
 from ..pots import pot_coverage
-from ..household_summary import counted_transactions
+from ..household_summary import counted_transactions, pending_debits
 from ._helpers import _get_manager
 
 
@@ -38,6 +39,7 @@ async def _contracts_for(request: web.Request, manager):
     """
     store = await async_get_store(request.app["hass"])
     txns = counted_transactions(manager._transactions, manager._accounts)  # noqa: SLF001
+    txns += pending_debits(manager._transactions)  # noqa: SLF001
     contracts = build_contracts(txns, store, own_names=own_account_names(manager._accounts))  # noqa: SLF001
     await store.async_save_if_changed()
     return store, contracts
@@ -56,10 +58,10 @@ class FinanceDashboardContractsView(HomeAssistantView):
             return self.json({"error": "Not configured"}, status_code=404)
         _store, contracts = await _contracts_for(request, manager)
         if _is_admin(request):
-            return self.json({"contracts": contracts})
+            return self.json({"contracts": contracts, "totals": contract_totals(contracts)})
         person = manager.resolve_person(request.get("hass_user"))
         shown = [aggregate_view(c) for c in contracts if visible_to(c, person)]
-        return self.json({"contracts": shown})
+        return self.json({"contracts": shown, "totals": contract_totals(shown)})
 
 
 class FinanceDashboardContractView(HomeAssistantView):
