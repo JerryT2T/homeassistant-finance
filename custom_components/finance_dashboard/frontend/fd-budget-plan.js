@@ -30,7 +30,7 @@ const OWNER_SHARED = "__shared__";
 const PERSON_COLORS = [
   "var(--fd-person-a)", "var(--fd-person-b)", "#5d4037", "#455a64", "#9e9d24",
 ];
-const SKIP_CATS = new Set(["income", "transfers"]);
+const SKIP_CATS = { has: (k) => k === "transfers" || String(k).startsWith("income") };
 
 /** Plan gate (GET plan_wizard/gate), shared and cached for 60 s; null when unknown or not allowed. */
 function planGate(hass) {

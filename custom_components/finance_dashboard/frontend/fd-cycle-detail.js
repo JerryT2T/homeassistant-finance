@@ -34,7 +34,7 @@
  */
 
 const DOMAIN = "finance_dashboard";
-const SKIP_CATS = new Set(["income", "transfers"]);
+const SKIP_CATS = { has: (k) => k === "transfers" || String(k).startsWith("income") };
 const PERSON_COLORS = ["var(--fd-person-a)", "var(--fd-person-b)", "#ef6c00", "#5e35b1", "#6d4c41"];
 
 /*FB-START*/
