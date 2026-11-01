@@ -317,7 +317,7 @@ class FdTransactions extends HTMLElement {
     this._focusDialog();
     if (!this._labels.length) {
       this._labels = await window._fd.getLabels(this._hass);
-      if (this._dlg && this._dlg.x === x) this._paintDialog();
+      if (this._dlg && this._dlg.x === x) { this._paintDialog(); this._focusDialog(); }
     }
   }
 
@@ -442,6 +442,7 @@ class FdTransactions extends HTMLElement {
       if (this._dlg !== d) return;
       d.error = tr("tx.save_failed");
       this._paintDialog();
+      this._focusDialog('[data-act="save"]'); // repaint dropped focus; keep the trap working
     }
   }
 }
