@@ -117,11 +117,10 @@ class QuestionsMixin:
     async def _ai_pass(self) -> int:
         from .. import ai_provider as ai
         from ..contracts import is_own_name, own_account_names
-        from ..setup_wizard import async_load_state
+        from ..ai_consent import async_granted
 
         mem = self._memory
-        state = await async_load_state(self._hass)
-        if not state.get("ai_opt_in"):
+        if not await async_granted(self._hass, "categorize"):
             return 0
         cfg = await ai.async_load_config(self._hass)
         creds = getattr(self, "_credential_manager", None)

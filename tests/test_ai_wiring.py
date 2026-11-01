@@ -67,8 +67,9 @@ class _Env:
     async def save_cfg(self, _hass, cfg):
         self.cfg = ai.merge_config(cfg)
 
-    async def load_state(self, _hass):
-        return {"ai_opt_in": self.opt_in}
+    async def granted(self, _hass, purpose):
+        assert purpose == "categorize"
+        return self.opt_in
 
     async def call_ha(self, _hass, _agent, prompt):
         self.prompts.append(prompt)
@@ -80,7 +81,7 @@ def _run(mgr, env):
         patch.object(ai, "async_load_config", env.load_cfg),
         patch.object(ai, "async_save_config", env.save_cfg),
         patch.object(ai, "_call_ha", env.call_ha),
-        patch("custom_components.finance_dashboard.setup_wizard.async_load_state", env.load_state),
+        patch("custom_components.finance_dashboard.ai_consent.async_granted", env.granted),
     ):
         return asyncio.run(mgr._async_ai_categorize())
 
