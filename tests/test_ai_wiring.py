@@ -55,7 +55,7 @@ class _Mgr(QuestionsMixin):
 class _Env:
     """In-memory AI config + wizard state; records every prompt sent."""
 
-    def __init__(self, opt_in=True, cap=100, answer="shopping", **cfg):
+    def __init__(self, opt_in=True, cap=100, answer="groceries", **cfg):
         self.cfg = ai.merge_config({"budget_cap": cap, **cfg})
         self.opt_in = opt_in
         self.answer = answer
@@ -99,7 +99,7 @@ def test_rules_and_memory_win_ai_only_for_leftovers() -> None:
     assert len(env.prompts) == 1 and "Zorblax Quux" in env.prompts[0]
     assert "REWE" not in env.prompts[0] and "Taught" not in env.prompts[0]
     rule = mgr._memory.known_merchants()["zorblax quux"]
-    assert rule == {"category": "shopping", "source": "ai"} or rule["source"] == "ai"
+    assert rule == {"category": "groceries", "source": "ai"} or rule["source"] == "ai"
     cats = {t["creditorName"]: t["category"] for t in mgr._transactions}
     assert cats["Zorblax Quux"] != "other" and cats["Taught Place"] == "leisure"
     assert env.cfg["cache"]["zorblax quux"] == rule["category"]
@@ -111,7 +111,7 @@ def test_user_answer_overrides_ai_entry() -> None:
     mgr._memory.learn_merchant("zorblax quux", "leisure")
     assert mgr._memory.known_merchants()["zorblax quux"] == {"category": "leisure"}
     # and the AI never replaces a user rule
-    assert mgr._memory.learn_ai_merchant("zorblax quux", "food") is False
+    assert mgr._memory.learn_ai_merchant("zorblax quux", "groceries") is False
 
 
 def test_cap_respected_highest_impact_first() -> None:
@@ -153,10 +153,10 @@ def test_skips_income_chains_own_names_cache_and_invalid_answers() -> None:
         ],
         accounts,
     )
-    env = _Env(answer="blorp", cache={"cachedquux": "food"})
+    env = _Env(answer="blorp", cache={"cachedquux": "groceries"})
     assert _run(mgr, env) == 1  # the cached merchant, without a call
     assert len(env.prompts) == 1 and "Oddquux Inc" in env.prompts[0]
-    assert mgr._memory.known_merchants()["cachedquux"]["category"] == "food"
+    assert mgr._memory.known_merchants()["cachedquux"]["category"] == "groceries"
     assert "oddquux" not in mgr._memory.known_merchants()
     # a failed answer is not retried within the session
     assert _run(mgr, env) == 0 and len(env.prompts) == 1
@@ -164,10 +164,10 @@ def test_skips_income_chains_own_names_cache_and_invalid_answers() -> None:
 
 def test_cached_answers_are_learned_even_when_the_budget_is_used_up() -> None:
     mgr = _Mgr([_tx("Cachedquux Inc", -70), _tx("Newquux Inc", -50)])
-    env = _Env(cap=0, cache={"cachedquux": "food"})
+    env = _Env(cap=0, cache={"cachedquux": "groceries"})
     assert _run(mgr, env) == 1
     assert env.prompts == []
-    assert mgr._memory.known_merchants()["cachedquux"]["category"] == "food"
+    assert mgr._memory.known_merchants()["cachedquux"]["category"] == "groceries"
     assert "newquux" not in mgr._memory.known_merchants()
 
 

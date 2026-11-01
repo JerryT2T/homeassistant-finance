@@ -277,7 +277,7 @@ async def test_notice_due_event_fires_once(monkeypatch):
             fired.append((event, data))
 
     hass = type("H", (), {"bus": Bus()})()
-    rows = monthly([-30] * 4, name="Versicherung", category="insurance", start=date(2026, 3, 10))
+    rows = monthly([-30] * 4, name="Versicherung", category="health", start=date(2026, 3, 10))
     from custom_components.finance_dashboard.recurring import series_id
 
     sid = series_id("versicherung", True)
