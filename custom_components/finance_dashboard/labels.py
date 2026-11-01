@@ -166,7 +166,7 @@ class LabelStore:
         }
         bookings = raw.get("bookings") if isinstance(raw.get("bookings"), dict) else {}
         self.bookings = {
-            str(lid): [i for i in ids if isinstance(i, str)][:MAX_PER_ITEM]
+            str(lid): [i for i in ids if isinstance(i, str) and _SLUG.match(i)][:MAX_PER_ITEM]
             for lid, ids in bookings.items()
             if isinstance(ids, list) and ids
         }
@@ -185,7 +185,7 @@ class LabelStore:
         return starter + custom + auto
 
     def add(self, name: Any) -> str:
-        name = str(name or "").strip()
+        name = name.strip() if isinstance(name, str) else ""
         if not name or len(name) > MAX_NAME:
             raise LabelError("invalid_name", f"name must be 1-{MAX_NAME} characters")
         if len(self.custom) >= MAX_CUSTOM:
@@ -201,7 +201,7 @@ class LabelStore:
     def rename(self, lid: str, name: Any) -> None:
         if lid not in self.custom:
             raise LabelError("unknown_label", "only own labels can be renamed")
-        name = str(name or "").strip()
+        name = name.strip() if isinstance(name, str) else ""
         if not name or len(name) > MAX_NAME:
             raise LabelError("invalid_name", f"name must be 1-{MAX_NAME} characters")
         self.custom[lid] = name

@@ -48,7 +48,7 @@ def test_custom_ids_never_collide_with_starters_or_each_other():
     assert slugify("2024") == "l_2024"
 
 
-@pytest.mark.parametrize("name", ["", "   ", "x" * 41, None])
+@pytest.mark.parametrize("name", ["", "   ", "x" * 41, None, ["Energie"], {"a": 1}, 42])
 def test_invalid_names_are_rejected(name):
     with pytest.raises(LabelError) as err:
         _store().add(name)
