@@ -10,6 +10,8 @@ from __future__ import annotations
 from datetime import date
 from typing import Any
 
+from .tx_dates import effective_day
+
 LOG_LIMIT = 100
 LOG_KEY = "import_log"
 KINDS = ("import_attended", "import_scheduled", "reprocess", "processing_upgrade")
@@ -159,6 +161,25 @@ def monthly_validity(
     return result
 
 
+def undated_accounts(
+    accounts: dict[str, dict[str, Any]], names: dict[str, str]
+) -> list[dict[str, Any]]:
+    """Accounts whose booked lines carry no date at all (no booking, value or
+    transaction date). Such lines are invisible to cycles and series (#107)."""
+    out: list[dict[str, Any]] = []
+    for key, acct in accounts.items():
+        booked = [
+            t for t in acct.get("transactions") or [] if t.get("_status", "booked") == "booked"
+        ]
+        undated = sum(1 for t in booked if effective_day(t) is None)
+        if undated:
+            out.append(
+                {"account_name": names.get(key, ""), "undated": undated, "total": len(booked)}
+            )
+    out.sort(key=lambda r: r["account_name"])
+    return out
+
+
 def derivation_check(
     ledger_txs: list[dict[str, Any]], derived_txs: list[dict[str, Any]]
 ) -> dict[str, Any]:
@@ -178,9 +199,10 @@ def derivation_check(
     transfers: list[dict[str, Any]] = []
     by_cat: dict[str, int] = {}
     for t in derived:
-        if t.get("_transfer_role") in ("intermediate", "destination") and t.get(
-            "_transfer_confirmed"
-        ) is not False:
+        if (
+            t.get("_transfer_role") in ("intermediate", "destination")
+            and t.get("_transfer_confirmed") is not False
+        ):
             transfers.append(t)
         else:
             cat = t.get("category") or "other"
@@ -204,6 +226,7 @@ def build_freshness(
     check: dict[str, Any],
     admin: bool,
     last_bank_success: str | None = None,
+    data_quality: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Assemble the endpoint payload; non-admins get only ``as_of`` / ``last_import``.
 
@@ -223,4 +246,5 @@ def build_freshness(
         "log": list(reversed(log)),
         "validity": validity,
         "derivation": check,
+        "data_quality": data_quality or [],
     }

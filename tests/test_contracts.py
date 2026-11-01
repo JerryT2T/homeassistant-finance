@@ -615,3 +615,12 @@ def test_a_reference_on_two_invoices_does_not_split_a_contract():
     ]
     (s,) = detect_series(rows, today=TODAY)
     assert s["occurrences"] == 5
+
+
+def test_series_uses_the_transaction_date_when_no_booking_date_exists():
+    rows = monthly([-13.99, -13.99, -17.99], name="Streamly")
+    for r in rows:
+        r["transactionDate"], r["bookingDate"] = r["bookingDate"], ""
+    (s,) = detect_series(rows, today=TODAY)
+    assert s["interval"] == "monthly"
+    assert s["price_change"]["increase"]

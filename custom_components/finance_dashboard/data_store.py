@@ -49,6 +49,7 @@ _STRING_FIELDS = (
     "bookingDate",
     "bookingDateTime",
     "valueDate",
+    "transactionDate",
     "creditorName",
     "debtorName",
     "remittanceInformationUnstructured",
