@@ -62,6 +62,17 @@ typed from scratch.
   3. plan vs. history: the plan next to how the household actually lived on average over the
      imported months.
 
+Decided after the backend wave:
+
+- **Rebuild, not merge**: starting the plan wizard on an existing plan rebuilds it — plan
+  positions and income are replaced (after an explicit confirmation). Pots and goals keep
+  their history and are shown prefilled.
+- **Remainder = Taschengeld**: not everything has to be planned. Whatever is left over per
+  person becomes an automatic pot "Taschengeld" (one per person, managed by the wizard,
+  `auto: "remainder"`). A negative remainder is shown as "es fehlen X €"; saving stays possible.
+- **Revoking AI consent**: Settings → KI lists every purpose with its switch, mode, consent
+  date and last use.
+
 ### Plan gate
 
 The plan wizard opens only with **at least 3 full payday cycles** of booked data (earliest
