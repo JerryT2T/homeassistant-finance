@@ -21,6 +21,7 @@ from typing import Any
 
 from .contract_kind import series_trait, suggest_kind
 from .series_confidence import is_candidate, score_series
+from .settlement import TRAIT_USAGE_BASED, attach, is_settlement, is_usage_payee, split_settlements
 from .text_norm import canonical_name
 from .tx_dates import effective_day
 
@@ -449,6 +450,31 @@ def detect_series(
         bucket = groups if status == "booked" else pending
         bucket[(canonical_name(raw), amount < 0)].append((day, amount, txn))
 
+    # Usage-based payees: a settlement never prices or breaks the advance (#116).
+    pool: dict[str, list[tuple[date, float, dict[str, Any]]]] = defaultdict(list)
+    usage: set[str] = set()
+    for (key, negative), rows in list(groups.items()):
+        if not negative or not is_usage_payee(rows):
+            continue
+        usage.add(key)
+        rows.sort(key=lambda r: r[0])
+        rest, settle = split_settlements(rows)
+        if settle and _series_parts(rest, date_tolerance_days, amount_tolerance):
+            groups[(key, negative)] = rest
+            pool[key] += settle
+    for key in usage:
+        incoming = groups.get((key, False))
+        if not incoming:
+            continue
+        pool[key] += [r for r in incoming if is_settlement(r[2])]
+        rest = [r for r in incoming if not is_settlement(r[2])]
+        if rest:
+            groups[(key, False)] = rest
+        else:
+            del groups[(key, False)]
+    for rows in pool.values():
+        rows.sort(key=lambda r: r[0])
+
     known = set(known_ids) | set(overrides) | set((aliases or {}).values())
     aliases = aliases or {}
     out: list[dict[str, Any]] = []
@@ -458,6 +484,12 @@ def detect_series(
         parts = _series_parts(rows, date_tolerance_days, amount_tolerance)
         if not parts:
             continue
+        in_parts = {id(r) for p in parts for r in p.rows}
+        loose = [r for r in rows if id(r) not in in_parts]
+        if negative:
+            loose += groups.get((key, False), [])
+        settle_rows = _settlements_per_part(parts, pool.get(key, []) if negative else [])
+        claimed: set[int] = set()
         # earliest payment keeps the payee id; same day -> the tag decides, not input order
         base = min(range(len(parts)), key=lambda i: (parts[i].rows[0][0], parts[i].tag))
         used: set[str] = set()
@@ -501,6 +533,17 @@ def detect_series(
                 part.rows, part.interval, series["category"], series["confidence"]["reasons"]
             )
             series["kind_trait"] = series_trait(part.rows)
+            settlements, candidates = attach(
+                settle_rows[i],
+                loose if negative else [],
+                overrides.get(sid, {}).get("settlements") or (),
+                today,
+                claimed,
+            )
+            series["settlements"] = settlements
+            series["settlement_candidates"] = candidates
+            if negative and not series["kind_trait"] and (settlements or key in usage):
+                series["kind_trait"] = TRAIT_USAGE_BASED
             out.append(series)
     out.sort(key=lambda s: s["annual_cost"], reverse=True)
     return out
@@ -679,6 +722,17 @@ def _series_parts(rows, date_tol: int, amount_tol: float) -> list[_Part]:
     return _whole_or_bands(rows, date_tol, amount_tol, ref=single_ref)
 
 
+def _settlements_per_part(parts, pool):
+    """Keyword settlements per part: by contract reference, the rest to the
+    earliest part (the payee's own series)."""
+    out: list[list[tuple[date, float, dict[str, Any]]]] = [[] for _ in parts]
+    refs = {p.ref: i for i, p in enumerate(parts) if p.ref}
+    base = min(range(len(parts)), key=lambda i: (parts[i].rows[0][0], parts[i].tag))
+    for row in pool:
+        out[refs.get(contract_reference(_remittance(row[2])), base)].append(row)
+    return out
+
+
 def _run_in_parallel(streams) -> bool:
     """Two of the date-sorted ``streams`` overlap in time."""
     spans = sorted((s[0][0], s[-1][0]) for s in streams)
@@ -763,14 +817,15 @@ def _build_series(
 
     sign = -1.0 if negative else 1.0
     price_change = None
-    if len(amounts) >= 2 and round(abs(amounts[-1]), 2) != round(abs(amounts[-2]), 2):
-        prev, last = abs(amounts[-2]), abs(amounts[-1])
+    step = _price_step(dates, amounts, today)
+    if step is not None:
+        prev, last, day = step
         price_change = {
             "previous": round(sign * prev, 2),
             "last": round(sign * last, 2),
             "change_pct": round((last - prev) / prev * 100, 1) if prev else None,
             "increase": last > prev,
-            "date": dates[-1].isoformat(),
+            "date": day.isoformat(),
         }
 
     txns = [r[2] for r in rows]
@@ -812,6 +867,34 @@ def _build_series(
         "account_type": _most_common_value([t.get("_account_type") for t in txns], "personal"),
         "account_person": _most_common_value([t.get("_account_person") for t in txns], ""),
     }
+
+
+PRICE_STEP_MAX_AGE_DAYS = 365
+
+
+def _price_step(
+    dates: list[date], amounts: list[float], today: date
+) -> tuple[float, float, date] | None:
+    """``(previous, new, date)`` of the latest price change, else None.
+
+    The last two payments differ -> that change. Otherwise a step the last
+    payments kept (85, 85, 95, 95, 95) still counts within a year, but only
+    after a steady previous price: a single outlier in between (a doubled
+    instalment) is no step (#116).
+    """
+    mags = [round(abs(a), 2) for a in amounts]
+    if len(mags) < 2:
+        return None
+    if mags[-1] != mags[-2]:
+        return mags[-2], mags[-1], dates[-1]
+    i = len(mags) - 1
+    while i > 0 and mags[i - 1] == mags[-1]:
+        i -= 1
+    if i == 0 or (i >= 2 and mags[i - 2] != mags[i - 1]):
+        return None
+    if (today - dates[i]).days > PRICE_STEP_MAX_AGE_DAYS:
+        return None
+    return mags[i - 1], mags[-1], dates[i]
 
 
 PENDING_MAX_AGE_DAYS = 14  # a debit pending longer was most likely dropped by the bank
