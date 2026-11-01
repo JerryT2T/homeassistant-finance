@@ -1,5 +1,12 @@
 # Build Log
 
+## 0.26.0 — 2026-11-01
+Version: 0.26.0
+Branch: feat/130-review-candidates
+Changes:
+- feat(contracts): the contracts page has a "Prüfen" section (admins) listing repeating payments that do not clearly look like a contract, with a "Warum?" tooltip naming the reasons
+- feat(contracts): "Ist ein Vertrag" takes a candidate over as a contract (fixed costs, reserves, reminders); "Kein Vertrag" hides it for good, also after new imports
+
 ## 0.25.0 — 2026-11-01
 Version: 0.25.0
 Branch: feat/110-series-confidence

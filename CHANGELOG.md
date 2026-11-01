@@ -2,6 +2,12 @@
 
 All notable changes to the Finance will be documented in this file.
 
+## [0.26.0] — 2026-11-01
+
+### Added
+- The contracts page has a "Prüfen" section (admins) listing repeating payments that do not clearly look like a contract, with a "Warum?" tooltip naming the reasons
+- "Ist ein Vertrag" takes a candidate over as a contract (fixed costs, reserves, reminders); "Kein Vertrag" hides it for good, also after new imports
+
 ## [0.25.0] — 2026-11-01
 
 ### Added
