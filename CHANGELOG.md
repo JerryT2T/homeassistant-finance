@@ -2,6 +2,13 @@
 
 All notable changes to the Finance will be documented in this file.
 
+## [0.28.0] — 2026-11-01
+
+### Added
+- Every recurring payment has a kind — Vertrag, Abo, Regelmäßige Ausgabe or Unregelmäßig — suggested from the payments (yearly, contract words and numbers, subscription words, weekly or everyday spending) and changeable in the edit sheet; the choice survives new imports
+- The contracts page shows the kind on every row and filters the list and its totals by kind
+- Regular and irregular spending no longer shows a notice deadline or sends a notice reminder; notice defaults follow the kind (subscriptions monthly without notice, phone and internet contracts 24 months)
+
 ## [0.27.1] — 2026-11-01
 
 ### Fixed

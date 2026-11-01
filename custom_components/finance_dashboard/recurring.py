@@ -19,6 +19,7 @@ from collections import defaultdict
 from datetime import date, datetime, timedelta
 from typing import Any
 
+from .contract_kind import series_trait, suggest_kind
 from .series_confidence import is_candidate, score_series
 from .text_norm import canonical_name
 from .tx_dates import effective_day
@@ -393,6 +394,10 @@ def detect_series(
                 part.rows, part.interval, series["category"], part.ref
             )
             series["candidate"] = is_candidate(series["confidence"])
+            series["kind_suggested"] = suggest_kind(
+                part.rows, part.interval, series["category"], series["confidence"]["reasons"]
+            )
+            series["kind_trait"] = series_trait(part.rows)
             out.append(series)
     out.sort(key=lambda s: s["annual_cost"], reverse=True)
     return out

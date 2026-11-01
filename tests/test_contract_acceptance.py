@@ -155,7 +155,6 @@ def test_detection_meets_epic_targets():
     assert deviation <= TARGETS["annual_total_deviation"], f"annual total off by {deviation:.1%}"
 
 
-@pytest.mark.xfail(strict=True, reason="#111: contract kinds")
 def test_detected_contracts_carry_their_kind():
     checked = 0
     for _case, pairs, _extra in _all_pairs():

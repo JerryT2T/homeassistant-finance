@@ -32,7 +32,14 @@ from homeassistant.helpers.storage import Store
 
 from .account_identity import account_key
 from .const import DOMAIN, STORAGE_VERSION
-from .series_confidence import REASON_OWN_NAME, own_name_contract
+from .contract_kind import CATEGORY_DEFAULTS as KIND_CATEGORY_DEFAULTS
+from .contract_kind import (
+    KIND_CONTRACT,
+    KINDS,
+    NO_NOTICE_KINDS,
+    SUBSCRIPTION_DEFAULTS,
+    kind_defaults,
+)
 from .recurring import (
     IRREGULAR_INTERVALS,
     PLAN_MODE_FIXED,
@@ -40,6 +47,7 @@ from .recurring import (
     add_months,
     detect_series,
 )
+from .series_confidence import REASON_OWN_NAME, own_name_contract
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -53,16 +61,12 @@ REF_END_OF_TERM = "end_of_term"
 REF_END_OF_MONTH = "end_of_month"
 NOTICE_REFERENCES = (REF_END_OF_TERM, REF_END_OF_MONTH)
 
-# category -> (min_term_months, renewal_months, notice_value, notice_unit)
+# Legacy per-category table; the kind (#111) decides the defaults now.
 CATEGORY_DEFAULTS: dict[str, tuple[int, int, int, str]] = {
-    "insurance": (12, 12, 3, "months"),
-    "telecom": (24, 12, 1, "months"),
-    "subscriptions": (1, 1, 0, "days"),  # streaming: monthly, no notice
-    "utilities": (12, 12, 1, "months"),
-    "loans": (12, 12, 3, "months"),
-    "housing": (12, 12, 3, "months"),
+    **KIND_CATEGORY_DEFAULTS,
+    "subscriptions": SUBSCRIPTION_DEFAULTS,
 }
-_FALLBACK_DEFAULTS = (1, 1, 0, "days")
+_FALLBACK_DEFAULTS = SUBSCRIPTION_DEFAULTS
 
 
 REVIEW_CONTRACT = "contract"
@@ -108,6 +112,7 @@ class Contract:
     plan_mode: str | None = None
     plan_fixed_amount: float | None = None
     review: str | None = None  # the user's answer to a candidate (#130)
+    kind: str | None = None  # None = follow the detector's suggestion (#111)
 
     _FIELDS = (
         "start",
@@ -123,6 +128,7 @@ class Contract:
         "plan_mode",
         "plan_fixed_amount",
         "review",
+        "kind",
     )
 
     def to_dict(self) -> dict[str, Any]:
@@ -192,6 +198,8 @@ def _validate(d: dict[str, Any]) -> None:
         d["plan_fixed_amount"] = round(float(fixed), 2)
     if d["review"] is not None and d["review"] not in REVIEW_ANSWERS:
         raise ContractError("invalid_review", "Unknown review answer")
+    if d["kind"] is not None and d["kind"] not in KINDS:
+        raise ContractError("invalid_kind", "Unknown contract kind")
     if d["plan_mode"] == PLAN_MODE_FIXED and d["plan_fixed_amount"] is None:
         raise ContractError("invalid_plan_fixed_amount", "Fixed mode needs an amount")
 
@@ -383,29 +391,40 @@ def build_contracts(
 
 def _contract_view(s: dict[str, Any], c: Contract, today: date) -> dict[str, Any]:
     category = c.category or s["category"]
-    defaults = category_defaults(category)
+    suggested = s.get("kind_suggested") or KIND_CONTRACT
+    kind = c.kind or suggested
+    trait = s.get("kind_trait") or ""
+    has_notice = kind not in NO_NOTICE_KINDS
+    # Kinds without notice keep the contract terms only for a later switch back.
+    defaults = kind_defaults(kind, category, trait) or kind_defaults(KIND_CONTRACT, category, trait)
 
     def eff(name: str) -> Any:
         v = getattr(c, name)
         return defaults[name] if v is None else v
 
-    start = date.fromisoformat(c.start or s["first_seen"])
-    deadline, effective = next_notice_deadline(
-        start,
-        eff("min_term_months"),
-        eff("renewal_months"),
-        eff("notice_value"),
-        eff("notice_unit"),
-        eff("notice_reference"),
-        today,
-    )
     pc = s["price_change"]
     special_default = special_termination_default(s)
     special_checked = special_default if c.special_termination is None else c.special_termination
-    days_left = (deadline - today).days
+    deadline = effective = None
+    days_left = None
+    if has_notice:  # no notice deadline for regular or irregular spending
+        start = date.fromisoformat(c.start or s["first_seen"])
+        deadline, effective = next_notice_deadline(
+            start,
+            eff("min_term_months"),
+            eff("renewal_months"),
+            eff("notice_value"),
+            eff("notice_unit"),
+            eff("notice_reference"),
+            today,
+        )
+        days_left = (deadline - today).days
     return {
         **s,
         "category": category,
+        "kind": kind,
+        "kind_suggested": suggested,
+        "kind_trait": trait,
         "owner": _owner_of(s, c),
         "contract": {
             "start": c.start,
@@ -417,13 +436,17 @@ def _contract_view(s: dict[str, Any], c: Contract, today: date) -> dict[str, Any
             "plan_position_id": c.plan_position_id,
             "special_termination": special_checked,
             "special_termination_prefilled": c.special_termination is None,
+            "defaults": defaults,
+            "has_notice": has_notice,
             "stored": c.to_dict(),
         },
-        "next_deadline": deadline.isoformat(),
-        "effective_end": effective.isoformat(),
+        "next_deadline": deadline.isoformat() if deadline else None,
+        "effective_end": effective.isoformat() if effective else None,
         "days_until_deadline": days_left,
-        "notice_due_soon": 0 <= days_left <= NOTICE_EVENT_WINDOW_DAYS,
-        "special_termination_available": bool(pc and pc["increase"] and special_checked),
+        "notice_due_soon": days_left is not None and 0 <= days_left <= NOTICE_EVENT_WINDOW_DAYS,
+        "special_termination_available": bool(
+            has_notice and pc and pc["increase"] and special_checked
+        ),
         "monthly_equivalent": round(s["annual_cost"] / 12, 2),
     }
 
@@ -437,6 +460,7 @@ def aggregate_view(item: dict[str, Any]) -> dict[str, Any]:
         "interval",
         "status",
         "category",
+        "kind",
         "owner",
         "annual_cost",
         "monthly_equivalent",
