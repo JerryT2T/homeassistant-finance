@@ -16,6 +16,7 @@ import logging
 from homeassistant.core import HomeAssistant
 
 from ._helpers import _get_manager, _get_setup_client
+from .ai_consent import VIEWS as AI_CONSENT_VIEWS
 from .assignments import FinanceDashboardAssignmentsView
 from .contracts import (
     FinanceDashboardAccountSavingsView,
@@ -60,6 +61,7 @@ from .refresh import (
     FinanceDashboardRefreshTriggerView,
     FinanceDashboardReprocessView,
 )
+from .plan_ideas import VIEWS as PLAN_IDEAS_VIEWS
 from .plan_wizard import (
     FinanceDashboardPlanWizardFixedView,
     FinanceDashboardPlanWizardGateView,
@@ -189,6 +191,6 @@ async def async_register_api(hass: HomeAssistant) -> None:
     hass.http.register_view(FinanceDashboardPlanWizardIncomeView())
     hass.http.register_view(FinanceDashboardPlanWizardFixedView())
     hass.http.register_view(FinanceDashboardPlanWizardResultView())
-    # NOTE: views of the parallel AI-consent / plan-ideas work (api/ai_consent.py,
-    # api/plan_ideas.py) are not on this branch; register them at merge.
+    for view in (*AI_CONSENT_VIEWS, *PLAN_IDEAS_VIEWS):
+        hass.http.register_view(view())
     _LOGGER.debug("Finance API endpoints registered")

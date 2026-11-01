@@ -401,6 +401,19 @@ async def test_admin_can_run_setup_endpoints(monkeypatch) -> None:
 
     monkeypatch.setattr(setup.wiz, "async_load_state", _load)
     monkeypatch.setattr(setup.wiz, "async_save_state", _save)
+    from custom_components.finance_dashboard import ai_consent
+
+    consents = {"categorize": False}
+
+    async def _granted(hass, purpose):
+        return consents[purpose]
+
+    async def _set(hass, purpose, granted):
+        consents[purpose] = granted
+        return {}
+
+    monkeypatch.setattr(ai_consent, "async_granted", _granted)
+    monkeypatch.setattr(ai_consent, "async_set", _set)
     view = setup.FinanceDashboardSetupView()
     view.json = _Json().json
     resp = await view.get(_request(True))
