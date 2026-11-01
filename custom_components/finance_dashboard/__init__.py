@@ -76,6 +76,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: FinanceDashboardConfigEn
     """Set up Finance Dashboard from a config entry."""
     # Initialize the manager (core business logic)
     from .manager import FinanceDashboardManager
+    from .taxonomy_migration import async_migrate_taxonomy
+
+    # Legacy category slugs -> life areas (#112), once, before any store loads.
+    try:
+        await async_migrate_taxonomy(hass, entry.entry_id)
+    except Exception:  # noqa: BLE001 - a failed migration must not block setup
+        _LOGGER.exception("Category migration failed; legacy slugs kept")
 
     manager = FinanceDashboardManager(hass, entry)
     await manager.async_initialize()

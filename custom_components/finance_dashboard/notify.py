@@ -41,7 +41,8 @@ from typing import Any
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
-from .const import CATEGORY_INCOME, CATEGORY_TRANSFERS, DOMAIN
+from .const import CATEGORY_TRANSFERS, DOMAIN
+from .life_areas import is_income
 from .recurring import detect_recurring
 from .setup_wizard import (
     amount_of,
@@ -105,7 +106,8 @@ def _debits(transactions: list[dict[str, Any]]) -> list[dict[str, Any]]:
         for t in transactions
         if amount_of(t) < 0
         and t.get("_status", "booked") == "booked"
-        and t.get("category") not in (CATEGORY_TRANSFERS, CATEGORY_INCOME)
+        and t.get("category") != CATEGORY_TRANSFERS
+        and not is_income(t.get("category"))
         and merchant_of(t)
         and day_of(t) is not None
     ]
@@ -228,10 +230,13 @@ def consent_exceptions(banks: list[dict[str, Any]], today: date) -> list[dict[st
 
 
 _CATEGORY_DE = {
-    "housing": "Wohnen", "food": "Lebensmittel", "transport": "Mobilität",
-    "insurance": "Versicherungen", "subscriptions": "Abos", "loans": "Kredite",
-    "utilities": "Nebenkosten", "income": "Einnahmen", "transfers": "Umbuchungen",
-    "other": "Sonstiges", "shopping": "Einkaufen", "health": "Gesundheit", "leisure": "Freizeit",
+    "housing_cold": "Wohnen kalt", "housing_warm": "Wohnen warm",
+    "groceries": "Lebensmittel & Haushalt", "mobility": "Mobilität",
+    "health": "Gesundheit & Absicherung", "leisure": "Freizeit",
+    "media": "Medien & Kommunikation", "finance": "Finanzen & Verpflichtungen",
+    "income_work": "Einkommen Arbeit", "income_state": "Einkommen Staat",
+    "income_capital": "Kapitalerträge", "income_refund": "Erstattungen",
+    "income_private": "Einnahmen privat", "transfers": "Umbuchungen", "other": "Sonstiges",
 }
 _KIND_DE = {
     "large_debit": "ungewöhnlich hohe Abbuchung",
@@ -341,9 +346,7 @@ async def _run(hass: HomeAssistant, manager: Any, now: datetime | None) -> None:
     state["notified"] = notified
 
     # Contract notice deadlines ≤30 days away (fires once per deadline).
-    from .contracts import async_fire_notice_due
-
-    from .contracts import own_account_names
+    from .contracts import async_fire_notice_due, own_account_names
     from .household_summary import counted_transactions
 
     accounts = getattr(manager, "_accounts", []) or []

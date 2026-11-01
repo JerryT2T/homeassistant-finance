@@ -14,13 +14,15 @@ from datetime import date
 from typing import Any
 
 from .const import (
-    CATEGORY_FOOD,
-    CATEGORY_HOUSING,
-    CATEGORY_INSURANCE,
-    CATEGORY_LOANS,
-    CATEGORY_SUBSCRIPTIONS,
-    CATEGORY_UTILITIES,
+    CATEGORY_FINANCE,
+    CATEGORY_GROCERIES,
+    CATEGORY_HEALTH,
+    CATEGORY_HOUSING_COLD,
+    CATEGORY_HOUSING_WARM,
+    CATEGORY_LEISURE,
+    CATEGORY_MEDIA,
 )
+from .life_areas import INSURER
 
 CANDIDATE_BELOW = 50
 REASON_OWN_NAME = "own_name"  # paid to an own account holder's name (#109)
@@ -45,14 +47,16 @@ _SAVINGS = re.compile(
     re.IGNORECASE,
 )
 _CONTRACT_CATEGORIES = {
-    CATEGORY_HOUSING,
-    CATEGORY_INSURANCE,
-    CATEGORY_LOANS,
-    CATEGORY_SUBSCRIPTIONS,
-    CATEGORY_UTILITIES,
+    CATEGORY_HOUSING_COLD,
+    CATEGORY_HOUSING_WARM,
+    CATEGORY_FINANCE,
+    CATEGORY_MEDIA,
 }
 # Spending that recurs by habit, not by contract.
-_EVERYDAY_CATEGORIES = {CATEGORY_FOOD, "shopping", "health", "gastro", "groceries"}
+_EVERYDAY_CATEGORIES = {CATEGORY_GROCERIES, CATEGORY_LEISURE}
+# Health holds both the insurance (a contract) and the doctor (habit): the
+# text decides which side it counts on.
+_INSURANCE = INSURER
 _MONTH_BASED = ("monthly", "quarterly", "half_yearly", "yearly")
 
 
@@ -113,6 +117,11 @@ def score_series(
     if pauses:  # held together by skipped periods: less sure (#114)
         add(-10, "paused")
 
+    if category == CATEGORY_HEALTH:
+        insured = any(_INSURANCE.search(t) for t in texts) or any(
+            _INSURANCE.search(str(r[2].get("creditorName") or "")) for r in rows
+        )
+        category = CATEGORY_FINANCE if insured else CATEGORY_GROCERIES
     if category in _CONTRACT_CATEGORIES:
         add(15, "contract_category")
     elif category in _EVERYDAY_CATEGORIES:

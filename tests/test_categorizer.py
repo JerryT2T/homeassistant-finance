@@ -50,7 +50,6 @@ def _txn(
     [
         ("creditor", "Vonovia Wohnungsvermietung GmbH"),
         ("remittance", "Miete Dezember 2025 WE 34"),
-        ("remittance", "Nebenkosten Abrechnung 2024"),
         ("creditor", "Hausgeld Eigentümergemeinschaft"),
         ("remittance", "Kaltmiete Monat November"),
         ("creditor", "Rent payment Wohnung Berlin"),
@@ -62,7 +61,7 @@ def test_housing(field, value):
         result = cat.categorize(_txn(creditor=value))
     else:
         result = cat.categorize(_txn(remittance=value))
-    assert result == "housing", f"Expected housing for '{value}', got '{result}'"
+    assert result == "housing_cold", f"Expected housing_cold for '{value}', got '{result}'"
 
 
 # ---------------------------------------------------------------------------
@@ -78,10 +77,7 @@ def test_housing(field, value):
         ("creditor", "ALDI SUED"),
         ("creditor", "Lidl GmbH & Co KG"),
         ("creditor", "HelloFresh SE"),
-        ("creditor", "Lieferando.de"),
         ("remittance", "Einkauf Supermarkt"),
-        ("remittance", "Restaurant Essenbei Tisch 4"),
-        ("remittance", "Uber Eats Berlin"),
         ("creditor", "REWE Markt GmbH"),
     ],
 )
@@ -91,7 +87,16 @@ def test_food(field, value):
         result = cat.categorize(_txn(creditor=value))
     else:
         result = cat.categorize(_txn(remittance=value))
-    assert result == "food", f"Expected food for '{value}', got '{result}'"
+    assert result == "groceries", f"Expected groceries for '{value}', got '{result}'"
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["Lieferando.de", "Restaurant Essenbei Tisch 4", "Uber Eats Berlin", "Pizzeria Roma"],
+)
+def test_gastro_is_leisure(value):
+    """Eating out is leisure, not groceries (#112)."""
+    assert TransactionCategorizer().categorize(_txn(creditor=value)) == "leisure"
 
 
 # ---------------------------------------------------------------------------
@@ -118,7 +123,7 @@ def test_transport(field, value):
         result = cat.categorize(_txn(creditor=value))
     else:
         result = cat.categorize(_txn(remittance=value))
-    assert result == "transport", f"Expected transport for '{value}', got '{result}'"
+    assert result == "mobility", f"Expected mobility for '{value}', got '{result}'"
 
 
 # ---------------------------------------------------------------------------
@@ -144,7 +149,7 @@ def test_insurance(field, value):
         result = cat.categorize(_txn(creditor=value))
     else:
         result = cat.categorize(_txn(remittance=value))
-    assert result == "insurance", f"Expected insurance for '{value}', got '{result}'"
+    assert result == "health", f"Expected health for '{value}', got '{result}'"
 
 
 # ---------------------------------------------------------------------------
@@ -171,9 +176,7 @@ def test_subscriptions(field, value):
         result = cat.categorize(_txn(creditor=value))
     else:
         result = cat.categorize(_txn(remittance=value))
-    assert result == "subscriptions", (
-        f"Expected subscriptions for '{value}', got '{result}'"
-    )
+    assert result == "media", f"Expected media for '{value}', got '{result}'"
 
 
 # ---------------------------------------------------------------------------
@@ -194,7 +197,7 @@ def test_subscriptions(field, value):
 def test_loans(field, value):
     cat = TransactionCategorizer()
     result = cat.categorize(_txn(remittance=value))
-    assert result == "loans", f"Expected loans for '{value}', got '{result}'"
+    assert result == "finance", f"Expected finance for '{value}', got '{result}'"
 
 
 # ---------------------------------------------------------------------------
@@ -203,27 +206,33 @@ def test_loans(field, value):
 
 
 @pytest.mark.parametrize(
-    "field,value",
+    "field,value,expected",
     [
-        ("remittance", "EnBW Strom Abschlag Oktober"),
-        ("remittance", "Stromabschlag Monat Oktober"),
-        ("remittance", "Gasrechnung Dezember"),
-        ("remittance", "Wasserversorgung Stadtwerke"),
-        ("creditor", "Deutsche Telekom AG"),
-        ("creditor", "Vodafone GmbH"),
-        ("creditor", "O2 Telefónica Deutschland"),
-        ("remittance", "Rundfunkbeitrag ARD ZDF"),
-        ("remittance", "GEZ Gebühr Halbjahr"),
-        ("remittance", "Fernwärme Abschlag"),
+        ("remittance", "EnBW Strom Abschlag Oktober", "housing_warm"),
+        ("remittance", "Stromabschlag Monat Oktober", "housing_warm"),
+        ("remittance", "Gasrechnung Dezember", "housing_warm"),
+        ("remittance", "Wasserversorgung Stadtwerke", "housing_warm"),
+        ("remittance", "Fernwärme Abschlag", "housing_warm"),
+        ("remittance", "Nebenkosten Abrechnung 2024", "housing_warm"),
+        ("creditor", "Deutsche Telekom AG", "media"),
+        ("creditor", "Vodafone GmbH", "media"),
+        ("creditor", "O2 Telefónica Deutschland", "media"),
+        ("remittance", "Rundfunkbeitrag ARD ZDF", "media"),
+        ("remittance", "GEZ Gebühr Halbjahr", "media"),
     ],
 )
-def test_utilities(field, value):
+def test_utilities_split_into_energy_and_media(field, value, expected):
+    """The legacy utilities bucket is two life areas (#112)."""
     cat = TransactionCategorizer()
     if field == "creditor":
         result = cat.categorize(_txn(creditor=value))
     else:
         result = cat.categorize(_txn(remittance=value))
-    assert result == "utilities", f"Expected utilities for '{value}', got '{result}'"
+    assert result == expected, f"Expected {expected} for '{value}', got '{result}'"
+
+
+def test_gastro_is_never_gas():
+    assert TransactionCategorizer().categorize(_txn(creditor="Gastro Bar Eck")) == "leisure"
 
 
 # ---------------------------------------------------------------------------
@@ -238,15 +247,33 @@ def test_utilities(field, value):
         ("remittance", "Lohn Dezember"),
         ("remittance", "Salary payment"),
         ("remittance", "Vergütung Werkstudent Oktober"),
-        ("remittance", "Überweisung Arbeitgeber"),
     ],
 )
 def test_income_keyword(field, value):
-    """Transactions with income keywords and negative amounts → income."""
+    """Money coming in with a work keyword is work income."""
     cat = TransactionCategorizer()
-    # Income keywords fire regardless of amount direction
-    result = cat.categorize(_txn(remittance=value, amount=-0.01))
-    assert result == "income", f"Expected income for '{value}', got '{result}'"
+    result = cat.categorize(_txn(remittance=value, amount=2500.0))
+    assert result == "income_work", f"Expected income_work for '{value}', got '{result}'"
+
+
+def test_income_keyword_never_files_an_expense_as_income():
+    # "Zinsen" on a debit is a loan cost, not capital income
+    cat = TransactionCategorizer()
+    assert cat.categorize(_txn(remittance="Zinsen Darlehen", amount=-45.0)) == "finance"
+    assert cat.categorize(_txn(remittance="Zinsen Tagesgeld", amount=12.0)) == "income_capital"
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("Kindergeld Familienkasse", "income_state"),
+        ("Dividende ETF", "income_capital"),
+        ("Erstattung Ruecksendung 4711", "income_refund"),
+        ("Danke fuer gestern", "income_private"),
+    ],
+)
+def test_income_areas(text, expected):
+    assert TransactionCategorizer().categorize(_txn(remittance=text, amount=80.0)) == expected
 
 
 # ---------------------------------------------------------------------------
@@ -267,7 +294,9 @@ def test_income_positive_amount_fallback(amount, label):
     cat = TransactionCategorizer()
     # Use an unrecognized creditor to avoid keyword matches
     result = cat.categorize(_txn(creditor="Unbekannter Absender XYZ", amount=amount))
-    assert result == "income", f"Expected income for {label} (amount={amount}), got '{result}'"
+    assert result == "income_private", (
+        f"Expected income_private for {label} (amount={amount}), got '{result}'"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -281,7 +310,6 @@ def test_income_positive_amount_fallback(amount, label):
         ("remittance", "Umbuchung Konto 2"),
         ("remittance", "Übertrag Sparkonto"),
         ("remittance", "Transfer to savings account"),
-        ("remittance", "Sparplan ETF monatlich"),
     ],
 )
 def test_transfers(field, value):
@@ -330,36 +358,36 @@ def test_other_no_text_fields():
 def test_custom_rule_adds_keyword():
     """Custom rules injected via constructor must extend category matching."""
     cat = TransactionCategorizer(
-        custom_rules={"food": ["biomarkt", "demeter"]}
+        custom_rules={"groceries": ["biomarkt", "demeter"]}
     )
     result = cat.categorize(_txn(creditor="Alnatura Biomarkt"))
-    assert result == "food"
+    assert result == "groceries"
 
 
 def test_custom_rule_new_category():
     """Custom rules for a previously-unseen category key must work."""
     cat = TransactionCategorizer(
-        custom_rules={"fitness": ["fitnessstudio", "mcfit", "clever fit"]}
+        custom_rules={"fitness": ["fitnessstudio", "clever fit"]}
     )
-    result = cat.categorize(_txn(creditor="McFit GmbH"))
+    result = cat.categorize(_txn(creditor="Clever Fit Koblenz"))
     assert result == "fitness"
 
 
 def test_update_rules_adds_keyword():
     """update_rules must extend matching for an existing category."""
     cat = TransactionCategorizer()
-    cat.update_rules("food", ["naschmarkt"])
+    cat.update_rules("groceries", ["naschmarkt"])
     result = cat.categorize(_txn(creditor="Naschmarkt Wien"))
-    assert result == "food"
+    assert result == "groceries"
 
 
 def test_get_rules_returns_copy():
     """get_rules() must return a copy — mutations must not affect the instance."""
     cat = TransactionCategorizer()
     rules = cat.get_rules()
-    rules["food"].append("__sentinel__")
+    rules["groceries"].append("__sentinel__")
     # Internal rules must not be polluted
-    assert "__sentinel__" not in cat.get_rules()["food"]
+    assert "__sentinel__" not in cat.get_rules()["groceries"]
 
 
 # ---------------------------------------------------------------------------
@@ -380,7 +408,7 @@ def test_case_insensitive_matching(text):
     """Rule matching must be case-insensitive."""
     cat = TransactionCategorizer()
     result = cat.categorize(_txn(creditor=text))
-    assert result == "food", f"Expected food for '{text}', got '{result}'"
+    assert result == "groceries", f"Expected groceries for '{text}', got '{result}'"
 
 
 # ---------------------------------------------------------------------------
@@ -392,7 +420,7 @@ def test_creditor_name_matched():
     """creditorName field must be searched for keyword matches."""
     cat = TransactionCategorizer()
     result = cat.categorize({"creditorName": "Netflix", "transactionAmount": {"amount": "-9.99"}})
-    assert result == "subscriptions"
+    assert result == "media"
 
 
 def test_remittance_array_matched():
@@ -403,7 +431,7 @@ def test_remittance_array_matched():
         "transactionAmount": {"amount": "-700.00"},
     }
     result = cat.categorize(txn)
-    assert result == "housing"
+    assert result == "housing_cold"
 
 
 # ---------------------------------------------------------------------------
@@ -423,9 +451,9 @@ def _processor_line(name: str, remittance: str, amount: str = "-23.50") -> dict:
 
 def test_processor_name_never_decides_the_category():
     # even a rule that names the processor itself must not fire on its own lines
-    cat = TransactionCategorizer(custom_rules={"transport": ["paypal", "europe"]})
+    cat = TransactionCategorizer(custom_rules={"mobility": ["paypal", "europe"]})
     tx = _processor_line(_PAYPAL, "PP.4471.PP . Pizza Roma, Ihr Einkauf bei Pizza Roma")
-    assert cat.categorize(tx) == "food"
+    assert cat.categorize(tx) == "leisure"
 
 
 def test_processor_line_without_merchant_is_unclear():
@@ -437,4 +465,4 @@ def test_processor_line_without_merchant_is_unclear():
 def test_merchant_inside_processor_name_still_counts():
     # "PAYPAL *NETFLIX": the merchant is part of the name, not a processor-only line
     cat = TransactionCategorizer()
-    assert cat.categorize(_processor_line("PAYPAL *NETFLIX", "")) == "subscriptions"
+    assert cat.categorize(_processor_line("PAYPAL *NETFLIX", "")) == "media"

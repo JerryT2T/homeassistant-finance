@@ -738,5 +738,20 @@
   "pw.result.avg_left": "Übrig",
   "pw.result.done": "Fertig",
   "pw.result.saved": "Haushaltsplan gespeichert, Taschengeld-Töpfe angelegt",
-  "pw.result.saved_plain": "Haushaltsplan gespeichert"
+  "pw.result.saved_plain": "Haushaltsplan gespeichert",
+  "cat.housing_cold": "Wohnen kalt",
+  "cat.housing_warm": "Wohnen warm",
+  "cat.groceries": "Lebensmittel & Haushalt",
+  "cat.mobility": "Mobilität",
+  "cat.health": "Gesundheit & Absicherung",
+  "cat.leisure": "Freizeit",
+  "cat.media": "Medien & Kommunikation",
+  "cat.finance": "Finanzen & Verpflichtungen",
+  "cat.income_work": "Lohn & Gehalt",
+  "cat.income_state": "Staatliche Leistungen",
+  "cat.income_capital": "Kapitalerträge",
+  "cat.income_refund": "Erstattungen",
+  "cat.income_private": "Von Privatpersonen",
+  "cat.other": "Sonstiges",
+  "cat.transfers": "Umbuchung"
 }

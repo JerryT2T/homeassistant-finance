@@ -66,7 +66,7 @@ def _with_text(rows, text, category="other"):
 def test_totals_split_fixed_and_regular_spending():
     rent = _with_text(monthly([-900.0] * 5, name="Hausverwaltung"), "Miete")
     stream = _with_text(monthly([-12.0] * 5, name="Streamflix"), "Abo")
-    food = _with_text(monthly([-60.0] * 5, name="Kochkiste"), "Box", "food")
+    food = _with_text(monthly([-60.0] * 5, name="Kochkiste"), "Box", "groceries")
     contracts = build_contracts(rent + stream + food, blank_store(), today=TODAY)
     totals = contract_totals(contracts)
     assert totals["fixed"] == {"monthly": 912.0, "yearly": 10944.0, "count": 2}

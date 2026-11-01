@@ -29,7 +29,6 @@
 
 const DOMAIN = "finance_dashboard";
 const WEEK_CAP = 10;
-const PICKER_EXCLUDE = new Set(["other", "income", "transfers"]);
 const PERSON_COLORS = ["var(--fd-person-a)", "var(--fd-person-b)", "#ef6c00", "#5e35b1", "#6d4c41"];
 
 const FB = {
@@ -384,7 +383,8 @@ class FdQuestions extends HTMLElement {
     const c = this._card;
     const cats = this._cats(c);
     const people = this._persons;
-    const rest = Object.keys(CAT_LABELS).filter((k) => !PICKER_EXCLUDE.has(k));
+    const credit = Number(c.total) > 0;
+    const rest = Object.keys(CAT_LABELS).filter((k) => (k !== "other" && k !== "transfers") && String(k).startsWith("income") === credit);
     return `<div class="card enter" id="card">
   <div class="cnt">${tr("questions.card_of", { n: this._i + 1, m: this._q.length })}</div>
   <h3 class="merchant">${escHtml(c.merchant)}</h3>

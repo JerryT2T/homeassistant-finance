@@ -41,11 +41,16 @@ def _one(rows, store=None):
         ("Mitgliedsbeitrag", "other", KIND_SUBSCRIPTION),
         ("Darlehen 4711001 Rate", "other", KIND_CONTRACT),
         ("Miete Whg 3", "other", KIND_CONTRACT),
-        ("Kartenzahlung", "food", KIND_REGULAR),
+        ("Kartenzahlung", "groceries", KIND_REGULAR),
         ("Rezept", "health", KIND_IRREGULAR),
-        ("Kartenzahlung", "insurance", KIND_CONTRACT),
+        ("Kartenzahlung Hausrat", "housing_cold", KIND_CONTRACT),
+        ("Krankenversicherung Beitrag", "health", KIND_CONTRACT),
+        ("Techniker Krankenkasse", "health", KIND_CONTRACT),
+        ("Pizzeria Roma", "leisure", KIND_REGULAR),
+        ("Fitnessstudio Monatsbeitrag", "leisure", KIND_SUBSCRIPTION),
+        ("Mobilfunk Rechnung", "media", KIND_CONTRACT),
         # QA #111: loose words never beat everyday spending, compounds still count
-        ("Brötchen Rate 3 von 5", "food", KIND_REGULAR),
+        ("Brötchen Rate 3 von 5", "groceries", KIND_REGULAR),
         ("Praxis Dr. Strom", "health", KIND_IRREGULAR),
         ("Handyvertrag Erika", "other", KIND_CONTRACT),
         ("Kita Beitrag", "other", KIND_CONTRACT),
@@ -71,7 +76,7 @@ def test_yearly_payment_is_a_contract():
 
 
 def test_regular_and_irregular_spending_has_no_notice_deadline():
-    c = _one(_with_text(monthly([-20.0] * 5, category="food"), "Kartenzahlung"))
+    c = _one(_with_text(monthly([-20.0] * 5, category="groceries"), "Kartenzahlung"))
     assert c["kind"] == KIND_REGULAR
     assert c["next_deadline"] is None
     assert c["days_until_deadline"] is None
@@ -95,7 +100,7 @@ def test_stored_kind_overrides_the_suggestion_and_keeps_user_fields():
 
 
 def test_defaults_follow_the_kind_and_the_telecom_trait():
-    phone = _one(_with_text(monthly([-29.99] * 5, category="utilities"), "Mobilfunk Vertrag"))
+    phone = _one(_with_text(monthly([-29.99] * 5, category="media"), "Mobilfunk Vertrag"))
     assert phone["kind"] == KIND_CONTRACT
     assert phone["kind_trait"] == "telecom"
     assert phone["contract"]["min_term_months"] == 24
@@ -104,7 +109,7 @@ def test_defaults_follow_the_kind_and_the_telecom_trait():
     assert sub["contract"]["defaults"]["renewal_months"] == 1
     assert sub["contract"]["defaults_by_kind"][KIND_CONTRACT]["min_term_months"] == 12
     assert sub["contract"]["defaults_by_kind"][KIND_REGULAR] is None
-    assert kind_defaults(KIND_REGULAR, "food") is None
+    assert kind_defaults(KIND_REGULAR, "groceries") is None
     assert kind_defaults(KIND_CONTRACT, "unknown")["min_term_months"] == 12
 
 
@@ -115,5 +120,5 @@ def test_unknown_kind_is_rejected():
 
 
 def test_category_defaults_keeps_its_old_answers():
-    assert category_defaults("subscriptions")["notice_value"] == 0
+    assert category_defaults("media")["notice_value"] == 0
     assert category_defaults("whatever")["renewal_months"] == 1

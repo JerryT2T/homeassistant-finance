@@ -738,5 +738,20 @@
   "pw.result.avg_left": "Left over",
   "pw.result.done": "Done",
   "pw.result.saved": "Household plan saved, pocket-money pots created",
-  "pw.result.saved_plain": "Household plan saved"
+  "pw.result.saved_plain": "Household plan saved",
+  "cat.housing_cold": "Housing (cold)",
+  "cat.housing_warm": "Housing (warm)",
+  "cat.groceries": "Groceries & household",
+  "cat.mobility": "Mobility",
+  "cat.health": "Health & protection",
+  "cat.leisure": "Leisure",
+  "cat.media": "Media & communication",
+  "cat.finance": "Finance & obligations",
+  "cat.income_work": "Salary & wages",
+  "cat.income_state": "State benefits",
+  "cat.income_capital": "Capital income",
+  "cat.income_refund": "Refunds",
+  "cat.income_private": "From private persons",
+  "cat.other": "Other",
+  "cat.transfers": "Transfer"
 }

@@ -174,12 +174,10 @@ const FB = {
 
 // Old servers without `contract.defaults`: mirrors contracts.CATEGORY_DEFAULTS.
 const CAT_DEFAULTS = {
-  insurance: [12, 12, 3, "months"],
-  telecom: [24, 12, 1, "months"],
-  subscriptions: [1, 1, 0, "days"],
-  utilities: [12, 12, 1, "months"],
-  loans: [12, 12, 3, "months"],
-  housing: [12, 12, 3, "months"],
+  health: [12, 12, 3, "months"],
+  housing_warm: [12, 12, 1, "months"],
+  finance: [12, 12, 3, "months"],
+  housing_cold: [12, 12, 3, "months"],
 };
 const FALLBACK_DEFAULTS = [1, 1, 0, "days"];
 const KINDS = ["contract", "subscription", "regular", "irregular"];
@@ -387,7 +385,7 @@ class FdContracts extends HTMLElement {
     const s = tr(k);
     return s !== k ? s : (window._fd.CAT_LABELS || {})[c] || c || "";
   }
-  _catIcon(c) { return (window._fd.CAT_ICONS || {})[c] || (c === "telecom" ? "📞" : "📦"); }
+  _catIcon(c) { return (window._fd.CAT_ICONS || {})[c] || "📦"; }
   _ownerLabel(o) { return o === "shared" ? tr("ct.owner.shared") : o || ""; }
 
   // ---- render -----------------------------------------------------------

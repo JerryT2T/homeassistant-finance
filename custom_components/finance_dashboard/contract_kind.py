@@ -21,6 +21,8 @@ import re
 from datetime import date
 from typing import Any
 
+from .life_areas import INSURER as _INSURANCE
+
 KIND_CONTRACT = "contract"
 KIND_SUBSCRIPTION = "subscription"
 KIND_REGULAR = "regular"
@@ -45,19 +47,21 @@ _TELECOM = re.compile(
     r"\b(mobilfunk|handy|dsl|glasfaser|festnetz|telekom|vodafone|o2|congstar)\b",
     re.IGNORECASE,
 )
-# Category slugs as the categorizer writes them.
-_CONTRACT_CATEGORIES = {"housing", "insurance", "loans", "utilities", "telecom"}
-_HABIT_CATEGORIES = {"food", "shopping"}
+_FITNESS = re.compile(r"\b(fitness\w*|mcfit|gym|urban sports|sportverein|verein)\b", re.IGNORECASE)
+# Life areas as the categorizer writes them (#112). Media is a contract only
+# with the telecom trait; health only with an insurance word (else a doctor).
+_CONTRACT_CATEGORIES = {"housing_cold", "housing_warm", "finance"}
+_HABIT_CATEGORIES = {"groceries"}
 _IRREGULAR_CATEGORIES = {"health"}
 _YEAR_BASED = ("quarterly", "half_yearly", "yearly")
 
 # category or trait -> (min_term_months, renewal_months, notice_value, notice_unit)
 CATEGORY_DEFAULTS: dict[str, tuple[int, int, int, str]] = {
-    "insurance": (12, 12, 3, "months"),
+    "health": (12, 12, 3, "months"),
     "telecom": (24, 12, 1, "months"),
-    "utilities": (12, 12, 1, "months"),
-    "loans": (12, 12, 3, "months"),
-    "housing": (12, 12, 3, "months"),
+    "housing_warm": (12, 12, 1, "months"),
+    "finance": (12, 12, 3, "months"),
+    "housing_cold": (12, 12, 3, "months"),
 }
 CONTRACT_FALLBACK = (12, 12, 1, "months")
 SUBSCRIPTION_DEFAULTS = (1, 1, 0, "days")  # monthly, cancelable any time
@@ -93,15 +97,22 @@ def suggest_kind(
     # Everyday spending wins over loose words ("Brötchen Rate", "Praxis Dr. Strom").
     if category in _HABIT_CATEGORIES or "savings_text" in reasons:
         return KIND_REGULAR
+    if category == "leisure":  # the gym is a subscription, the pizzeria a habit
+        if any(_SUBSCRIPTION_WORDS.search(t) or _FITNESS.search(t) for t in texts):
+            return KIND_SUBSCRIPTION
+        return KIND_REGULAR
     if category in _IRREGULAR_CATEGORIES:
-        return KIND_IRREGULAR
+        # Codex #112: an insurer is a contract even without a contract word
+        return KIND_CONTRACT if any(_INSURANCE.search(t) for t in texts) else KIND_IRREGULAR
     if any(_CONTRACT_WORDS.search(t) for t in texts):
         return KIND_CONTRACT
     if any(_SUBSCRIPTION_WORDS.search(t) for t in texts):
         return KIND_SUBSCRIPTION
     if interval != "monthly":
         return KIND_REGULAR
-    if category in _CONTRACT_CATEGORIES:
+    if category in _CONTRACT_CATEGORIES or (
+        category == "media" and any(_TELECOM.search(t) for t in texts)
+    ):
         return KIND_CONTRACT
     if "stable_amount" in reasons:
         return KIND_SUBSCRIPTION  # a fixed monthly price without words: an app, a stream

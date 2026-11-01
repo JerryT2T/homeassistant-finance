@@ -88,7 +88,7 @@ class FdCategorize extends HTMLElement {
 
   _renderTransactions(txns) {
     const eur = (v) => new Intl.NumberFormat("de-DE",{style:"currency",currency:"EUR"}).format(v);
-    const cats = ["housing","food","transport","insurance","subscriptions","loans","utilities","cleaning","other"];
+    const cats = ["housing_cold","housing_warm","groceries","mobility","health","leisure","media","finance","income_work","income_state","income_capital","income_refund","income_private","other"];
     // catColors comes from window._fd.CAT_COLORS (set by fd-shared-styles.js)
     const catColors = window._fd.CAT_COLORS;
 

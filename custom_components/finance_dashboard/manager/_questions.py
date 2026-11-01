@@ -21,8 +21,8 @@ _LOGGER = logging.getLogger(__name__)
 
 EVENT_POINTS = EVENT_POINTS_AWARDED
 _SLUG = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
-_FALLBACK_SUGGESTIONS = ("shopping", "food", "leisure")
-_NOT_SUGGESTED = (CATEGORY_OTHER, "income", "transfers")
+_FALLBACK_SUGGESTIONS = ("groceries", "leisure", "media")
+_NOT_SUGGESTED = (CATEGORY_OTHER, "transfers")
 REACH_BOOKING = "booking"
 REACH_MERCHANT = "merchant"
 _MAX_ID = 120
@@ -116,8 +116,8 @@ class QuestionsMixin:
 
     async def _ai_pass(self) -> int:
         from .. import ai_provider as ai
-        from ..contracts import is_own_name, own_account_names
         from ..ai_consent import async_granted
+        from ..contracts import is_own_name, own_account_names
 
         mem = self._memory
         if not await async_granted(self._hass, "categorize"):

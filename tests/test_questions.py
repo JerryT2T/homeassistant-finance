@@ -89,9 +89,10 @@ def test_income_uses_the_debtor() -> None:
 
 @pytest.mark.parametrize(
     ("creditor", "cat"),
-    [("dm-drogerie markt", "shopping"), ("Rossmann", "shopping"), ("IKEA", "shopping"),
-     ("Stadt-Apotheke", "health"), ("Esso Tankstelle", "transport"), ("Gastronomie X", "food"),
-     ("Mietpool Koblenz", "housing"), ("ARD ZDF Beitragsservice", "utilities")],
+    [("dm-drogerie markt", "groceries"), ("Rossmann", "groceries"), ("IKEA", "groceries"),
+     ("Stadt-Apotheke", "health"), ("Esso Tankstelle", "mobility"), ("Gastronomie X", "leisure"),
+     ("Mietpool Koblenz", "housing_cold"), ("ARD ZDF Beitragsservice", "media"),
+     ("Zalando", "other")],
 )
 def test_extended_keywords(creditor, cat) -> None:
     assert TransactionCategorizer().categorize(_tx(creditor)) == cat
@@ -108,7 +109,7 @@ async def test_chain_order_booking_then_merchant_then_keywords() -> None:
     mem = MerchantMemory(store=FakeStore())
     cat = TransactionCategorizer(memory=mem)
     tx = _tx("Rossmann", lid="L1")
-    assert cat.categorize(tx) == "shopping"  # keyword
+    assert cat.categorize(tx) == "groceries"  # keyword
     mem.learn_merchant("rossmann", "health", "Anna")
     assert cat.resolve(tx) == ("health", "Anna")  # merchant memory beats keywords
     mem.learn_booking("L1", "food")

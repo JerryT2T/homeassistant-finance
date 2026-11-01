@@ -51,7 +51,6 @@ from .pots import (
     week_bounds,
     week_status,
 )
-
 from .questions import merchant_history, select_questions  # noqa: E402
 
 HORIZONS = ("today", "week", "cycle", "year")
@@ -61,7 +60,7 @@ NEXT_TOP_N = 3
 YEAR_CYCLES = 12
 DID_YOU_KNOW_MIN_SHARE = 0.30
 
-_SKIP_CATEGORIES = {"income", "transfers"}
+_SKIP_CATEGORIES = {"income", "income_work", "income_state", "income_capital", "income_refund", "income_private", "transfers"}
 
 
 def account_owner(account: dict[str, Any]) -> str:
@@ -432,7 +431,7 @@ def _person_budget(
     against all own spending.
     """
     start, end = cycle
-    skip_always = {"income", "transfers"}
+    skip_always = set(_SKIP_CATEGORIES)
 
     def _own_spent(skip: set[str]) -> float:
         return sum(

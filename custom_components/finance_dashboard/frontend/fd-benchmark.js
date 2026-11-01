@@ -262,7 +262,7 @@ class FdBenchmark extends HTMLElement {
     const tol = Math.abs(c.benchmark_value) * 0.02;
     const dtxt = Math.abs(diff) <= tol ? tr("bm.diff_same")
       : tr(diff < 0 ? "bm.diff_less" : "bm.diff_more", { amount: this._val(Math.abs(diff), c.unit) });
-    const housing = c.category === "housing" || c.dimension === "housing_energy";
+    const housing = c.category === "housing_cold" || c.category === "housing_warm" || c.dimension === "housing_energy";
     const meaning = Math.abs(diff) <= tol ? "" : `<div class="mean"><b>${e(tr("bm.meaning"))}</b>${e(tr(diff > 0 ? "bm.meaning_more" : "bm.meaning_less"))}
       ${diff > 0 ? " " + e(tr(housing ? "bm.next_housing" : "bm.next_other")) : ""}</div>`;
     return `<div class="cmp"><div class="l1"><b>${e(this._label(c))}</b><span class="diff">${e(dtxt)}</span></div>

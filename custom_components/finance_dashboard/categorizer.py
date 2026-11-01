@@ -14,66 +14,62 @@ import re
 from typing import Any
 
 from .const import CATEGORIZATION_RULES, CATEGORY_OTHER
+from .life_areas import INCOME_REFUND, income_area_for, is_income, is_refund
 from .text_norm import is_processor_only, processor_remittance
 
 _LOGGER = logging.getLogger(__name__)
 
 # German-retail keywords on top of ``CATEGORIZATION_RULES``.  Appended after the
-# base rules, so the base order (and its priorities) never changes.  Categories
-# not in the base set (shopping, health, leisure) are new buckets.
+# base rules of the same area, so the base order (and its priorities) never
+# changes.  General retail (Amazon, eBay, fashion, electronics) has no life
+# area of its own: it stays ``other`` and the question flow asks (#112).
 EXTRA_RULES: dict[str, list[str]] = {
-    "housing": ["mietpool", "warmmiete", "kaltmiete", "grundsteuer", "hausverwaltung"],
-    "food": [
-        "netto marken", "denn's", "denns", "alnatura", "bäckerei", "baeckerei", "bakery",
-        "metzger", "fleischerei", "mcdonald", "burger king", "subway", "starbucks",
-        "dominos", "domino's", "pizza", "döner", "doner", "cafe", "café", "bistro",
-        "gastro", "markthalle", "wolt", "flink", "gorillas", "too good to go",
+    "housing_cold": ["mietpool", "warmmiete", "kaltmiete", "grundsteuer", "hausverwaltung"],
+    "housing_warm": [
+        "vattenfall", "eon ", "e.on", "enbw", "rwe", "stadtwerke", "evm", "eprimo",
+        "fernwärme", "müllabfuhr", "abfallwirtschaft",
     ],
-    "transport": [
-        "tankstelle", "esso", "total energies", "totalenergies", "jet tank", "hem tank",
-        "flixbus", "bolt", "freenow", "free now", "sixt", "parkhaus", "parkgebühr",
-        "kvb", "bvg", "rmv", "vrs", "mvg", "hvv", "lime", "tier ",
-    ],
-    "insurance": [
-        "allianz", "huk", "devk", "ergo", "axa", "generali", "signal iduna", "debeka",
-        "hdi", "versicherungskammer", "r+v", "ruv", "techniker krankenkasse", "dak",
-        "ikk", "hansemerkur", "cosmosdirekt", "check24 versicherung",
-    ],
-    "subscriptions": [
-        "apple.com/bill", "apple services", "dazn", "sky ", "wow ", "rtl+", "joyn",
-        "audible", "applemusic", "apple music", "disneyplus", "paramount", "crunchyroll",
-        "openai", "chatgpt", "github", "dropbox", "microsoft 365", "adobe", "patreon",
-        "playstation", "nintendo", "steam", "twitch", "zeit online", "spiegel+",
-        "nordvpn", "1password",
-    ],
-    "utilities": [
+    "media": [
         "telefónica", "telefonica", "1&1", "1und1", "congstar", "o2 ", "mobilcom",
         "drillisch", "winsim", "klarmobil", "freenet", "otelo", "aldi talk", "ja!mobil",
-        "vattenfall", "eon ", "e.on", "enbw", "rwe", "stadtwerke", "evm", "eprimo",
-        "rundfunk", "beitragsservice", "ard zdf", "pyur", "unitymedia", "vodafone",
-        "kabel deutschland", "telekom", "müllabfuhr", "abfallwirtschaft",
+        "rundfunk", "beitragsservice", "ard zdf", "pyur", "unitymedia",
+        "kabel deutschland", "apple.com/bill", "apple services", "dazn", "sky ", "wow ",
+        "rtl+", "joyn", "audible", "applemusic", "apple music", "disneyplus", "paramount",
+        "crunchyroll", "openai", "chatgpt", "github", "dropbox", "microsoft 365", "adobe",
+        "patreon", "playstation", "nintendo", "steam", "twitch", "zeit online", "spiegel+",
+        "nordvpn", "1password",
     ],
-    "shopping": [
-        "dm drogerie", "dm-drogerie", "dm fil", "rossmann", "müller drogerie", "muller drogerie",
-        "ikea", "amazon", "amzn", "ebay", "zalando", "otto ", "h&m", "c&a", "primark",
-        "decathlon", "saturn", "mediamarkt", "media markt", "obi ", "bauhaus", "hornbach",
-        "toom", "action ", "tedi", "kik ", "depot", "thalia", "hugendubel", "douglas",
-        "etsy", "temu", "shein", "idealo", "lieferando shop",
-    ],
-    "health": [
-        "apotheke", "apothek", "docmorris", "shop-apotheke", "arzt", "zahnarzt",
-        "praxis", "klinik", "krankenhaus", "optiker", "fielmann", "apollo", "physio",
-        "sanitätshaus", "sanitaetshaus", "labor ",
+    "groceries": [
+        "netto marken", "denn's", "denns", "alnatura", "bäckerei", "baeckerei", "bakery",
+        "metzger", "fleischerei", "markthalle", "flink", "gorillas", "too good to go",
+        "dm drogerie", "dm-drogerie", "dm fil", "rossmann", "müller drogerie",
+        "muller drogerie", "ikea", "obi ", "bauhaus", "hornbach", "toom", "action ",
+        "tedi", "depot",
     ],
     "leisure": [
+        "mcdonald", "burger king", "subway", "starbucks", "dominos", "domino's", "pizza",
+        "pizzeria", "döner", "doner", "cafe", "café", "bistro", "gastro", "wolt",
         "kino", "cinemaxx", "cineplex", "theater", "konzert", "eventim", "ticketmaster",
         "fitness", "mcfit", "urban sports", "john reebok", "schwimmbad", "freizeitpark",
         "booking.com", "bookingkit", "airbnb", "ryanair", "lufthansa", "eurowings",
         "easyjet", "hotel", "tui ", "museum", "zoo ",
     ],
+    "mobility": [
+        "esso", "total energies", "totalenergies", "jet tank", "hem tank",
+        "flixbus", "bolt", "freenow", "free now", "sixt", "parkhaus", "parkgebühr",
+        "kvb", "bvg", "rmv", "vrs", "mvg", "hvv", "lime", "tier mobility",
+    ],
+    "health": [
+        "allianz", "huk", "devk", "ergo", "axa", "generali", "signal iduna", "debeka",
+        "hdi", "versicherungskammer", "r+v", "ruv", "techniker krankenkasse", "dak",
+        "ikk", "hansemerkur", "cosmosdirekt", "check24 versicherung",
+        "apotheke", "apothek", "docmorris", "shop-apotheke", "arzt", "zahnarzt",
+        "praxis", "klinik", "krankenhaus", "optiker", "fielmann", "apollo", "physio",
+        "sanitätshaus", "sanitaetshaus", "labor ",
+    ],
 }
 
-_WORD_MAX = 3  # keywords this short (after stripping) must start a word; <=2 chars are whole words
+_WORD_MAX = 3  # keywords this short (after stripping) are whole words ("gez" never hits "gezahlt")
 
 
 def _kw_match(keyword: str, haystack: str) -> bool:
@@ -82,7 +78,7 @@ def _kw_match(keyword: str, haystack: str) -> bool:
     if not kw:
         return False
     if len(kw) <= _WORD_MAX:
-        tail = "(?![a-z0-9äöüß])" if len(kw) <= 2 else ""  # noqa: PLR2004
+        tail = "(?![a-z0-9äöüß])"
         return re.search(rf"(?<![a-z0-9äöüß]){re.escape(kw)}{tail}", haystack) is not None
     return kw in haystack
 
@@ -120,7 +116,7 @@ class TransactionCategorizer:
             transaction: Transaction object (normalized format)
 
         Returns:
-            Category string (e.g., 'housing', 'food', 'income')
+            Category slug (a life area, an income area, 'transfers' or 'other')
         """
         return self.resolve(transaction)[0]
 
@@ -149,15 +145,25 @@ class TransactionCategorizer:
         # Check amount direction for income detection
         amount = float(transaction.get("transactionAmount", {}).get("amount", 0))
 
-        # Match against rules
+        # Money coming in: income rules first, then a refund, only then the
+        # areas (a shop's credit nets in its area). Income rules never match
+        # money going out ("Zinsen" on a loan is a cost).
+        if amount > 0:
+            for category, keywords in self._rules.items():
+                if is_income(category) and any(_kw_match(k, search_lower) for k in keywords):
+                    return category
+            if is_refund(search_lower):
+                return INCOME_REFUND
         for category, keywords in self._rules.items():
+            if is_income(category):
+                continue
             for keyword in keywords:
                 if _kw_match(keyword, search_lower):
                     return category
 
-        # Fallback: positive amounts without category → income
+        # Fallback: positive amounts without category -> an income area
         if amount > 0:
-            return "income"
+            return income_area_for(search_lower)
 
         return CATEGORY_OTHER
 

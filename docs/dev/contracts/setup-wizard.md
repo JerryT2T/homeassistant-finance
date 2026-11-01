@@ -54,7 +54,7 @@ already prefers the confirmed payday.
 samples}]}`. Per owner x category: median of the last 3 completed cycles (salary-start windows,
 falling back to the 3 previous calendar months), only cycles with spend count, >= 2 samples,
 rounded to 10 EUR (min 10). Excluded: income, transfers, other, and fixed-cost categories
-(housing, insurance, loans, subscriptions - those belong in the plan), and owner+category pairs
+(housing_cold, housing_warm, finance, media - those belong in the plan), and owner+category pairs
 already covered by an existing pot.
 
 `POST /setup/pot_suggestions` (admin) body `{accept: [{category, owner, cycle_budget, name?,

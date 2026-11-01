@@ -33,8 +33,8 @@
 const DOMAIN = "finance_dashboard";
 const HORIZONS = ["today", "week", "cycle", "year"];
 const DISMISS_KEY = "fd_home_dismissed_suggestions";
-const SUGGEST_SKIP = new Set(["income", "transfers", "other"]);
-const CONTRACT_CATS = new Set(["housing", "loans", "utilities", "insurance", "subscriptions"]);
+const SUGGEST_SKIP = { has: (k) => k === "other" || k === "transfers" || String(k).startsWith("income") };
+const CONTRACT_CATS = new Set(["housing_cold", "housing_warm", "media", "finance", "health"]);
 const PERSON_COLORS = ["var(--fd-person-a)", "var(--fd-person-b)", "var(--fd-desktop)", "var(--fd-a700)"];
 
 const CSS = `

@@ -156,7 +156,7 @@ def _tx(name, amount, day, cat="subscriptions"):
 
 def _manager():
     txs = [_tx("Netflix International", -12.99, f"2026-0{m}-05") for m in (6, 7, 8, 9)]
-    txs += [_tx("REWE Markt", -80, "2026-09-02", "food"), _tx("REWE Markt", -60, "2026-10-02", "food")]
+    txs += [_tx("REWE Markt", -80, "2026-09-02", "groceries"), _tx("REWE Markt", -60, "2026-10-02", "groceries")]
     return SimpleNamespace(_transactions=txs, _credential_manager=None)
 
 

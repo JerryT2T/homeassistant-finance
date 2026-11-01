@@ -400,18 +400,20 @@ class TestSpreadsheetImportHelpers:
     def test_loan_from_a_health_insurer_is_a_loan(self):
         # The generic keyword rules check the insurance keyword "tk " before
         # the loan keyword, which files this as insurance.
-        assert categorize_position("TK Kredit") == "loans"
+        assert categorize_position("TK Kredit") == "finance"
 
     @pytest.mark.parametrize(
         ("name", "category"),
         [
-            ("Miete (warm)", "housing"),
-            ("Essen Hellofresh Puffer", "food"),
-            ("Deutschland Ticket", "transport"),
-            ("Netflix", "subscriptions"),
-            ("Klarna", "loans"),
-            ("Privathaftpflichversicherung", "insurance"),
-            ("Rundfunkbeitrag", "utilities"),
+            ("Miete (warm)", "housing_cold"),
+            ("Strom Abschlag", "housing_warm"),
+            ("Essen Hellofresh Puffer", "groceries"),
+            ("Deutschland Ticket", "mobility"),
+            ("Netflix", "media"),
+            ("Klarna", "finance"),
+            ("Privathaftpflichversicherung", "health"),
+            ("Rundfunkbeitrag", "media"),
+            ("Gastro Budget", "other"),
         ],
     )
     def test_position_categories(self, name, category):

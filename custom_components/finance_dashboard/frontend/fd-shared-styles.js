@@ -40,47 +40,102 @@ export function escHtml(str) {
     .replace(/'/g, "&#39;");
 }
 
-/** Category color mapping. */
+/** Category color mapping (life areas, issue #112). Unknown slugs: use CAT_FALLBACK_COLOR. */
+export const CAT_FALLBACK_COLOR = "#6b7280";
 export const CAT_COLORS = {
-  housing: "#3b82f6",
-  loans: "#e74c3c",
-  food: "#f97316",
-  utilities: "#eab308",
-  insurance: "#8b5cf6",
-  subscriptions: "#ec4899",
-  transport: "#06b6d4",
-  cleaning: "#a855f7",
-  income: "#4ecca3",
-  transfers: "#6b7280",
-  shopping: "#d946ef",
+  housing_cold: "#3b82f6",
+  housing_warm: "#f97316",
+  groceries: "#84cc16",
+  mobility: "#06b6d4",
   health: "#14b8a6",
   leisure: "#f59e0b",
+  media: "#ec4899",
+  finance: "#8b5cf6",
+  income_work: "#4ecca3",
+  income_state: "#22c55e",
+  income_capital: "#10b981",
+  income_refund: "#34d399",
+  income_private: "#6ee7b7",
   other: "#6b7280",
+  transfers: "#9ca3af",
 };
 
-/** Category label mapping (German). */
-export const CAT_LABELS = {
-  housing: "Wohnen",
-  loans: "Kredite",
-  food: "Lebensmittel",
-  utilities: "Nebenkosten",
-  insurance: "Versicherung",
-  subscriptions: "Abos",
-  transport: "Mobilität",
-  cleaning: "Reinigung",
-  income: "Einkommen",
-  transfers: "Überträge",
-  shopping: "Shopping",
-  health: "Gesundheit",
-  leisure: "Freizeit",
-  other: "Sonstiges",
+/** Built-in de/en labels, used until locales/*.json (keys cat.<slug>) are loaded. */
+const CAT_LABEL_FB = {
+  de: {
+    housing_cold: "Wohnen kalt", housing_warm: "Wohnen warm", groceries: "Lebensmittel & Haushalt",
+    mobility: "Mobilität", health: "Gesundheit & Absicherung", leisure: "Freizeit",
+    media: "Medien & Kommunikation", finance: "Finanzen & Verpflichtungen",
+    income_work: "Lohn & Gehalt", income_state: "Staatliche Leistungen", income_capital: "Kapitalerträge",
+    income_refund: "Erstattungen", income_private: "Von Privatpersonen", other: "Sonstiges", transfers: "Umbuchung",
+  },
+  en: {
+    housing_cold: "Housing (cold)", housing_warm: "Housing (warm)", groceries: "Groceries & household",
+    mobility: "Mobility", health: "Health & protection", leisure: "Leisure",
+    media: "Media & communication", finance: "Finance & obligations",
+    income_work: "Salary & wages", income_state: "State benefits", income_capital: "Capital income",
+    income_refund: "Refunds", income_private: "From private persons", other: "Other", transfers: "Transfer",
+  },
 };
+
+/** Legacy slugs a stale cache may still deliver: readable, never offered as a choice. */
+const CAT_LEGACY_LABELS = {
+  de: {
+    housing: "Wohnen", food: "Lebensmittel", transport: "Mobilität", insurance: "Versicherung",
+    subscriptions: "Abos", loans: "Kredite", utilities: "Nebenkosten", income: "Einkommen",
+    shopping: "Shopping", cleaning: "Reinigung", telecom: "Telekommunikation", gastro: "Gastronomie",
+  },
+  en: {
+    housing: "Housing", food: "Food", transport: "Transport", insurance: "Insurance",
+    subscriptions: "Subscriptions", loans: "Loans", utilities: "Utilities", income: "Income",
+    shopping: "Shopping", cleaning: "Cleaning", telecom: "Telecom", gastro: "Dining",
+  },
+};
+
+function _catLang() {
+  const raw = ((window._fd && window._fd._hass && window._fd._hass.language) || navigator.language || "en").toLowerCase();
+  return raw.startsWith("de") ? "de" : "en";
+}
+
+/**
+ * Category label for any slug: locale key cat.<slug>, then built-in text, then the
+ * legacy fallback, then the raw slug. Never throws.
+ */
+export function catLabel(slug) {
+  if (!slug) return "";
+  const lang = _catLang();
+  const key = `cat.${slug}`;
+  const loc = typeof tSync === "function" ? tSync(key) : key;
+  if (loc && loc !== key) return loc;
+  return CAT_LABEL_FB[lang][slug] || CAT_LEGACY_LABELS[lang][slug] || String(slug);
+}
+
+/**
+ * Category label mapping. Own enumerable keys are the current areas only (pickers
+ * iterate them); lookups of legacy slugs still resolve through the Proxy.
+ */
+const _CAT_LABEL_BASE = {};
+for (const k of Object.keys(CAT_COLORS)) {
+  Object.defineProperty(_CAT_LABEL_BASE, k, { enumerable: true, get: () => catLabel(k) });
+}
+export const CAT_LABELS = new Proxy(_CAT_LABEL_BASE, {
+  get(target, prop) {
+    if (typeof prop === "string" && !(prop in target) && prop in CAT_LEGACY_LABELS.en) return catLabel(prop);
+    return Reflect.get(target, prop);
+  },
+});
+
+/** True for every income area (income_work, ... and a stale legacy "income"). */
+export function isIncomeCat(slug) {
+  return typeof slug === "string" && slug.startsWith("income");
+}
 
 /** Category icons (emoji, decorative). */
 export const CAT_ICONS = {
-  housing: "🏠", loans: "🏦", food: "🛒", utilities: "💡", insurance: "🛡️",
-  subscriptions: "🔁", transport: "🚌", cleaning: "🧽", income: "💶",
-  transfers: "↔️", shopping: "🛍️", health: "💊", leisure: "🎭", other: "📦",
+  housing_cold: "🏠", housing_warm: "🔥", groceries: "🛒", mobility: "🚗", health: "💊",
+  leisure: "🎭", media: "📱", finance: "🏦",
+  income_work: "💶", income_state: "🏛️", income_capital: "📈", income_refund: "↩️", income_private: "🎁",
+  other: "❓", transfers: "↔️",
 };
 
 /** Member color palette for household charts. */
@@ -369,6 +424,9 @@ window._fd = {
   CAT_COLORS,
   CAT_LABELS,
   CAT_ICONS,
+  CAT_FALLBACK_COLOR,
+  catLabel,
+  isIncomeCat,
   MEMBER_COLORS,
   MONTH_NAMES,
   SHARED_CSS,

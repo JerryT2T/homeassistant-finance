@@ -2,6 +2,16 @@
 
 All notable changes to the Finance will be documented in this file.
 
+## [0.31.0] — 2026-11-02
+
+### Added
+- Spending is sorted into eight life areas - Wohnen kalt, Wohnen warm, Lebensmittel & Haushalt, Mobilität, Gesundheit & Absicherung, Freizeit, Medien & Kommunikation, Finanzen & Verpflichtungen - so every euro lands in exactly one area; income has its own areas (Lohn & Gehalt, Staatliche Leistungen, Kapitalerträge, Erstattungen, Von Privatpersonen); Umbuchungen stay a status, not a category
+- On the first start after the update, learned merchants, answered questions, the AI cache, budget-plan positions, pots and contract categories move to the new areas once, after a backup of each store; energy and telecom (formerly "Nebenkosten") and groceries and eating out (formerly "Lebensmittel") are split by fixed keywords, and what no keyword places is asked again in the question flow instead of guessed
+- Budget-limit entities move to the new areas and keep their limits; the limits for income and transfers are removed
+
+### Changed
+- Change(categories): general online shopping (Amazon, fashion, electronics) has no area of its own any more and lands in the question flow; restaurants and delivery services count as Freizeit
+
 ## [0.30.0] — 2026-11-01
 
 ### Added

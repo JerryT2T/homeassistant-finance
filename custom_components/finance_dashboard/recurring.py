@@ -50,7 +50,7 @@ def detect_recurring(
                 "frequency": "monthly",
                 "expected_day": 1,
                 "occurrences": 3,
-                "category": "housing",
+                "category": "housing_cold",
                 "last_seen": "2026-03-01",
                 "confirmed": False,
             }

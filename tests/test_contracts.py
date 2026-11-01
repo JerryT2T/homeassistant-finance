@@ -135,9 +135,9 @@ def test_add_months_clamps():
 
 
 def test_category_defaults():
-    assert category_defaults("insurance")["notice_value"] == 3
+    assert category_defaults("health")["notice_value"] == 3
     assert category_defaults("telecom")["min_term_months"] == 24
-    assert category_defaults("subscriptions")["notice_value"] == 0
+    assert category_defaults("media")["notice_value"] == 0
     assert category_defaults("whatever")["renewal_months"] == 1
 
 
@@ -277,7 +277,7 @@ async def test_notice_due_event_fires_once(monkeypatch):
             fired.append((event, data))
 
     hass = type("H", (), {"bus": Bus()})()
-    rows = monthly([-30] * 4, name="Versicherung", category="insurance", start=date(2026, 3, 10))
+    rows = monthly([-30] * 4, name="Versicherung", category="health", start=date(2026, 3, 10))
     from custom_components.finance_dashboard.recurring import series_id
 
     sid = series_id("versicherung", True)
