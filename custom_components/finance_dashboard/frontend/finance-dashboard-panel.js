@@ -13,7 +13,7 @@
  *   questions     Fragen (fd-questions, star in the Start top bar)
  *   contracts     Verträge (fd-contracts)
  *   benchmark     Vergleich (fd-benchmark)
- *   plan          Budgetplan (fd-budget-plan)
+ *   plan          Haushaltsplan (fd-budget-plan)
  *   setup         the guided setup wizard (fd-setup, its own full-screen layer)
  *   back          closes the open subpage (fd-subpage-header's back button)
  *
