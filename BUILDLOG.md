@@ -1,5 +1,18 @@
 # Build Log
 
+## 0.27.0 — 2026-11-01
+Version: 0.27.0
+Branch: claude/einrichtungsdialoge-ueberarbeiten-6752b6
+Changes:
+- feat(setup): the setup (Einrichtung) covers only technical and assignment steps: persons with one display name, accounts with bank account type and "data since", payday, region, notifications, AI, points; the last step opens the household plan or says when it becomes possible
+- feat(plan): new "Haushaltsplan erstellen" wizard: income suggested from the salary credit, fixed costs from recurring payments, pots with optional account binding, savings goals and a result with monthly balance, per person and plan vs. history; it needs 3 full payday cycles of booked data and rebuilds an existing plan after a confirmation
+- feat(plan): what is left over becomes an automatic "Taschengeld" pot per person; a shortfall is shown, saving stays possible
+- feat(plan): a household spreadsheet serves as an idea source: position names are matched locally, unmatched names go to the AI only with a one-time consent, amounts never leave Home Assistant
+- feat(ai): AI consent is per purpose (categorisation recurring, sheet analysis once) with up to 3 advantages and risks each, revocable on its own in Settings → KI
+- refactor(ui): the plan is called "Haushaltsplan" everywhere; the pot button reads "Topf anpassen"
+- refactor(options): the options dialog drops the unused refresh interval, currency and panel switch and the split model (covered by its select entity)
+- fix(plan): saving income from the wizard keeps stored insurance and tax adjustments
+
 ## 0.26.0 — 2026-11-01
 Version: 0.26.0
 Branch: feat/130-review-candidates

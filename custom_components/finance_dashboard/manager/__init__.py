@@ -733,11 +733,16 @@ class FinanceDashboardManager(RefreshMixin, BankMixin, PersistenceMixin, Questio
         return removed
 
     async def async_set_income(self, data: dict[str, Any]) -> dict[str, Any]:
-        """Create or update one person's income entry."""
+        """Create or update one person's income entry.
+
+        Fields missing from ``data`` keep their stored value, so the plan
+        wizard can set the deposit without wiping insurance or tax adjustments.
+        """
         from ..budget_plan import IncomeEntry
 
         plan = await self._plan_store.async_load()
-        entry = IncomeEntry.from_dict(data)
+        current = plan.income.get(str(data.get("person") or ""))
+        entry = IncomeEntry.from_dict({**(current.to_dict() if current else {}), **data})
         if not entry.person:
             raise ValueError("An income entry needs a person")
         plan.set_income(entry)

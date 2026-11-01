@@ -35,14 +35,7 @@
       "init": {
         "title": "Finance-Einstellungen",
         "data": {
-          "refresh_interval_minutes": "Aktualisierungsintervall (Minuten)",
-          "split_model": "Aufteilungsmodell",
-          "currency": "Währung",
           "enable_total_balance_sensor": "Gesamtsaldo-Sensor aktivieren",
-          "enable_dashboard_panel": "Seitenleisten-Panel anzeigen",
-          "transfer_detection_enabled": "Transfer-Ketten-Erkennung",
-          "transfer_amount_tolerance": "Betrags-Toleranz (EUR)",
-          "transfer_time_window": "Zeitfenster (Tage)",
           "demo_mode": "Demo-Modus (synthetische Daten)",
           "raw_retention_days": "Rohantworten der Bank aufbewahren (Tage, 0 = für immer)",
           "show_household": "Haushaltsbudget im Panel anzeigen"

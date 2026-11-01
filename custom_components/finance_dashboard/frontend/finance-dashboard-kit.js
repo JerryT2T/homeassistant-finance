@@ -33,6 +33,7 @@ const COMPONENTS = [
   "fd-budget-plan.js",
   "fd-settings.js",
   "fd-setup.js",
+  "fd-plan-wizard.js",
   "fd-questions.js",
   "fd-contracts.js",
   "fd-benchmark.js",

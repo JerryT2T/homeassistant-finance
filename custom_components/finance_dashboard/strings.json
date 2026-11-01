@@ -35,14 +35,7 @@
       "init": {
         "title": "Finance Settings",
         "data": {
-          "refresh_interval_minutes": "Refresh interval (minutes)",
-          "split_model": "Budget split model",
-          "currency": "Currency",
           "enable_total_balance_sensor": "Enable total balance sensor",
-          "enable_dashboard_panel": "Show sidebar panel",
-          "transfer_detection_enabled": "Transfer chain detection",
-          "transfer_amount_tolerance": "Amount tolerance (EUR)",
-          "transfer_time_window": "Time window (days)",
           "demo_mode": "Demo mode (synthetic data)",
           "raw_retention_days": "Keep raw bank responses for (days, 0 = forever)",
           "show_household": "Show household budget in the panel"

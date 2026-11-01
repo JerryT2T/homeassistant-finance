@@ -26,15 +26,16 @@ from homeassistant.helpers.storage import Store
 
 from .const import CATEGORY_INCOME, CATEGORY_OTHER, CATEGORY_TRANSFERS, DOMAIN
 from .cycle import cycle_windows, salary_starts
+from . import plan_wizard
 from .recurring import detect_recurring
 
 STORAGE_KEY = f"{DOMAIN}.setup_wizard"
 STORAGE_VERSION = 1
 
 STEPS = (
-    "persons", "accounts", "payday", "pots", "plan", "goals", "points", "notifications", "ai", "done",
+    "persons", "accounts", "payday", "region", "notifications", "ai", "points", "done",
 )
-SKIPPABLE = {"plan", "goals", "points", "ai", "notifications", "pots", "payday"}
+SKIPPABLE = {"payday", "region", "notifications", "ai", "points"}
 STATUSES = ("pending", "done", "skipped")
 
 DEFAULT_NOTIFICATIONS: dict[str, Any] = {
@@ -73,6 +74,7 @@ class SetupError(ValueError):
 def default_state() -> dict[str, Any]:
     return {
         "steps": {s: "pending" for s in STEPS if s != "done"},
+        "plan_wizard": plan_wizard.default_state(),
         "completed": False,
         "ai_opt_in": False,
         "points_target": "",
@@ -98,6 +100,7 @@ def _merge_state(raw: Any) -> dict[str, Any]:
     for step, status in (raw.get("steps") or {}).items():
         if step in state["steps"] and status in STATUSES:
             state["steps"][step] = status
+    state["plan_wizard"] = plan_wizard.merge_state(raw.get("plan_wizard"))
     state["completed"] = bool(raw.get("completed"))
     state["ai_opt_in"] = bool(raw.get("ai_opt_in"))
     state["points_target"] = str(raw.get("points_target") or "")
@@ -189,7 +192,12 @@ def validate_notifications(raw: Any) -> dict[str, Any]:
 
 
 def data_hints(
-    persons: list[dict[str, Any]], accounts: list[dict[str, Any]], pots: int
+    persons: list[dict[str, Any]],
+    accounts: list[dict[str, Any]],
+    pots: int = 0,  # noqa: ARG001 - kept for callers; pots left the setup wizard
+    *,
+    region: bool = False,
+    points: bool = False,
 ) -> dict[str, bool]:
     """Which steps the existing data already satisfies (resume support)."""
     assigned = bool(accounts) and all(
@@ -199,7 +207,8 @@ def data_hints(
         "persons": bool(persons),
         "accounts": assigned,
         "payday": bool(persons) and all(person_payday(p) for p in persons),
-        "pots": pots > 0,
+        "region": region,
+        "points": points,
     }
 
 
@@ -390,7 +399,9 @@ def suggest_pots(
     return out
 
 
-def validate_pot_acceptance(raw: Any) -> list[dict[str, Any]]:
+def validate_pot_acceptance(
+    raw: Any, known_account_keys: set[str] | None = None
+) -> list[dict[str, Any]]:
     """Body of the accept call -> pot payloads for ``manager.async_save_pot``."""
     items = raw.get("accept") if isinstance(raw, dict) else None
     if not isinstance(items, list) or not items:
@@ -399,14 +410,20 @@ def validate_pot_acceptance(raw: Any) -> list[dict[str, Any]]:
     for item in items:
         if not isinstance(item, dict) or not item.get("category"):
             raise SetupError("invalid_body", "Each item needs a category")
-        out.append(
-            {
-                "name": str(item.get("name") or str(item["category"]).title()),
-                "owner": str(item.get("owner") or "shared"),
-                "cycle_budget": item.get("cycle_budget", 0),
-                "category_keys": [str(item["category"])],
-            }
-        )
+        payload = {
+            "name": str(item.get("name") or str(item["category"]).title()),
+            "owner": str(item.get("owner") or "shared"),
+            "cycle_budget": item.get("cycle_budget", 0),
+            "category_keys": [str(item["category"])],
+        }
+        if item.get("account_keys") is not None:
+            keys = item["account_keys"]
+            if not isinstance(keys, list):
+                raise SetupError("invalid_body", "account_keys must be a list or null")
+            if known_account_keys is not None and any(str(k) not in known_account_keys for k in keys):
+                raise SetupError("unknown_account", "account_keys contains an unknown account")
+            payload["account_keys"] = keys
+        out.append(payload)
     return out
 
 

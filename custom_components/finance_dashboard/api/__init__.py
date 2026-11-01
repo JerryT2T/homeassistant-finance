@@ -16,6 +16,7 @@ import logging
 from homeassistant.core import HomeAssistant
 
 from ._helpers import _get_manager, _get_setup_client
+from .ai_consent import VIEWS as AI_CONSENT_VIEWS
 from .assignments import FinanceDashboardAssignmentsView
 from .contracts import (
     FinanceDashboardAccountSavingsView,
@@ -59,6 +60,15 @@ from .refresh import (
     FinanceDashboardRefreshStatusView,
     FinanceDashboardRefreshTriggerView,
     FinanceDashboardReprocessView,
+)
+from .plan_ideas import VIEWS as PLAN_IDEAS_VIEWS
+from .plan_wizard import (
+    FinanceDashboardPlanWizardFixedView,
+    FinanceDashboardPlanWizardGateView,
+    FinanceDashboardPlanWizardIncomeSuggestionsView,
+    FinanceDashboardPlanWizardIncomeView,
+    FinanceDashboardPlanWizardResultView,
+    FinanceDashboardPlanWizardView,
 )
 from .setup import (
     FinanceDashboardAiTestView,
@@ -112,6 +122,12 @@ __all__ = [  # noqa: RUF022  # grouped by category, not alphabetical
     "FinanceDashboardSetupView",
     "FinanceDashboardPaydaySuggestionsView",
     "FinanceDashboardPotSuggestionsView",
+    "FinanceDashboardPlanWizardView",
+    "FinanceDashboardPlanWizardGateView",
+    "FinanceDashboardPlanWizardIncomeSuggestionsView",
+    "FinanceDashboardPlanWizardIncomeView",
+    "FinanceDashboardPlanWizardFixedView",
+    "FinanceDashboardPlanWizardResultView",
     # Refresh
     "FinanceDashboardRefreshStatusView",
     "FinanceDashboardReprocessView",
@@ -169,4 +185,12 @@ async def async_register_api(hass: HomeAssistant) -> None:
     hass.http.register_view(FinanceDashboardPointsView())
     hass.http.register_view(FinanceDashboardAiView())
     hass.http.register_view(FinanceDashboardAiTestView())
+    hass.http.register_view(FinanceDashboardPlanWizardView())
+    hass.http.register_view(FinanceDashboardPlanWizardGateView())
+    hass.http.register_view(FinanceDashboardPlanWizardIncomeSuggestionsView())
+    hass.http.register_view(FinanceDashboardPlanWizardIncomeView())
+    hass.http.register_view(FinanceDashboardPlanWizardFixedView())
+    hass.http.register_view(FinanceDashboardPlanWizardResultView())
+    for view in (*AI_CONSENT_VIEWS, *PLAN_IDEAS_VIEWS):
+        hass.http.register_view(view())
     _LOGGER.debug("Finance API endpoints registered")

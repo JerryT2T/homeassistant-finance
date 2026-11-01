@@ -39,6 +39,7 @@ REQUEST_TIMEOUT = 20
 MAX_REMITTANCE = 140
 MAX_MERCHANT = 80
 MAX_CACHE = 5000
+DEFAULT_MAX_TOKENS = 20
 
 PROVIDER_HA = "ha"
 # provider -> (endpoint, default model). The default models are cheap, current
@@ -139,9 +140,7 @@ def merge_config(raw: Any) -> dict[str, Any]:
             "calls": max(0, int(usage.get("calls") or 0)),
         }
     cache = raw.get("cache")
-    cfg["cache"] = (
-        {str(k): str(v) for k, v in cache.items()} if isinstance(cache, dict) else {}
-    )
+    cfg["cache"] = {str(k): str(v) for k, v in cache.items()} if isinstance(cache, dict) else {}
     for key in ("last_run", "last_test"):
         cfg[key] = _merge_outcome(raw.get(key))
     return cfg
@@ -366,18 +365,27 @@ def select_candidates(
 
 
 async def _call_http(
-    hass: HomeAssistant, provider: str, model: str, key: str, prompt: str
+    hass: HomeAssistant,
+    provider: str,
+    model: str,
+    key: str,
+    prompt: str,
+    max_tokens: int = DEFAULT_MAX_TOKENS,
 ) -> str | None:
     endpoint = PROVIDERS[provider][0]
     session = async_get_clientsession(hass)
     if provider == "anthropic":
         headers = {"x-api-key": key, "anthropic-version": "2023-06-01"}
-        body = {"model": model, "max_tokens": 20, "messages": [{"role": "user", "content": prompt}]}
+        body = {
+            "model": model,
+            "max_tokens": max_tokens,
+            "messages": [{"role": "user", "content": prompt}],
+        }
     else:  # OpenAI-compatible (xAI, OpenAI)
         headers = {"Authorization": f"Bearer {key}"}
         body = {
             "model": model,
-            "max_tokens": 20,
+            "max_tokens": max_tokens,
             "temperature": 0,
             "messages": [{"role": "user", "content": prompt}],
         }
@@ -453,22 +461,35 @@ async def _ask(
     hass: HomeAssistant, cfg: dict[str, Any], key: str | None, prompt: str, categories: list[str]
 ) -> tuple[str | None, str | None]:
     """One provider call: (category, None) or (None, error code). Never raises."""
+    answer, error = await _ask_raw(hass, cfg, key, prompt)
+    if error:
+        return None, error
+    category = parse_category(answer or "", categories)
+    return (category, None) if category else (None, "unparsable")
+
+
+async def _ask_raw(
+    hass: HomeAssistant,
+    cfg: dict[str, Any],
+    key: str | None,
+    prompt: str,
+    max_tokens: int = DEFAULT_MAX_TOKENS,
+) -> tuple[str | None, str | None]:
+    """One provider call: (answer text, None) or (None, error code). Never raises."""
     provider = cfg["provider"]
     try:
         if provider == PROVIDER_HA:
             answer = await _call_ha(hass, cfg["ha_agent"], prompt)
         else:
             model = cfg["model"] or PROVIDERS[provider][1]
-            answer = await _call_http(hass, provider, model, key or "", prompt)
+            extra = (max_tokens,) if max_tokens != DEFAULT_MAX_TOKENS else ()
+            answer = await _call_http(hass, provider, model, key or "", prompt, *extra)
     except TimeoutError:
         return None, "timeout"
     except Exception as err:  # noqa: BLE001 - never leak provider text or the key
-        _LOGGER.warning("AI categorisation failed (%s)", type(err).__name__)
+        _LOGGER.warning("AI request failed (%s)", type(err).__name__)
         return None, "request_failed"
-    if not answer:
-        return None, "no_answer"
-    category = parse_category(answer, categories)
-    return (category, None) if category else (None, "unparsable")
+    return (answer, None) if answer else (None, "no_answer")
 
 
 # A made-up merchant: the connection test never sends real bank data.
@@ -507,3 +528,59 @@ async def async_test(  # noqa: PLR0913 - keyword-only call context
     cfg["last_test"] = outcome(dt_util.utcnow().isoformat(), category, error)
     await async_save_config(hass, cfg)
     return cfg["last_test"]
+
+
+# ---------------------------------------------------------------------------
+# Budget-sheet position names (purpose "sheet_analysis")
+# ---------------------------------------------------------------------------
+
+POSITION_KINDS = ("fixed", "pot", "reserve")
+MAX_NAMES = 40
+MAX_NAME = 60
+
+
+def build_names_prompt(names: list[str]) -> str:
+    """Prompt for position NAMES only - no amounts, no bank data."""
+    listing = "\n".join(f"{i}: {n}" for i, n in enumerate(names, 1))
+    return (
+        "Classify household budget positions by name. For each numbered name answer one "
+        "line 'number: kind' where kind is fixed (recurring contract or fixed bill), "
+        "pot (variable spending such as groceries or leisure) or reserve (saving for "
+        "irregular or yearly costs).\n" + listing
+    )
+
+
+def parse_kinds(text: str, count: int) -> dict[int, str]:
+    """``{index (1-based): kind}`` from the model answer; unknown lines are skipped."""
+    out: dict[int, str] = {}
+    for m in re.finditer(r"(\d+)\s*[:.)-]\s*(fixed|pot|reserve)\b", (text or "").lower()):
+        idx = int(m.group(1))
+        if 1 <= idx <= count:
+            out[idx] = m.group(2)
+    return out
+
+
+async def async_classify_names(
+    hass: HomeAssistant, *, credentials: Any, names: list[str], today: date, usable: bool
+) -> dict[str, str] | None:
+    """Kind per position name via the configured provider, or None (not usable,
+    no key, budget exhausted, error). One call for the whole batch; the payload is
+    the (sanitised) names only. Counts as one call against the monthly budget."""
+    names = names[:MAX_NAMES]
+    clean = [sanitize(n, MAX_NAME) for n in names]
+    if not clean or not usable:
+        return None
+    cfg = await async_load_config(hass)
+    key = None
+    if cfg["provider"] in KEYED:
+        key = read_key(cfg, credentials)
+        if not key:
+            return None
+    if not spend_call(cfg, today):
+        return None
+    await async_save_config(hass, cfg)  # persist the spend before the call
+    answer, error = await _ask_raw(hass, cfg, key, build_names_prompt(clean), 400)
+    if error:
+        return None
+    kinds = parse_kinds(answer or "", len(clean))
+    return {names[i - 1]: kind for i, kind in kinds.items()}

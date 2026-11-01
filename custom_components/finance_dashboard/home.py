@@ -44,6 +44,7 @@ from .pots import (
     POT_OWNER_SHARED,
     Pot,
     cycle_days,
+    pot_accepts_account,
     pot_cycle_history,
     pot_status,
     status_for,
@@ -172,6 +173,7 @@ def _booking(tx: dict[str, Any], today: date) -> dict[str, Any] | None:
         or str(tx.get("remittanceInformationUnstructured") or "")[:40],
         "owner": owner,
         "account": str(tx.get("_account_name") or ""),
+        "account_key": str(tx.get("_account_key") or ""),
         "counterparty": _counterparty_name(tx, amount),
         "counter_iban": _counter_iban_last4(tx, amount),
         "text": _remittance(tx),
@@ -251,7 +253,13 @@ def _upcoming_recurring(
 
 
 def _pot_bookings(pot: Pot, bookings: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return [b for b in bookings if b["owner"] == pot.owner and _expense_or_upcoming(b)]
+    return [
+        b
+        for b in bookings
+        if b["owner"] == pot.owner
+        and _expense_or_upcoming(b)
+        and pot_accepts_account(pot, b.get("account_key"))
+    ]
 
 
 def _expense_or_upcoming(b: dict[str, Any]) -> bool:
