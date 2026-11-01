@@ -13,8 +13,9 @@ Callers persist newly learned aliases with `ContractStore.async_save_if_changed(
 One payee, several series (#108, `_series_parts`): a payee group is split by contract reference
 (`contract_reference`: a number after a keyword such as Darlehen, Vertrag, Kd-Nr, Mandat, Police, Mitglieds-Nr - never a bare
 order number) when two or more references each recur and run in parallel; a reference that only changes once is a successor.
-Only when the whole group is no series, it is searched for amount bands (+-tolerance); finite instalments ("Teil 1/3",
-"Rate 2 von 6") never form a band, so a real price step is never split. The part with the earliest payment keeps the payee id;
+Only when the whole group is no series, it is searched for amount bands (+-tolerance); a band counts only with >= 3
+payments each within the date tolerance of the predicted date, finite instalments ("Teil 1/3", "Rate 2 von 6") never form
+a band, and a band that continues where another stopped is joined (price step), so a real price step is never split. The part with the earliest payment keeps the payee id;
 other parts get `sha1(name tag)`. Each part remembers its id under `alias_keys`: the payee key (earliest part), a
 name-independent hashed reference key and a hashed band key - never a number or an amount in clear.
 One price step is allowed (a series with two +-tolerance jumps is rejected). Fields: `id`, `alias_key`, `alias_keys`,
