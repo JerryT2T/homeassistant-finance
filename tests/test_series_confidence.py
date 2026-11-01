@@ -93,3 +93,11 @@ def test_every_reason_code_has_a_de_and_en_string():
     for lang in ("de", "en"):
         strings = json.loads((root / "frontend" / "locales" / f"{lang}.json").read_text("utf-8"))
         assert {k[len("ct.reason."):] for k in strings if k.startswith("ct.reason.")} == codes, lang
+
+
+def test_health_counts_as_contract_only_for_an_insurer():
+    # #112: health holds the insurer (contract) and the doctor (habit)
+    insurer = score_series(_rows([-210.0] * 4, name="Techniker Krankenkasse"), "monthly", "health")
+    doctor = score_series(_rows([-40.0, -55.0, -30.0], name="Praxis Dr. Tikk"), "monthly", "health")
+    assert "contract_category" in insurer["reasons"]
+    assert "everyday_category" in doctor["reasons"]

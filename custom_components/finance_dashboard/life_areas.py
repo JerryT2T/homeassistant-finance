@@ -131,10 +131,13 @@ def _first(text: str, splits: tuple[tuple[re.Pattern[str], str], ...]) -> str | 
 
 
 def _income_area(text: str, default: str) -> str:
-    return _first(
-        text,
-        ((_STATE, INCOME_STATE), (_CAPITAL, INCOME_CAPITAL), (_REFUND, INCOME_REFUND), (_WORK, INCOME_WORK)),
-    ) or default
+    splits = (
+        (_STATE, INCOME_STATE),
+        (_CAPITAL, INCOME_CAPITAL),
+        (_REFUND, INCOME_REFUND),
+        (_WORK, INCOME_WORK),
+    )
+    return _first(text, splits) or default
 
 
 # legacy slug -> (keyword splits in priority order, area when no keyword hits)

@@ -55,7 +55,9 @@ _CONTRACT_CATEGORIES = {
 _EVERYDAY_CATEGORIES = {CATEGORY_GROCERIES, CATEGORY_LEISURE}
 # Health holds both the insurance (a contract) and the doctor (habit): the
 # text decides which side it counts on.
-_INSURANCE = re.compile(r"(versicher\w*|krankenkasse|police|\bpflegekasse|\btk\b|\baok\b)", re.IGNORECASE)
+_INSURANCE = re.compile(
+    r"(versicher\w*|krankenkasse|police|\bpflegekasse|\btk\b|\baok\b)", re.IGNORECASE
+)
 _MONTH_BASED = ("monthly", "quarterly", "half_yearly", "yearly")
 
 
