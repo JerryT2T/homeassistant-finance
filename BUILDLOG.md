@@ -1,5 +1,14 @@
 # Build Log
 
+## 0.24.2 — 2026-11-01
+Version: 0.24.2
+Branch: fix/120-processor-merchants
+Changes:
+- fix(categorizer): purchases paid via PayPal, Klarna, SumUp and other processors are categorised by the remittance text (the merchant, the order), never by the processor's own name; a line without a recognisable merchant stays "other" and is asked in the question flow
+- fix(questions): every purchase through a processor gets its own merchant ("Ihr Einkauf bei …"), so answering one PayPal purchase no longer recategorises all of them; an earlier answer stored for the shared PayPal key no longer applies
+- fix(banking): counterparty names delivered as Latin-1 mojibake ("S.Ã  r.l.") are repaired at import, replacement characters are dropped
+- chore(release): manifest and const carry the version again (0.24.1 had shipped with the old number)
+
 ## 0.24.1 — 2026-11-01
 Version: 0.24.1
 Branch: chore/122-stable-contract-ids

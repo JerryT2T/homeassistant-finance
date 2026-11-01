@@ -20,6 +20,7 @@ from typing import Any
 from homeassistant.helpers.storage import Store
 
 from .const import DOMAIN
+from .text_norm import is_processor_only, processor_merchant_text
 
 STORAGE_KEY_MERCHANTS = f"{DOMAIN}_merchants"
 STORAGE_VERSION = 1
@@ -79,15 +80,29 @@ def _counterparty(tx: dict[str, Any]) -> str:
     return str(first or second or "")
 
 
+def _remittance(tx: dict[str, Any]) -> str:
+    remit = str(tx.get("remittanceInformationUnstructured") or "")
+    if not remit:
+        arr = tx.get("remittanceInformationUnstructuredArray") or []
+        remit = str(arr[0]) if arr else ""
+    return remit
+
+
 def merchant_key(tx: dict[str, Any]) -> str:
-    """Stable merchant key of a transaction ('' when nothing usable)."""
-    tokens = _clean(_counterparty(tx))
+    """Stable merchant key of a transaction ('' when nothing usable).
+
+    A line whose counterparty is a payment processor itself ("PayPal Europe
+    S.a r.l. et Cie") takes the merchant from the remittance text; otherwise
+    every purchase through that processor would share one key and one answer.
+    """
+    counterparty = _counterparty(tx)
+    if is_processor_only(counterparty):
+        merchant = processor_merchant_text(_remittance(tx))
+        tokens = _clean(merchant) if merchant else _clean(_remittance(tx))[:3]
+        return " ".join(tokens[:4])
+    tokens = _clean(counterparty)
     if not tokens:
-        remit = str(tx.get("remittanceInformationUnstructured") or "")
-        if not remit:
-            arr = tx.get("remittanceInformationUnstructuredArray") or []
-            remit = str(arr[0]) if arr else ""
-        tokens = _clean(remit)[:3]
+        tokens = _clean(_remittance(tx))[:3]
     return " ".join(tokens[:4])
 
 

@@ -157,6 +157,19 @@ class TestNormalizeTransaction:
         assert result["debtorName"] == "Employer"
 
 
+    def test_mojibake_counterparty_is_repaired(self):
+        result = EnableBankingClient._normalize_transaction(
+            _txn(amount="9.99", indicator="DBDT", creditor={"name": "Streamly S.Ã  r.l."})
+        )
+        assert result["creditorName"] == "Streamly S.à r.l."
+
+    def test_replacement_characters_are_dropped(self):
+        result = EnableBankingClient._normalize_transaction(
+            _txn(amount="5.00", indicator="CRDT", debtor={"name": "M￼ller �"})
+        )
+        assert "�" not in result["debtorName"]
+
+
 class TestNormalizeBalance:
     """ISO 20022 balance codes must survive normalization."""
 

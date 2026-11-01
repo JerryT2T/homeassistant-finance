@@ -14,6 +14,7 @@ import re
 from typing import Any
 
 from .const import CATEGORIZATION_RULES, CATEGORY_OTHER
+from .text_norm import is_processor_only, processor_remittance
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -137,7 +138,9 @@ class TransactionCategorizer:
 
     def _by_keywords(self, transaction: dict[str, Any]) -> str:
         # Extract searchable text from transaction
-        search_text = self._extract_searchable_text(transaction)
+        search_text = self._processor_text(transaction)
+        if search_text is None:
+            search_text = self._extract_searchable_text(transaction)
         if not search_text:
             return CATEGORY_OTHER
 
@@ -166,6 +169,25 @@ class TransactionCategorizer:
     def get_rules(self) -> dict[str, list[str]]:
         """Get current categorization rules (deep copy — mutations are safe)."""
         return {category: list(keywords) for category, keywords in self._rules.items()}
+
+    @staticmethod
+    def _processor_text(transaction: dict[str, Any]) -> str | None:
+        """Text to search for a processor-only line, None for any other line.
+
+        The processor's own name ("PayPal Europe ...") never decides the
+        category: only the remittance (the merchant, the order) does. Nothing
+        recognisable -> "" -> ``other``, which the question flow picks up.
+        """
+        try:
+            amount = float((transaction.get("transactionAmount") or {}).get("amount", 0) or 0)
+        except (TypeError, ValueError):
+            amount = 0.0
+        names = (transaction.get("creditorName"), transaction.get("debtorName"))
+        name = (names[0] or names[1]) if amount <= 0 else (names[1] or names[0])
+        if not is_processor_only(str(name or "")):
+            return None
+        remittance = str(transaction.get("remittanceInformationUnstructured") or "")
+        return processor_remittance(remittance)
 
     @staticmethod
     def _extract_searchable_text(

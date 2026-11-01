@@ -404,3 +404,37 @@ def test_remittance_array_matched():
     }
     result = cat.categorize(txn)
     assert result == "housing"
+
+
+# ---------------------------------------------------------------------------
+# Payment processors (#120)
+# ---------------------------------------------------------------------------
+
+_PAYPAL = "PayPal Europe S.a.r.l. et Cie S.C.A"
+
+
+def _processor_line(name: str, remittance: str, amount: str = "-23.50") -> dict:
+    return {
+        "creditorName": name,
+        "remittanceInformationUnstructured": remittance,
+        "transactionAmount": {"amount": amount, "currency": "EUR"},
+    }
+
+
+def test_processor_name_never_decides_the_category():
+    # even a rule that names the processor itself must not fire on its own lines
+    cat = TransactionCategorizer(custom_rules={"transport": ["paypal", "europe"]})
+    tx = _processor_line(_PAYPAL, "PP.4471.PP . Pizza Roma, Ihr Einkauf bei Pizza Roma")
+    assert cat.categorize(tx) == "food"
+
+
+def test_processor_line_without_merchant_is_unclear():
+    cat = TransactionCategorizer(custom_rules={"transport": ["paypal"]})
+    assert cat.categorize(_processor_line(_PAYPAL, "Abbuchung")) == "other"
+    assert cat.categorize(_processor_line("Klarna Bank AB", "Rechnung 89002")) == "other"
+
+
+def test_merchant_inside_processor_name_still_counts():
+    # "PAYPAL *NETFLIX": the merchant is part of the name, not a processor-only line
+    cat = TransactionCategorizer()
+    assert cat.categorize(_processor_line("PAYPAL *NETFLIX", "")) == "subscriptions"
