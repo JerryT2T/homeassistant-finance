@@ -19,6 +19,7 @@ from aiohttp import web
 from homeassistant.components.http import HomeAssistantView
 
 from ..const import DOMAIN
+from ..labels import booking_key
 from ._helpers import _get_manager, visible_account_ids
 
 _LOGGER = logging.getLogger(__name__)
@@ -281,7 +282,7 @@ class FinanceDashboardTransactionsView(HomeAssistantView):
                 "account_key": txn.get("_account_key", ""),
             }
             # Contract link, inherited category and labels (#113)
-            key = f"{txn.get('_account_key') or ''}|{txn['_ledger_id']}" if txn.get("_ledger_id") else ""
+            key = booking_key(txn) or ""
             info = resolved.get(key)
             if info:
                 entry["ledger_id"] = key

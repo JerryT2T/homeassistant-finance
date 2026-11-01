@@ -147,7 +147,9 @@ def clean_ids(value: Any, known: set[str] | frozenset[str] | None = None) -> lis
     out: list[str] = []
     for item in value:
         if not isinstance(item, str) or not _SLUG.match(item) or item in AUTO_LABELS:
-            raise LabelError("invalid_labels", "label ids are slugs; automatic labels are read-only")
+            raise LabelError(
+                "invalid_labels", "label ids are slugs; automatic labels are read-only"
+            )
         if known is not None and item not in known:
             raise LabelError("unknown_label", "label is not in the catalogue")
         if item not in out:
@@ -159,7 +161,9 @@ class LabelStore:
     """Custom labels and per-booking labels (``.storage/finance_dashboard_labels``)."""
 
     def __init__(self, hass: HomeAssistant | None, store: Any | None = None) -> None:
-        self._store = store if store is not None else Store(hass, STORAGE_VERSION, STORAGE_KEY_LABELS)
+        if store is None:
+            store = Store(hass, STORAGE_VERSION, STORAGE_KEY_LABELS)
+        self._store = store
         self.custom: dict[str, str] = {}
         self.bookings: dict[str, list[str]] = {}
 
@@ -255,7 +259,8 @@ def resolve_bookings(
     """Per ledger id: the contract it belongs to and what it inherits.
 
     ``contracts`` are contract views (``build_contracts``) carrying
-    ``ledger_ids`` (booking keys, see ``booking_key``). A booking of a contract takes the contract's category
+    ``ledger_ids`` (booking keys, see ``booking_key``). A booking of a contract
+    takes the contract's category
     (``category_source = "contract"``) and its labels as ``inherited``;
     its own labels stay separate, the automatic channel label is added.
     """
