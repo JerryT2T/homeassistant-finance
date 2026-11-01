@@ -187,6 +187,7 @@ ${SHARED_CSS}
       const d = e.detail || {};
       if (d.target === "back" || d.target === "settings-closed") this._back();
       else if (d.target === "setup") this._openSetup();
+      else if (d.target === "plan-wizard") this._openPlanWizard();
       else if (SUBPAGES[d.target]) this._openSub(d.target, d, true);
     });
     // Legacy close events of components that predate fd-subpage-header.
@@ -195,6 +196,7 @@ ${SHARED_CSS}
     sh.addEventListener("fd-categorize-requested", () => this._openSub("questions", {}, true));
     sh.addEventListener("fd-questions-all", () => this._openCategorize());
     sh.addEventListener("fd-open-setup", () => this._openSetup());
+    sh.addEventListener("fd-open-plan-wizard", () => this._openPlanWizard());
 
     // Datenstand actions (admin): the shell performs both calls.
     sh.addEventListener("fd-refresh-requested", () => this._import());
@@ -340,6 +342,22 @@ ${SHARED_CSS}
       wiz.remove();
       const home = sh.querySelector("fd-home");
       if (home) { home._wizard = undefined; home.reload?.(); }
+      this._subEl?.reload?.();
+    });
+    sh.append(wiz);
+    wiz.shadowRoot?.querySelector("h2, button")?.focus();
+  }
+
+  /** "Haushaltsplan erstellen": full-screen overlay like the setup; Start reloads afterwards. */
+  _openPlanWizard() {
+    const sh = this.shadowRoot;
+    if (sh.querySelector("fd-plan-wizard") || !this._hass) return;
+    const wiz = document.createElement("fd-plan-wizard");
+    wiz.hass = this._hass;
+    wiz.addEventListener("fd-plan-wizard-close", () => {
+      wiz.remove();
+      const home = sh.querySelector("fd-home");
+      if (home) home.reload?.();
       this._subEl?.reload?.();
     });
     sh.append(wiz);
