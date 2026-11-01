@@ -333,6 +333,7 @@ class FdContracts extends HTMLElement {
     this._render();
     try {
       const r = await this._hass.callApi("GET", `${DOMAIN}/contracts`);
+      this._labels = await window._fd.getLabels(this._hass);
       // Candidates (#129) are not sure to be contracts: kept out of the list
       // and the totals, asked under "Prüfen" (#130).
       const all = (r && r.contracts) || [];
@@ -526,6 +527,9 @@ class FdContracts extends HTMLElement {
     }
     if (!ended && c.pauses_recent > 0) badges.push(`<span class="badge">${e(tr("ct.paused", { n: c.pauses_recent }))}</span>`);
     if (c.special_termination_available) badges.push(`<span class="badge ok">${e(tr("ct.special"))}</span>`);
+    // Auto labels are not stored on the contract; the price / special-termination ones already have badges above.
+    const own = (c.labels || []).map((id) => window._fd.labelChip(id, this._labels, "own"));
+    if (own.length) badges.push(...own);
     const interval = tr(`ct.interval.${c.interval}`);
     const sub = [interval, ended ? "" : tr("ct.next", { date: this._date(c.next_expected) }), this._ownerLabel(c.owner)].filter(Boolean).join(" · ");
     const inner = `<div class="l1"><span class="nm"><i aria-hidden="true">${this._catIcon(c.category)}</i><span>${e(c.display_name || c.creditor)}</span></span>
@@ -603,6 +607,7 @@ class FdContracts extends HTMLElement {
         kind: this._kindOf(c),
         plan_mode: c.plan_mode || "auto",
         plan_fixed_amount: c.plan_fixed_amount ?? "",
+        labels: [...(c.labels || [])],
       },
     };
     this._paintSheet();
@@ -653,6 +658,8 @@ class FdContracts extends HTMLElement {
   ${notice ? `<div class="rw" style="margin-top:8px"><span><b>${e(tr("ct.f.special"))}</b>${s.c.contract.special_termination_prefilled ? `<span class="muted">${e(tr("ct.special_prefilled"))}</span>` : ""}</span>
     <span class="hit"><button type="button" class="sw" role="switch" aria-checked="${d.special_termination}" data-grp="special" aria-label="${e(tr("ct.f.special"))}"></button></span></div>
   <div class="hint">${e(tr("ct.defaults", { cat: d.kind === "contract" ? this._catLabel(s.c.category) : tr(`ct.kind.${d.kind}`), term: def.min_term_months, renewal: def.renewal_months, notice: def.notice_value, unit: tr("ct.unit." + def.notice_unit) }))}</div>` : ""}
+  <div class="lbl" id="lbh">${e(tr("lb.title"))}</div>
+  <div class="opts" role="group" aria-labelledby="lbh">${(this._labels || []).filter((l) => l.kind !== "auto").map((l) => `<button type="button" role="checkbox" aria-checked="${d.labels.includes(l.id)}" data-lbl="${e(l.id)}">${e(window._fd.labelName(l.id, this._labels))}</button>`).join("") || `<span class="muted">${e(tr("lb.none"))}</span>`}</div>
   <div class="err" id="sheeterr" role="alert">${e(s.error)}</div>
   <div class="acts"><button type="button" class="btn ghost" data-act="reset">${e(tr("ct.reset"))}</button>
     <button type="button" class="btn ghost" data-act="cancel">${e(tr("ct.cancel"))}</button>
@@ -686,6 +693,8 @@ class FdContracts extends HTMLElement {
       const before = f === "start" ? (k.start || s.c.first_seen || null) : k[f];
       if (s.touched.has(f) && !same(next[f], before)) body[f] = next[f];
     }
+    const prevLabels = s.c.labels || [];
+    if (d.labels.length !== prevLabels.length || d.labels.some((id) => !prevLabels.includes(id))) body.labels = d.labels.length ? d.labels : null;
     if (d.owner !== (s.c.owner || "shared")) body.owner = d.owner;
     const mode = d.plan_mode === "auto" ? null : d.plan_mode;
     const fixed = mode === "fixed" ? num(d.plan_fixed_amount) : null;
@@ -751,6 +760,12 @@ class FdContracts extends HTMLElement {
       if (t.dataset.sav) return this._toggleSavings(t.dataset.sav);
       if (t.dataset.review) return this._review(t.dataset.id, t.dataset.review);
       if (t.dataset.kind) { this._kind = t.dataset.kind; return this._render(); }
+      if (t.dataset.lbl && s) {
+        const i = s.d.labels.indexOf(t.dataset.lbl);
+        if (i >= 0) s.d.labels.splice(i, 1); else s.d.labels.push(t.dataset.lbl);
+        this._paintSheet();
+        return [...this.shadowRoot.querySelectorAll("[data-lbl]")].find((b) => b.dataset.lbl === t.dataset.lbl)?.focus();
+      }
       if (t.dataset.grp && s) {
         const grp = t.dataset.grp;
         if (grp === "special") s.d.special_termination = !s.d.special_termination;

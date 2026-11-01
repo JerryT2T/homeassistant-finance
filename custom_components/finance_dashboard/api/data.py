@@ -19,6 +19,7 @@ from aiohttp import web
 from homeassistant.components.http import HomeAssistantView
 
 from ..const import DOMAIN
+from ..labels import booking_key
 from ._helpers import _get_manager, visible_account_ids
 
 _LOGGER = logging.getLogger(__name__)
@@ -189,6 +190,20 @@ def _int_param(request: web.Request, name: str, default: int, lo: int, hi: int) 
     return max(lo, min(hi, value))
 
 
+async def _resolve_page(request: web.Request, manager, page: list[dict]) -> dict[str, dict]:
+    """Contract link and labels for one page of bookings (#113); never fails the list."""
+    from ..labels import async_get_label_store, resolve_bookings
+    from .contracts import _contracts_for
+
+    try:
+        _store, contracts = await _contracts_for(request, manager)
+        labels = await async_get_label_store(request.app["hass"])
+        return resolve_bookings(page, contracts, labels.bookings)
+    except Exception:  # noqa: BLE001 - labels are an addition, the list must still load
+        _LOGGER.warning("Label resolution failed", exc_info=True)
+        return {}
+
+
 class FinanceDashboardTransactionsView(HomeAssistantView):
     """API endpoint for transactions (cache read).
 
@@ -250,8 +265,10 @@ class FinanceDashboardTransactionsView(HomeAssistantView):
             key=lambda t: str(t.get("bookingDate") or t.get("valueDate") or ""), reverse=True
         )
 
+        page = filtered[offset : offset + limit]
+        resolved = await _resolve_page(request, manager, page)
         sanitized = []
-        for txn in filtered[offset : offset + limit]:
+        for txn in page:
             entry = {
                 "date": txn.get("bookingDate") or txn.get("valueDate") or "",
                 "amount": txn.get("transactionAmount", {}).get("amount", "0"),
@@ -264,6 +281,13 @@ class FinanceDashboardTransactionsView(HomeAssistantView):
                 "account_name": txn.get("_account_name", ""),
                 "account_key": txn.get("_account_key", ""),
             }
+            # Contract link, inherited category and labels (#113)
+            key = booking_key(txn) or ""
+            info = resolved.get(key)
+            if info:
+                entry["ledger_id"] = key
+                entry["own_category"] = entry["category"]
+                entry.update(info)
 
             # Transfer chain metadata
             chain_id = txn.get("_transfer_chain_id")

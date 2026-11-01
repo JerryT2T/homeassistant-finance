@@ -32,6 +32,7 @@ from homeassistant.helpers.storage import Store
 
 from .account_identity import account_key
 from .const import DOMAIN, STORAGE_VERSION
+from .labels import LabelError, clean_ids
 from .contract_kind import CATEGORY_DEFAULTS as KIND_CATEGORY_DEFAULTS
 from .contract_kind import (
     KIND_CONTRACT,
@@ -116,6 +117,7 @@ class Contract:
     plan_fixed_amount: float | None = None
     review: str | None = None  # the user's answer to a candidate (#130)
     kind: str | None = None  # None = follow the detector's suggestion (#111)
+    labels: list[str] | None = None  # passed on to every booking of the series (#113)
 
     _FIELDS = (
         "start",
@@ -132,10 +134,13 @@ class Contract:
         "plan_fixed_amount",
         "review",
         "kind",
+        "labels",
     )
 
     def to_dict(self) -> dict[str, Any]:
-        return {f: getattr(self, f) for f in self._FIELDS}
+        out = {f: getattr(self, f) for f in self._FIELDS}
+        out["labels"] = list(self.labels) if self.labels else None
+        return out
 
     def apply(self, data: dict[str, Any]) -> None:
         """Validate and apply a partial update. Raises ``ContractError``."""
@@ -151,10 +156,14 @@ class Contract:
     @classmethod
     def from_dict(cls, sid: str, data: dict[str, Any]) -> Contract:
         c = cls(series_id=sid)
+        fields = {k: v for k, v in data.items() if k in cls._FIELDS}
         try:
-            c.apply({k: v for k, v in data.items() if k in cls._FIELDS})
+            c.apply(fields)
         except ContractError:
-            _LOGGER.warning("Skipping unreadable contract fields")
+            try:  # labels are an add-on: never lose the contract terms over them
+                c.apply({k: v for k, v in fields.items() if k != "labels"})
+            except ContractError:
+                _LOGGER.warning("Skipping unreadable contract fields")
         return c
 
 
@@ -203,6 +212,10 @@ def _validate(d: dict[str, Any]) -> None:
         raise ContractError("invalid_review", "Unknown review answer")
     if d["kind"] is not None and d["kind"] not in KINDS:
         raise ContractError("invalid_kind", "Unknown contract kind")
+    try:
+        d["labels"] = clean_ids(d["labels"]) or None
+    except LabelError as err:
+        raise ContractError(err.code, err.detail) from err
     if d["plan_mode"] == PLAN_MODE_FIXED and d["plan_fixed_amount"] is None:
         raise ContractError("invalid_plan_fixed_amount", "Fixed mode needs an amount")
 
@@ -444,6 +457,7 @@ def _contract_view(s: dict[str, Any], c: Contract, today: date) -> dict[str, Any
             "has_notice": has_notice,
             "stored": c.to_dict(),
         },
+        "labels": list(c.labels or []),
         "next_deadline": deadline.isoformat() if deadline else None,
         "effective_end": effective.isoformat() if effective else None,
         "days_until_deadline": days_left,
@@ -504,6 +518,7 @@ def aggregate_view(item: dict[str, Any]) -> dict[str, Any]:
         "days_until_deadline",
         "notice_due_soon",
         "special_termination_available",
+        "labels",
     )
     return {
         **{k: item[k] for k in keep},

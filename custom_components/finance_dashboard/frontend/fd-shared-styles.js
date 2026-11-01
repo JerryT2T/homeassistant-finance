@@ -154,6 +154,13 @@ export const MONTH_NAMES = [
  * Components include this via: `<style>${window._fd.SHARED_CSS}${LOCAL_CSS}</style>` in their shadow root.
  */
 export const SHARED_CSS = `
+.lc { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; padding: 0 8px; border: 1px solid transparent; border-radius: var(--fd-r-pill); font-size: 10.5px; font-weight: 500; line-height: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lc-own { background: var(--fd-a50); color: var(--fd-a900); }
+.lc-inherited { background: var(--fd-sunk); color: var(--fd-t2); }
+.lc-inherited .lc-pre { opacity: .75; font-weight: 400; }
+.lc-inherited .lc-pre::after { content: ":"; }
+.lc-auto { background: transparent; color: var(--fd-t2); border-color: var(--fd-line); }
+.lcs { display: flex; flex-wrap: wrap; gap: 4px; min-width: 0; }
 :host {
   /* Legacy names now alias the design tokens (--fd-*), so every component
      that still uses them follows the new design. Status never red. */
@@ -372,6 +379,48 @@ function tSync(key, vars = {}) {
   return text;
 }
 
+/**
+ * Labels (#113). Catalogue = [{id, name, kind}]; starter/auto labels have name=null and
+ * are translated via `label.<id>`, custom labels show their own name.
+ */
+function labelName(id, catalogue) {
+  const l = (catalogue || []).find((x) => x.id === id);
+  if (l && l.name) return l.name;
+  const key = `label.${id}`;
+  const s = tSync(key);
+  return s !== key ? s : String(id);
+}
+
+/**
+ * One chip. variant: "own" (filled), "inherited" (muted, "Vertrag" prefix) or "auto" (outline).
+ * Styles live in SHARED_CSS (.lc).
+ */
+function labelChip(id, catalogue, variant = "own") {
+  const name = labelName(id, catalogue);
+  const pre = variant === "inherited" ? `<span class="lc-pre">${escHtml(tSync("lb.contract_prefix") === "lb.contract_prefix" ? "Contract" : tSync("lb.contract_prefix"))}</span>` : "";
+  return `<span class="lc lc-${variant}">${pre}${escHtml(name)}</span>`;
+}
+
+/** Chips for several ids; "" when none. */
+function labelChips(ids, catalogue, variant = "own") {
+  return (ids || []).map((id) => labelChip(id, catalogue, variant)).join("");
+}
+
+let _labelCache = null;
+/** Catalogue, fetched once (lazy); force=true refetches. Resolves to [] on failure. */
+async function getLabels(hass, force = false) {
+  if (_labelCache && !force) return _labelCache;
+  try {
+    const r = await hass.callApi("GET", "finance_dashboard/labels");
+    _labelCache = (r && r.labels) || [];
+  } catch (_) {
+    return _labelCache || [];
+  }
+  return _labelCache;
+}
+/** Replace the cached catalogue (after create/rename/delete). */
+function setLabels(list) { _labelCache = list; }
+
 /** Define a custom element unless something already did (reload / double load). */
 function defineOnce(name, ctor) {
   if (!customElements.get(name)) customElements.define(name, ctor);
@@ -436,6 +485,11 @@ window._fd = {
   registerCard,
   navigate,
   fmtDate,
+  labelName,
+  labelChip,
+  labelChips,
+  getLabels,
+  setLabels,
   INTEGRATION_PATH,
   _hass: null,  // Set by panel shell: window._fd._hass = hass
 };

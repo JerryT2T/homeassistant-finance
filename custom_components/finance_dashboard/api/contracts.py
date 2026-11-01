@@ -89,6 +89,15 @@ class FinanceDashboardContractView(HomeAssistantView):
         store, contracts = await _contracts_for(request, manager)
         if not any(c["id"] == series_id for c in contracts):
             return self.json({"error": "unknown_series"}, status_code=404)
+        if body.get("labels"):
+            from ..labels import async_get_label_store
+
+            known = (await async_get_label_store(request.app["hass"])).known()
+            if not isinstance(body["labels"], list) or any(i not in known for i in body["labels"]):
+                return self.json(
+                    {"error": "unknown_label", "detail": "label is not in the catalogue"},
+                    status_code=400,
+                )
         contract = store.get(series_id)
         try:
             contract.apply(body)

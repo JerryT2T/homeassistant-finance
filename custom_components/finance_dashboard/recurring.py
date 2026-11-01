@@ -804,6 +804,10 @@ def _build_series(
         "status": status,
         "price_change": price_change,
         "category": _most_common_value([t.get("category") for t in txns], "other"),
+        # bookings of the series, for inherited category and labels (#113); hashes only
+        "ledger_ids": [
+            f"{t.get('_account_key') or ''}|{t['_ledger_id']}" for t in txns if t.get("_ledger_id")
+        ],
         "account_key": _most_common_value([t.get("_account_key") for t in txns], ""),
         "account_type": _most_common_value([t.get("_account_type") for t in txns], "personal"),
         "account_person": _most_common_value([t.get("_account_person") for t in txns], ""),

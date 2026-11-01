@@ -2,6 +2,13 @@
 
 All notable changes to the Finance will be documented in this file.
 
+## [0.32.0] — 2026-11-02
+
+### Added
+- Contracts and bookings can carry any number of labels next to their category - 15 starter labels (Energie, Versicherung, Erstattungsfähig, Beruflich / Werbungskosten, Haushaltsnahe Dienstleistung, ...) plus your own; labels stay in Home Assistant
+- Every booking of a contract shows the contract's category and labels as "vom Vertrag" - fixing the contract once fixes all its bookings; a booking can get extra labels of its own in the new booking dialog
+- Automatic labels show the payment channel (PayPal, später bezahlen, Karte, Lastschrift) and "Preis gestiegen" / "Sonderkündigung möglich"; they cannot be edited
+
 ## [0.31.0] — 2026-11-02
 
 ### Added
