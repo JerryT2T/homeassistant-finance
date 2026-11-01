@@ -624,3 +624,33 @@ def test_series_uses_the_transaction_date_when_no_booking_date_exists():
     (s,) = detect_series(rows, today=TODAY)
     assert s["interval"] == "monthly"
     assert s["price_change"]["increase"]
+
+
+def test_candidates_get_no_reserve():
+    from custom_components.finance_dashboard.contracts import build_reserves
+
+    base = {
+        "interval": "yearly",
+        "status": "active",
+        "annual_cost": 120.0,
+        "owner": "",
+        "next_expected": "2026-09-01",
+        "category": "insurance",
+        "plan_amount": -120.0,
+    }
+    sure = {**base, "id": "a", "creditor": "a", "candidate": False}
+    unsure = {**base, "id": "b", "creditor": "b", "candidate": True}
+    items = build_reserves([sure, unsure])["items"]
+    assert [i["series_id"] for i in items] == ["a"]
+
+
+def test_a_contract_the_user_edited_is_never_a_candidate():
+    rows = monthly([-12.4, -13.1, -11.8], name="Cafe Bohne", category="food")
+    for r in rows:
+        r["remittanceInformationUnstructured"] = "VISA Debitkarte"
+    store = blank_store()
+    (first,) = build_contracts(rows, store, today=TODAY)
+    assert first["candidate"] is True
+    store.contracts[first["id"]] = Contract(first["id"], notice_value=1)
+    (again,) = build_contracts(rows, store, today=TODAY)
+    assert again["candidate"] is False

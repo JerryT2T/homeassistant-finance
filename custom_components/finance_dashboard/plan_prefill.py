@@ -45,7 +45,7 @@ def propose_positions(
     taken = {p.id for p in existing}
     out = []
     for c in contracts:
-        if c.get("status") == _ENDED:
+        if c.get("status") == _ENDED or c.get("candidate"):
             continue
         monthly = round(float(c.get("monthly_equivalent") or 0.0), 2)
         if monthly <= 0:

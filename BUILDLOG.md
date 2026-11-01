@@ -1,5 +1,12 @@
 # Build Log
 
+## 0.25.0 — 2026-11-01
+Version: 0.25.0
+Branch: feat/110-series-confidence
+Changes:
+- feat(contracts): every detected series gets a confidence score with its reasons (direct debit or contract number vs. card payment, stable amount, number of payments, regular day of month, category, contract keywords); the contracts API returns `confidence` and `candidate`
+- fix(contracts): card purchases at a café, drugstore or pharmacy that happen to recur monthly are candidates, not contracts: they no longer count in fixed costs, reserves, plan proposals or notice reminders
+
 ## 0.24.4 — 2026-11-01
 Version: 0.24.4
 Branch: fix/107-paypal-transaction-date

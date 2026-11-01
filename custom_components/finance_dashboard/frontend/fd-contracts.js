@@ -292,7 +292,9 @@ class FdContracts extends HTMLElement {
     this._render();
     try {
       const r = await this._hass.callApi("GET", `${DOMAIN}/contracts`);
-      this._items = (r && r.contracts) || [];
+      // Candidates (#129) are not sure to be contracts: kept out of the list
+      // and the totals until they are confirmed under "Prüfen".
+      this._items = ((r && r.contracts) || []).filter((c) => !c.candidate);
     } catch (e) {
       console.warn("fd-contracts: load failed:", e);
       this._err = true;
