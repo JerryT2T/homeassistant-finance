@@ -274,6 +274,11 @@ class FdHome extends HTMLElement {
     if (first) {
       this._renderShell();
       this._load();
+      if (this._isAdmin) {
+        const gp = window._fd._planGate && Date.now() - window._fd._planGate.at < 60000 ? window._fd._planGate.p
+          : (window._fd._planGate = { at: Date.now(), p: h.callApi("GET", `${DOMAIN}/plan_wizard/gate`).catch(() => null) }).p;
+        gp.then((g) => { this._gate = g; if (this._data) this._paint(); });
+      }
     }
   }
 
@@ -710,7 +715,7 @@ class FdHome extends HTMLElement {
       if (!(st.persons === 0 || (st.accounts_total || 0) > (st.accounts_assigned || 0))) return "";
       return `<section class="card setup"><h3>${this._t("home.setup.member_title")}</h3><p class="muted">${this._t("home.setup.member_body")}</p></section>`;
     }
-    const order = ["persons", "accounts", "payday", "region", "pots", "plan", "notifications", "ai", "done"];
+    const order = ["persons", "accounts", "payday", "region", "notifications", "ai", "points", "done"];
     const n = Math.max(0, order.indexOf(w.current_step)) + 1;
     const started = Object.values(w.steps || {}).some((s) => s && s !== "pending");
     return `<section class="card setup"><h3>${this._t(started ? "home.setup.resume_title" : "home.setup.start_title", { n, total: order.length })}</h3>
@@ -936,9 +941,19 @@ class FdHome extends HTMLElement {
         <div class="tile"><span>${this._t("home.cycle.per_day")}</span><b>${this._m(Math.max(0, sr.remaining) / this._daysLeft(d), false)}</b></div></div></section>`;
   }
 
+  /** "Haushaltsplan erstellen" while the plan gate is open (or unknown); else the expected date. */
+  _planCta(cls) {
+    const g = this._gate;
+    if (g && !g.ready) {
+      const when = g.ready_from ? window._fd.fmtDate(g.ready_from) : "";
+      return `<span class="muted" role="status">${when ? this._t("home.plan.gate", { date: when }) : this._t("home.plan.gate_nodata")}</span>`;
+    }
+    return `<button class="${cls}" data-act="planwizard">${this._t("home.cycle.plan_create")}</button>`;
+  }
+
   _fixed(d) {
     if (d.fixed_costs_covered === null || d.fixed_costs_covered === undefined) {
-      return `<div style="margin:0 0 12px" class="muted">${this._t("home.cycle.fixed_noplan")} <button class="link" data-act="nav" data-target="plan">${this._t("home.cycle.plan_create")}</button></div>`;
+      return `<div style="margin:0 0 12px" class="muted">${this._t("home.cycle.fixed_noplan")} ${this._planCta("link")}</div>`;
     }
     return `<div style="margin:0 0 12px"><span class="chip ${d.fixed_costs_covered ? "st-ok" : "st-near"}">${d.fixed_costs_covered ? "✓ " : ""}${this._t(d.fixed_costs_covered ? "home.cycle.fixed_ok" : "home.cycle.fixed_no")}</span></div>`;
   }
@@ -1101,7 +1116,7 @@ class FdHome extends HTMLElement {
     if (!pots.length) {
       body = `<p class="muted" style="margin:0">${this._t("home.opt.no_pots")}</p>
         <div class="acts" style="justify-content:flex-start"><button class="btn sm dsk" data-act="addpot">+ ${this._t("home.pot.new")}</button>
-        ${d.fixed_costs_covered === null || d.fixed_costs_covered === undefined ? `<button class="btn sm dsk ghost" data-act="nav" data-target="plan">${this._t("home.cycle.plan_create")}</button>` : ""}</div>`;
+        ${d.fixed_costs_covered === null || d.fixed_costs_covered === undefined ? this._planCta("btn sm dsk ghost") : ""}</div>`;
     } else {
       const ranked = pots.map((p) => {
         const linear = (p.cycle_budget || 0) * soll;
@@ -1343,6 +1358,7 @@ class FdHome extends HTMLElement {
       case "more": this._moreNext = !this._moreNext; this._paint(); break;
       case "addpot": this._openSheet(null); break;
       case "wizard": this._nav("setup"); break;
+      case "planwizard": this.dispatchEvent(new CustomEvent("fd-open-plan-wizard", { bubbles: true, composed: true })); break;
       case "editpot": this._openSheet(pot(t.dataset.id)); break;
       case "delpot": this._confirmId = t.dataset.id; this._paintSide(); break;
       case "delyes": this._deletePot(t.dataset.id); break;

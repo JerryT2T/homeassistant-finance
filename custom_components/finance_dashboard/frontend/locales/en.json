@@ -599,7 +599,6 @@
   "ai.mode.recurring": "recurring",
   "ai.purpose.categorize.title": "Categorise transactions",
   "ai.purpose.sheet_analysis.title": "Analyse household spreadsheet",
-  "hh.plan.cta_adjust": "Adjust household plan",
   "home.plan.gate": "Household plan possible from about $date",
   "home.plan.gate_nodata": "Household plan possible once 3 full months of bookings are in"
 }

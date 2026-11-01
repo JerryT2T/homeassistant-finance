@@ -32,6 +32,15 @@ const PERSON_COLORS = [
 ];
 const SKIP_CATS = new Set(["income", "transfers"]);
 
+/** Plan gate (GET plan_wizard/gate), shared and cached for 60 s; null when unknown or not allowed. */
+function planGate(hass) {
+  const fd = window._fd;
+  if (!fd._planGate || Date.now() - fd._planGate.at > 60000) {
+    fd._planGate = { at: Date.now(), p: hass.callApi("GET", "finance_dashboard/plan_wizard/gate").catch(() => null) };
+  }
+  return fd._planGate.p;
+}
+
 /** New texts: locale key if present, else inline de/en default (never a raw key). */
 function T(key, de, en, vars = {}) {
   const f = window._fd;
@@ -86,10 +95,10 @@ class FdBudgetPlan extends HTMLElement {
     window.addEventListener("fd-actual-data", this._onActual);
     if (!this._ctaBound) {
       this._ctaBound = true;
-      // Empty-plan CTA: hand over to the setup wizard (fd-navigate {target:"setup"}).
+      // Empty-plan CTA: ask the panel to open the plan wizard (fd-open-plan-wizard).
       this.shadowRoot.addEventListener("click", (ev) => {
-        if (ev.target.closest('[data-act="setup"]')) {
-          this.dispatchEvent(new CustomEvent("fd-navigate", { bubbles: true, composed: true, detail: { target: "setup" } }));
+        if (ev.target.closest('[data-act="planwizard"]')) {
+          this.dispatchEvent(new CustomEvent("fd-open-plan-wizard", { bubbles: true, composed: true }));
         }
       });
     }
@@ -98,6 +107,16 @@ class FdBudgetPlan extends HTMLElement {
 
   disconnectedCallback() {
     window.removeEventListener("fd-actual-data", this._onActual);
+  }
+
+  /** Button while the plan gate is open (or unknown); otherwise the expected date. */
+  _planCta() {
+    const g = this._gate;
+    if (g && !g.ready) {
+      const when = g.ready_from ? window._fd.fmtDate(g.ready_from) : "";
+      return `<span class="muted" role="status">${when ? T("home.plan.gate", "Haushaltsplan ab ca. $date möglich", "Household plan possible from about $date", { date: when }) : T("home.plan.gate_nodata", "Haushaltsplan möglich, sobald 3 volle Monate Buchungen da sind", "Household plan possible once 3 full months of bookings are in")}</span>`;
+    }
+    return `<button type="button" data-act="planwizard" style="min-height:var(--fd-touch);padding:0 16px;border:0;border-radius:var(--fd-r-pill);background:var(--fd-a700);color:#fff;font:inherit;font-weight:500;cursor:pointer">${T("hh.plan.cta", "Haushaltsplan erstellen", "Create household plan")}</button>`;
   }
 
   /** Reload all plan data. Safe to call repeatedly; overlapping calls are dropped. */
@@ -132,6 +151,9 @@ class FdBudgetPlan extends HTMLElement {
     } finally {
       this._loading = false;
       this._render();
+    }
+    if (this._plan && this._plan.is_empty) {
+      planGate(this._hass).then((g) => { this._gate = g; this._render(); });
     }
   }
 
@@ -330,8 +352,8 @@ tbody tr + tr td { border-top: 1px solid var(--fd-line); }
     if (plan.is_empty) {
       wrap(`<div class="card">
   <div class="empty">
-    ${T("hh.plan.empty", "Noch kein Plan vorhanden. Der Einrichtungsassistent legt Einkommen und Kostenpositionen mit Zuordnung an – oder übernimmt sie aus deiner Tabelle.", "No plan yet. The setup wizard creates income and cost positions with owners – or takes them over from your spreadsheet.")}
-    <div style="margin-top:12px"><button type="button" data-act="setup" style="min-height:var(--fd-touch);padding:0 16px;border:0;border-radius:var(--fd-r-pill);background:var(--fd-a700);color:#fff;font:inherit;font-weight:500;cursor:pointer">${T("hh.plan.cta", "Plan einrichten", "Set up the plan")}</button></div>
+    ${T("hh.plan.empty", "Noch kein Haushaltsplan vorhanden. Er entsteht aus deinen Buchungen: Einkommen, Fixkosten, Töpfe und Sparziele.", "No household plan yet. It is built from your bookings: income, fixed costs, pots and savings goals.")}
+    <div style="margin-top:12px">${this._planCta()}</div>
   </div></div>`);
       return;
     }
@@ -362,7 +384,7 @@ ${this._renderBenchmark(escHtml)}
       : s === "near" ? T("hh.status.near", "knapp", "tight") : T("hh.status.over", "drüber", "over"));
 
     if (!m.hasActual) {
-      return `<div class="card"><div class="h">${title}<span class="sub">${T("hh.plan.month", "Monatsplan", "Monthly plan")}</span></div>
+      return `<div class="card"><div class="h">${title}<span class="sub">${T("hh.plan.month", "Haushaltsplan", "Household plan")}</span></div>
 <div class="hero"><div><div class="big">${eur(m.planTotal)}</div>
 <div class="cap">${T("hh.verdict.plan_only", "geplante Ausgaben im Monat – Ist-Daten folgen mit dem Bankabruf.", "planned spending per month – actuals follow with the bank fetch.")}</div></div></div>
 <div class="tiles">
@@ -415,7 +437,7 @@ ${this._renderBenchmark(escHtml)}
 <span class="need">${i.act ? T("hh.ins.act", "hier ansehen", "take a look") : T("hh.ins.none", "kein Handlungsbedarf", "no action needed")}</span></div>`).join("");
 
     return `<div class="card st-${st}">
-<div class="h">${title}<span class="sub">${T("hh.plan.month", "Monatsplan", "Monthly plan")}</span></div>
+<div class="h">${title}<span class="sub">${T("hh.plan.month", "Haushaltsplan", "Household plan")}</span></div>
 <div class="hero"><div><div class="big">${eur(m.actTotal)}</div>
 <div class="cap">${T("hh.verdict.of", "ausgegeben, geplant $p", "spent, planned $p", { p: eur(m.planTotal) })} · ${escHtml(verdict)}</div></div>
 <span class="chip">${stLabel(st)}</span></div>

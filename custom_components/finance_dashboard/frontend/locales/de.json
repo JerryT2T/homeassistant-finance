@@ -599,7 +599,6 @@
   "ai.mode.recurring": "regelmäßig",
   "ai.purpose.categorize.title": "Buchungen kategorisieren",
   "ai.purpose.sheet_analysis.title": "Haushaltstabelle analysieren",
-  "hh.plan.cta_adjust": "Haushaltsplan anpassen",
   "home.plan.gate": "Haushaltsplan ab ca. $date möglich",
   "home.plan.gate_nodata": "Haushaltsplan möglich, sobald 3 volle Monate Buchungen da sind"
 }

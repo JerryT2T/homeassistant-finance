@@ -27,7 +27,8 @@
  * split; `plan_vs_actual.restricted` -> no category rows. Another person's accounts show as a sum.
  *
  * Events (bubbling, composed):
- *   fd-navigate {target:"setup"}                      not configured / no plan
+ *   fd-navigate {target:"setup"}                      not configured
+ *   fd-open-plan-wizard                               no plan yet and the plan gate is open
  *   fd-navigate {target:"settings", section:"accounts"} unassigned expenses
  *   fd-navigate {target:"freshness"}                  empty cycle: go to Datenstand to import
  */
@@ -79,7 +80,7 @@ const FB = {
     "cd.owners.say": "Der Haushalt trägt $shared der Ausgaben, auf Personen entfallen $persons.",
     "cd.open.say": "$amount Ausgaben gehören noch keinem Konto-Besitzer.",
     "cd.open.action": "Konten zuordnen",
-    "cd.pva": "Plan gegen Ist",
+    "cd.pva": "Haushaltsplan gegen Ist",
     "cd.pva.sub": "$month, Kalendermonat",
     "cd.pva.total": "Geplant $plan · bisher $actual",
     "cd.pva.ok": "passt",
@@ -88,8 +89,10 @@ const FB = {
     "cd.pva.unmatched": "$n Planpositionen ohne passende Buchung",
     "cd.pva.restricted": "Die Aufschlüsselung nach Kategorie sehen nur Administratoren.",
     "cd.pva.none": "Noch keine Buchungen, die sich mit dem Plan vergleichen lassen.",
-    "cd.plan.empty": "Noch kein Budgetplan. Unter Einrichtung → Budgetplan legst du ihn an.",
-    "cd.plan.action": "Einrichtung öffnen",
+    "cd.plan.empty": "Noch kein Haushaltsplan.",
+    "cd.plan.action": "Haushaltsplan erstellen",
+    "cd.plan.gate": "Haushaltsplan ab ca. $date möglich.",
+    "cd.plan.gate_nodata": "Haushaltsplan möglich, sobald 3 volle Monate Buchungen da sind.",
     "cd.restricted": "Details zu einzelnen Konten sind nur für Administratoren sichtbar.",
   },
   en: {
@@ -133,7 +136,7 @@ const FB = {
     "cd.owners.say": "The household carries $shared of the expenses, persons account for $persons.",
     "cd.open.say": "$amount of expenses do not belong to an account owner yet.",
     "cd.open.action": "Assign accounts",
-    "cd.pva": "Plan vs. actual",
+    "cd.pva": "Household plan vs. actual",
     "cd.pva.sub": "$month, calendar month",
     "cd.pva.total": "Planned $plan · so far $actual",
     "cd.pva.ok": "on track",
@@ -142,12 +145,23 @@ const FB = {
     "cd.pva.unmatched": "$n plan positions without a matching booking",
     "cd.pva.restricted": "Only administrators see the breakdown by category.",
     "cd.pva.none": "No bookings yet that can be compared with the plan.",
-    "cd.plan.empty": "No budget plan yet. Create it under Setup → Budget plan.",
-    "cd.plan.action": "Open setup",
+    "cd.plan.empty": "No household plan yet.",
+    "cd.plan.action": "Create household plan",
+    "cd.plan.gate": "Household plan possible from about $date.",
+    "cd.plan.gate_nodata": "Household plan possible once 3 full months of bookings are in.",
     "cd.restricted": "Details of individual accounts are visible to administrators only.",
   },
 };
 /*FB-END*/
+
+/** Plan gate (GET plan_wizard/gate), shared and cached for 60 s; null when unknown or not allowed. */
+function planGate(hass) {
+  const fd = window._fd;
+  if (!fd._planGate || Date.now() - fd._planGate.at > 60000) {
+    fd._planGate = { at: Date.now(), p: hass.callApi("GET", "finance_dashboard/plan_wizard/gate").catch(() => null) };
+  }
+  return fd._planGate.p;
+}
 
 function tr(key, vars = {}) {
   let s = window._fd.tSync(key, vars);
@@ -262,15 +276,17 @@ class FdCycleDetail extends HTMLElement {
     const person = this._view === "person";
     const call = (p) => this._hass.callApi("GET", `${DOMAIN}/${p}`);
     try {
-      const [sum, pva, plan] = await Promise.all([
+      const [sum, pva, plan, gate] = await Promise.all([
         call(`household_summary?cycle=${this._cycle}${person ? "&view=person" : ""}`),
         person ? Promise.resolve(null) : call("plan_vs_actual").catch(() => null),
         call("budget_plan").catch(() => null),
+        planGate(this._hass),
       ]);
       if (seq !== this._seq) return;
       this._sum = sum;
       this._pva = pva;
       this._plan = plan;
+      this._gate = gate;
       this._state = "ok";
     } catch (e) {
       if (seq !== this._seq) return;
@@ -287,6 +303,7 @@ class FdCycleDetail extends HTMLElement {
       const nav = (detail) => this.dispatchEvent(new CustomEvent("fd-navigate", { bubbles: true, composed: true, detail }));
       switch (t.dataset.act) {
         case "setup": nav({ target: "setup" }); break;
+        case "planwizard": this.dispatchEvent(new CustomEvent("fd-open-plan-wizard", { bubbles: true, composed: true })); break;
         case "assign": nav({ target: "settings", section: "accounts" }); break;
         case "freshness": nav({ target: "freshness" }); break;
         case "retry": this.reload(); break;
@@ -419,7 +436,11 @@ ${empty ? `<p class="quiet">${e(tr("cd.empty"))} <button class="link" data-act="
     const planKnown = plan != null;
     if (!planKnown || plan.is_empty) {
       if (!planKnown && !pva) return "";
-      return `<p class="quiet">${e(tr("cd.plan.empty"))} <button class="link" data-act="setup">${e(tr("cd.plan.action"))}</button></p>`;
+      const g = this._gate;
+      if (g && !g.ready) {
+        return `<p class="quiet">${e(tr("cd.plan.empty"))} ${e(g.ready_from ? tr("cd.plan.gate", { date: window._fd.fmtDate(g.ready_from) }) : tr("cd.plan.gate_nodata"))}</p>`;
+      }
+      return `<p class="quiet">${e(tr("cd.plan.empty"))} <button class="link" data-act="planwizard">${e(tr("cd.plan.action"))}</button></p>`;
     }
     const month = pva && pva.month
       ? new Date(pva.year || new Date().getFullYear(), pva.month - 1, 1).toLocaleDateString(this._lang(), { month: "long" })
