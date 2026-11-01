@@ -1,5 +1,13 @@
 # Build Log
 
+## 0.29.0 — 2026-11-01
+Version: 0.29.0
+Branch: feat/114-plan-amount-auto
+Changes:
+- feat(contracts): the plan amount of a recurring payment is "Automatisch" by default: the new price after a price change, otherwise the median, so one catch-up or double charge no longer inflates monthly and yearly costs
+- feat(contracts): the edit sheet lets you choose the plan amount (Automatisch, Höchster, Durchschnitt, Letzter, Median, Fester Betrag) and shows the resulting monthly and yearly cost right away
+- fix(contracts): a quarterly payment with one doubled instalment and a weekly meal kit with skipped weeks are detected again; skipped weeks or months show as "x × pausiert" while the cost keeps the full rhythm
+
 ## 0.28.0 — 2026-11-01
 Version: 0.28.0
 Branch: feat/111-contract-kinds

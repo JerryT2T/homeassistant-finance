@@ -107,7 +107,8 @@ def test_price_change_detected_with_step_beyond_tolerance():
 
 def test_plan_modes():
     amounts = [-10.0, -12.0, -20.0, -14.0]
-    assert plan_amount(amounts) == 20.0
+    assert plan_amount(amounts) == 13.0  # auto: no clean step -> median (#114)
+    assert plan_amount(amounts, "highest") == 20.0
     assert plan_amount(amounts, "average") == 14.0
     assert plan_amount(amounts, "last") == 14.0
     assert plan_amount(amounts, "median") == 13.0
@@ -120,7 +121,7 @@ def test_plan_mode_override_applies():
     (b,) = detect_series(
         rows, today=TODAY, overrides={a["id"]: {"plan_mode": "fixed", "plan_fixed_amount": 50}}
     )
-    assert a["plan_amount"] == -12.0 and b["plan_amount"] == -50.0
+    assert a["plan_amount"] == -11.0 and b["plan_amount"] == -50.0
 
 
 def test_legacy_monthly_detector_untouched():

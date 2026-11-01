@@ -183,13 +183,21 @@ INTERVALS: dict[str, tuple[int, int, int]] = {
     "yearly": (365, 1, 2),
 }
 IRREGULAR_INTERVALS = ("quarterly", "half_yearly", "yearly")
+# Intervals whose gaps may be whole multiples (skipped weeks or months, #114).
+PAUSABLE_INTERVALS = ("weekly", "monthly")
+MAX_PAUSE_PERIODS = 4
+PAUSE_PATTERN_MIN = 3  # skipped periods within the last 12 that make a pattern
+STEADY_PRICE_SPREAD = 1.01  # payments within 1 % count as one price
+CATCH_UP_RATIO = 1.8  # a single payment this much higher is a catch-up, not a new price
 
+PLAN_MODE_AUTO = "auto"  # new price after a confirmed step, else the median (#114)
 PLAN_MODE_HIGHEST = "highest"
 PLAN_MODE_AVERAGE = "average"
 PLAN_MODE_LAST = "last"
 PLAN_MODE_MEDIAN = "median"
 PLAN_MODE_FIXED = "fixed"
 PLAN_MODES = (
+    PLAN_MODE_AUTO,
     PLAN_MODE_HIGHEST,
     PLAN_MODE_AVERAGE,
     PLAN_MODE_LAST,
@@ -269,11 +277,37 @@ def _names_first_seen(rows: list[tuple[date, float, dict[str, Any]]]) -> list[st
     return names
 
 
+def _auto_amount(mags: list[float]) -> float:
+    """New price after a price step, else the median.
+
+    A step is two or more payments at the new amount, or one latest payment
+    after a steady price that is no catch-up or double charge (below 1.8x).
+    Any other odd payment never moves the plan: the median ignores it.
+    """
+    last = round(mags[-1], 2)
+    tail = 0
+    for m in reversed(mags):
+        if round(m, 2) != last:
+            break
+        tail += 1
+    before = mags[: len(mags) - tail]
+    if before:
+        base = statistics.median(before)
+        if tail >= 2 and round(base, 2) != last:
+            return last
+        steady = max(before) <= min(before) * STEADY_PRICE_SPREAD
+        if tail == 1 and steady and base and 0.5 < last / base < CATCH_UP_RATIO:
+            return last
+    return round(statistics.median(mags), 2)
+
+
 def plan_amount(
-    amounts: list[float], mode: str = PLAN_MODE_HIGHEST, fixed: float | None = None
+    amounts: list[float], mode: str = PLAN_MODE_AUTO, fixed: float | None = None
 ) -> float:
     """Amount (absolute) a series contributes to the plan, per ``mode``."""
     mags = [abs(a) for a in amounts] or [0.0]
+    if mode == PLAN_MODE_AUTO:
+        return _auto_amount(mags)
     if mode == PLAN_MODE_FIXED and fixed is not None:
         return round(abs(fixed), 2)
     if mode == PLAN_MODE_AVERAGE:
@@ -285,8 +319,24 @@ def plan_amount(
     return round(max(mags), 2)
 
 
+def _gap_periods(gap: int, nominal: int, tol: int, pausable: bool) -> int:
+    """How many periods ``gap`` spans (1 = on time), 0 when it fits none."""
+    if abs(gap - nominal) <= tol + 2:
+        return 1
+    if not pausable:
+        return 0
+    periods = round(gap / nominal)
+    if 2 <= periods <= MAX_PAUSE_PERIODS and abs(gap - periods * nominal) <= tol + 2:
+        return periods
+    return 0
+
+
 def _classify_interval(dates: list[date], date_tol: int) -> str | None:
-    """Return the interval name when every gap fits it, else None."""
+    """Return the interval name when every gap fits it, else None.
+
+    Weekly and monthly series may skip whole periods (a paused meal kit), as
+    long as at most a third of the gaps are pauses.
+    """
     gaps = [(dates[i + 1] - dates[i]).days for i in range(len(dates) - 1)]
     med = statistics.median(gaps)
     for name, (nominal, _per_year, min_occ) in INTERVALS.items():
@@ -296,14 +346,46 @@ def _classify_interval(dates: list[date], date_tol: int) -> str | None:
             continue
         if len(dates) < min_occ:
             return None
-        if all(abs(g - nominal) <= tol + 2 for g in gaps):
+        spans = [_gap_periods(g, nominal, tol, name in PAUSABLE_INTERVALS) for g in gaps]
+        if all(spans) and sum(1 for p in spans if p > 1) * 3 <= len(gaps):
             return name
         return None
     return None
 
 
+def _pauses(dates: list[date], interval: str, date_tol: int) -> tuple[int, int]:
+    """``(skipped periods overall, skipped within the last 12 periods)``."""
+    if interval not in PAUSABLE_INTERVALS:
+        return 0, 0
+    nominal = INTERVALS[interval][0]
+    tol = min(date_tol, 2) if interval == "weekly" else date_tol + 2
+    spans = [
+        max(1, _gap_periods((dates[i + 1] - dates[i]).days, nominal, tol, True))
+        for i in range(len(dates) - 1)
+    ]
+    total = sum(p - 1 for p in spans)
+    recent = covered = 0
+    for p in reversed(spans):
+        if covered >= 12:
+            break
+        recent += p - 1
+        covered += p
+    return total, recent
+
+
 def _amounts_consistent(amounts: list[float], tolerance: float) -> bool:
-    """Stable within ``tolerance`` between payments, allowing one price step."""
+    """Stable within ``tolerance`` between payments, allowing one price step
+    and, in a longer history, one single outlier (a doubled instalment)."""
+    if _steady(amounts, tolerance):
+        return True
+    if len(amounts) < 4:
+        return False
+    return any(
+        _steady(amounts[:i] + amounts[i + 1 :], tolerance) for i in range(len(amounts) - 1)
+    )
+
+
+def _steady(amounts: list[float], tolerance: float) -> bool:
     mags = [abs(a) for a in amounts]
     if not mags or min(mags) == 0:
         return False
@@ -633,7 +715,7 @@ def _build_series(
     dates = [r[0] for r in rows]
     amounts = [r[1] for r in rows]
     ov = overrides.get(sid, {})
-    mode = ov.get("plan_mode") if ov.get("plan_mode") in PLAN_MODES else PLAN_MODE_HIGHEST
+    mode = ov.get("plan_mode") if ov.get("plan_mode") in PLAN_MODES else PLAN_MODE_AUTO
     fixed = ov.get("plan_fixed_amount")
     plan = plan_amount(amounts, mode, fixed)
 
@@ -646,6 +728,7 @@ def _build_series(
     else:
         status = STATUS_ACTIVE
 
+    pauses, pauses_recent = _pauses(dates, interval, date_tol)
     sign = -1.0 if negative else 1.0
     price_change = None
     if len(amounts) >= 2 and round(abs(amounts[-1]), 2) != round(abs(amounts[-2]), 2):
@@ -681,7 +764,10 @@ def _build_series(
         "plan_mode": mode,
         "plan_fixed_amount": fixed if mode == PLAN_MODE_FIXED else None,
         "plan_amount": round(sign * plan, 2),
-        "annual_cost": round(plan * per_year, 2),
+        "annual_cost": round(plan * per_year, 2),  # full rhythm, pauses ignored
+        "pauses": pauses,
+        "pauses_recent": pauses_recent,
+        "pause_pattern": pauses_recent >= PAUSE_PATTERN_MIN,
         "status": status,
         "price_change": price_change,
         "category": _most_common_value([t.get("category") for t in txns], "other"),

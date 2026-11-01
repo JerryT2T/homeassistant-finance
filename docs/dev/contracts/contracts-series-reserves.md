@@ -18,9 +18,14 @@ payments each within the date tolerance of the predicted date, finite instalment
 a band, and a band that continues where another stopped is joined (price step), so a real price step is never split. The part with the earliest payment keeps the payee id;
 other parts get `sha1(name tag)`. Each part remembers its id under `alias_keys`: the payee key (earliest part), a
 name-independent hashed reference key and a hashed band key - never a number or an amount in clear.
-One price step is allowed (a series with two +-tolerance jumps is rejected). Fields: `id`, `alias_key`, `alias_keys`,
-`interval`, `next_expected`, `expected_amount`/`plan_amount`, `plan_mode` (highest default / average / last / median / fixed),
-`annual_cost`, `status` (`active` / `missing` > date tolerance overdue / `ended` > 2 periods overdue),
+One price step is allowed, and with >= 4 payments one single outlier (a doubled instalment); anything noisier is rejected.
+Pauses (#114): weekly and monthly series may skip whole periods (gaps of 2-4 periods) as long as at most a third of the
+gaps are pauses; quarterly and longer gaps stay strict. Fields: `id`, `alias_key`, `alias_keys`,
+`interval`, `next_expected`, `expected_amount`/`plan_amount`, `plan_mode` (`auto` default: the new price after a price step -
+two payments at it, or one after a steady price that is below 1.8x - else the median, so a single catch-up never moves the
+plan; explicit `highest` / `average` / `last` / `median` / `fixed`), `annual_cost` (always the full rhythm, pauses ignored),
+`pauses` (skipped periods), `pauses_recent` (within the last 12 periods), `pause_pattern` (>= 3 recent; the question whether
+to project with the pause rate belongs to the review flow #117), `status` (`active` / `missing` > date tolerance overdue / `ended` > 2 periods overdue),
 `price_change {previous,last,change_pct,increase,date}`, `category`, `account_key`, `account_type`, `account_person`.
 Confidence (#129, `series_confidence.score_series`): every series carries `confidence {score 0-100, reasons[]}` and
 `candidate` (score < 50). Signals: contract reference / direct-debit marker (+), card-payment marker (-), contract keywords
