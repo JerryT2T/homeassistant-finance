@@ -184,6 +184,33 @@ const CAT_DEFAULTS = {
 const FALLBACK_DEFAULTS = [1, 1, 0, "days"];
 const KINDS = ["contract", "subscription", "regular", "irregular"];
 const NO_NOTICE = new Set(["regular", "irregular"]);
+const PLAN_MODES = ["auto", "highest", "average", "last", "median", "fixed"];
+const PER_YEAR = { weekly: 52, monthly: 12, quarterly: 4, half_yearly: 2, yearly: 1 };
+
+// Mirrors recurring.plan_amount (#114) for the live preview in the sheet.
+function planAmount(amounts, mode, fixed) {
+  const m = (amounts || []).map((a) => Math.abs(a));
+  if (!m.length) return 0;
+  const r2 = (v) => Math.round(v * 100) / 100;
+  const median = (xs) => { const s = [...xs].sort((a, b) => a - b); const h = s.length >> 1; return s.length % 2 ? s[h] : (s[h - 1] + s[h]) / 2; };
+  if (mode === "fixed" && fixed != null && fixed !== "") return r2(Math.abs(Number(fixed)));
+  if (mode === "average") return r2(m.reduce((a, b) => a + b, 0) / m.length);
+  if (mode === "last") return r2(m[m.length - 1]);
+  if (mode === "median") return r2(median(m));
+  if (mode === "highest" || mode === "fixed") return r2(Math.max(...m));  // fixed without amount: like the server
+  const last = r2(m[m.length - 1]);
+  let tail = 0;
+  for (let i = m.length - 1; i >= 0 && r2(m[i]) === last; i--) tail++;
+  const before = m.slice(0, m.length - tail);
+  if (before.length) {
+    const base = median(before);
+    if (tail >= 2 && r2(base) !== last) return last;
+    const steady = Math.max(...before) <= Math.min(...before) * 1.01;
+    if (tail === 1 && steady && base && last / base > 0.5 && last / base < 1.8) return last;
+  }
+  return r2(median(m));
+}
+
 const TERM_FIELDS = ["min_term_months", "renewal_months", "notice_value", "notice_unit", "notice_reference"];
 
 function tr(key, vars = {}) {
@@ -479,6 +506,7 @@ class FdContracts extends HTMLElement {
       const tip = tr("ct.price_change", { previous: this._m(Math.abs(pc.previous), 2), last: this._m(Math.abs(pc.last), 2) });
       badges.push(`<span class="badge info" data-tip="${e(tip)}" aria-label="${e(tip)}">${pc.increase ? "▲ " : "▼ "}${e(pct.replace(/^\+/, "+") + " %")}</span>`);
     }
+    if (!ended && c.pauses_recent > 0) badges.push(`<span class="badge">${e(tr("ct.paused", { n: c.pauses_recent }))}</span>`);
     if (c.special_termination_available) badges.push(`<span class="badge ok">${e(tr("ct.special"))}</span>`);
     const interval = tr(`ct.interval.${c.interval}`);
     const sub = [interval, ended ? "" : tr("ct.next", { date: this._date(c.next_expected) }), this._ownerLabel(c.owner)].filter(Boolean).join(" · ");
@@ -555,6 +583,8 @@ class FdContracts extends HTMLElement {
         notice_value: k.notice_value, notice_unit: k.notice_unit, notice_reference: k.notice_reference,
         owner: c.owner || "shared", special_termination: !!k.special_termination,
         kind: this._kindOf(c),
+        plan_mode: c.plan_mode || "auto",
+        plan_fixed_amount: c.plan_fixed_amount ?? "",
       },
     };
     this._paintSheet();
@@ -588,6 +618,10 @@ class FdContracts extends HTMLElement {
   <p class="muted" style="margin:0">${e(this._catLabel(s.c.category))} · ${e(tr(`ct.interval.${s.c.interval}`))}</p>
   <div class="lbl">${e(tr("ct.f.kind"))}</div>
   <div class="opts" role="radiogroup" aria-label="${e(tr("ct.f.kind"))}">${KINDS.map((k) => opt("kind", k, tr(`ct.kind.${k}`), d.kind)).join("")}</div>
+  <div class="lbl">${e(tr("ct.f.plan_mode"))}</div>
+  <div class="opts" role="radiogroup" aria-label="${e(tr("ct.f.plan_mode"))}">${PLAN_MODES.map((m) => opt("plan_mode", m, tr(`ct.mode.${m}`), d.plan_mode)).join("")}</div>
+  ${d.plan_mode === "fixed" ? `<label for="f-fixed">${e(tr("ct.f.fixed"))}</label><input id="f-fixed" type="number" min="0" step="0.01" data-f="plan_fixed_amount" value="${e(String(d.plan_fixed_amount ?? ""))}">` : ""}
+  <div class="hint" id="planprev">${e(this._previewText(s))}</div>
   ${notice ? `<label for="f-start">${e(tr("ct.f.start"))}</label><input id="f-start" type="date" data-f="start" value="${e(d.start)}">
   <label for="f-term">${e(tr("ct.f.min_term"))}</label><input id="f-term" type="number" min="0" max="240" data-f="min_term_months" value="${d.min_term_months ?? ""}">
   <label for="f-ren">${e(tr("ct.f.renewal"))}</label><input id="f-ren" type="number" min="1" max="240" data-f="renewal_months" value="${d.renewal_months ?? ""}">
@@ -606,6 +640,13 @@ class FdContracts extends HTMLElement {
     <button type="button" class="btn ghost" data-act="cancel">${e(tr("ct.cancel"))}</button>
     <button type="button" class="btn" data-act="save" ${s.saving ? "disabled" : ""}>${e(tr(s.saving ? "ct.saving" : "ct.save"))}</button></div>
 </div></div>`;
+  }
+
+  _previewText(s) {
+    const plan = planAmount(s.c.amounts, s.d.plan_mode, s.d.plan_fixed_amount);
+    const year = plan * (PER_YEAR[s.c.interval] || 12);
+    return tr(s.d.plan_mode === "auto" ? "ct.plan_preview_auto" : "ct.plan_preview",
+      { month: this._m(year / 12, 2), year: this._m(year, 2) });
   }
 
   async _save() {
@@ -628,6 +669,17 @@ class FdContracts extends HTMLElement {
       if (s.touched.has(f) && !same(next[f], before)) body[f] = next[f];
     }
     if (d.owner !== (s.c.owner || "shared")) body.owner = d.owner;
+    const mode = d.plan_mode === "auto" ? null : d.plan_mode;
+    const fixed = mode === "fixed" ? num(d.plan_fixed_amount) : null;
+    if (mode === "fixed" && fixed == null) {
+      s.error = tr("ct.fixed_missing");
+      this._paintSheet();
+      return;
+    }
+    if ((s.c.plan_mode || "auto") !== d.plan_mode || (mode === "fixed" && fixed !== s.c.plan_fixed_amount)) {
+      body.plan_mode = mode;
+      body.plan_fixed_amount = fixed;
+    }
     // The suggested kind is stored as null, so a better suggestion later still applies.
     if (d.kind !== this._kindOf(s.c)) body.kind = d.kind === s.c.kind_suggested ? null : d.kind;
     if (s.reset) {
@@ -691,7 +743,7 @@ class FdContracts extends HTMLElement {
           for (const f of TERM_FIELDS) if (!s.touched.has(f) && stored[f] == null) s.d[f] = def[f];
           s.d.kind = t.dataset.val;
         } else s.d[grp] = t.dataset.val;
-        if (grp !== "kind" && grp !== "owner") s.touched.add(grp === "special" ? "special_termination" : grp);
+        if (grp !== "kind" && grp !== "owner" && grp !== "plan_mode") s.touched.add(grp === "special" ? "special_termination" : grp);
         return this._paintSheet();
       }
       switch (t.dataset.act) {
@@ -716,6 +768,8 @@ class FdContracts extends HTMLElement {
       if (f && this._sheet) {
         this._sheet.d[f] = ev.target.value;
         this._sheet.touched.add(f);
+        const prev = this.shadowRoot.getElementById("planprev");
+        if (prev && f === "plan_fixed_amount") prev.textContent = this._previewText(this._sheet);
       }
     });
     sh.addEventListener("keydown", (ev) => {

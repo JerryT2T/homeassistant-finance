@@ -68,6 +68,7 @@ def score_series(
     interval: str,
     category: str,
     reference: str = "",
+    pauses: int = 0,
 ) -> dict[str, Any]:
     """``{"score", "reasons"}`` for one series (``rows`` date-sorted)."""
     texts = [_remittance(r[2]) for r in rows]
@@ -108,6 +109,9 @@ def score_series(
             add(10, "regular_day")
         elif spread > 4:
             add(-5, "irregular_day")
+
+    if pauses:  # held together by skipped periods: less sure (#114)
+        add(-10, "paused")
 
     if category in _CONTRACT_CATEGORIES:
         add(15, "contract_category")

@@ -45,7 +45,6 @@
       ]
     },
     "weekly_meal_kit_with_skips": {
-      "xfail": "#114",
       "contracts": [
         {"creditor": "kochkiste", "interval": "weekly", "plan_amount": 59.90, "kind": "regular", "category": "food_household"}
       ]
@@ -56,7 +55,6 @@
       ]
     },
     "quarterly_with_doubled_instalment": {
-      "xfail": "#114",
       "contracts": [
         {"creditor": "hausrat muster", "interval": "quarterly", "plan_amount": 150.00, "kind": "contract", "category": "housing_cold"}
       ]
