@@ -45,6 +45,8 @@ POT_OWNER_SHARED = "shared"
 POT_KIND_SPEND = "spend"
 POT_KIND_RESERVE = "reserve"
 POT_KINDS = (POT_KIND_SPEND, POT_KIND_RESERVE)
+POT_AUTO_REMAINDER = "remainder"
+POT_AUTO_KINDS = (POT_AUTO_REMAINDER,)
 
 STATUS_GOOD = "good"
 STATUS_KNAPP = "knapp"
@@ -73,6 +75,8 @@ class Pot:
     # week start (ISO Monday) -> "accept" | "drop": what the user decided about the
     # carry-over into that week. No entry = default (carry stays in the balance).
     carry_decisions: dict[str, str] = field(default_factory=dict)
+    # Set when the plan wizard manages the pot ("remainder" = per-person Taschengeld).
+    auto: str | None = None
 
     @property
     def is_shared(self) -> bool:
@@ -89,6 +93,7 @@ class Pot:
             "account_key": self.account_key,
             "account_keys": None if self.account_keys is None else list(self.account_keys),
             "carry_decisions": dict(self.carry_decisions),
+            "auto": self.auto,
         }
 
     @classmethod
@@ -114,6 +119,9 @@ class Pot:
             raise ValueError("category_keys must be a list")
         keys = list(dict.fromkeys(str(k).strip() for k in raw_keys if str(k).strip()))
         pot_id = str(data.get("id") or "").strip() or slugify_pot(name, owner)
+        auto = data.get("auto")
+        if auto is not None and auto not in POT_AUTO_KINDS:
+            raise ValueError("Unknown auto marker")
         return cls(
             id=pot_id,
             name=name,
@@ -124,6 +132,7 @@ class Pot:
             account_key=str(data.get("account_key") or "").strip()[:80],
             account_keys=_clean_account_keys(data.get("account_keys")),
             carry_decisions=_clean_decisions(data.get("carry_decisions")),
+            auto=auto,
         )
 
 

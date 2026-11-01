@@ -163,6 +163,15 @@ Plan sign everywhere (expense positive); income positive.
 - `PUT /plan_wizard` body (all optional) `{step, status (default done), current_step, complete}` -> same
   payload. Marking a step done/skipped moves `current_step` to the first pending step. Skippable:
   fixed, pots, goals. Errors 400 `unknown_step, invalid_status, not_skippable, invalid_complete`.
+  - `{restart: true}` (rebuild): removes all plan positions and all income entries, resets all steps
+    to pending, `completed=false`, `current_step="income"`; pots and goals untouched. Returns the normal
+    GET payload. Admin only; 400 `demo_mode` in demo mode.
+  - `{complete: true}` additionally upserts one pot "Taschengeld" per person (`owner` = person,
+    `cycle_budget` = `max(0, pocket_money)`, `auto: "remainder"`). An existing auto pot of the person
+    is updated, never duplicated; a manual pot named "Taschengeld" is left alone; pocket money <= 0
+    sets the auto pot to 0 (kept). The response adds `remainder_pots: [{person, pot_id, cycle_budget}]`.
+    Pots/goals use `"shared"` as shared owner, the plan `__shared__`. Pots carry optional `auto`
+    (`null` | `"remainder"`) in every pot dict.
 - `GET /plan_wizard/gate` -> `{ready, cycles, required: 3, earliest_booked, ready_from}`. Full payday
   cycles between the earliest booked date (min over all ledger accounts) and today. Household payday =
   first confirmed person payday, else day 1 (calendar month); day clamped to month length. The partial
@@ -177,7 +186,9 @@ Plan sign everywhere (expense positive); income positive.
 - `GET/POST /plan_wizard/fixed`: same as `GET/POST /setup/plan_prefill` (both stay).
 - `GET /plan_wizard/result` -> `{income_total, fixed_total, pots_total, goals_total, left_over, balanced,
   per_person[{person, income, share, pocket_money}], history{months, avg_income, avg_spent,
-  avg_left_over}}`, monthly. `fixed_total` = all active plan positions (fixed + buffer, reimbursements
+  avg_left_over}, remainder{total, per_person[{person, amount}]}}`, monthly. `remainder` = `left_over`
+  split as `pocket_money` (negative allowed = "es fehlen X EUR"); auto-remainder pots are excluded from
+  `pots_total` and the remainder so re-running never shrinks it. `fixed_total` = all active plan positions (fixed + buffer, reimbursements
   net); `pots_total` = sum of pot `cycle_budget`; `goals_total` = `reserve_topup.monthly_amount` +
   `savings_rate` % of `income_total` + `target_by_date` amount / months left (min 1); `category_cap`
   adds nothing. `left_over = income - fixed - pots - goals`, `balanced = left_over >= 0`.

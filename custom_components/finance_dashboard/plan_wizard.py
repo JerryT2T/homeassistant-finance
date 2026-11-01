@@ -359,6 +359,10 @@ def build_result(
                 "pocket_money": round(income - shared * share - own, 2),
             }
         )
+    remainder = {
+        "total": left_over,
+        "per_person": [{"person": x["person"], "amount": x["pocket_money"]} for x in per_person],
+    }
     return {
         "income_total": round(income_total, 2),
         "fixed_total": round(fixed_total, 2),
@@ -367,5 +371,50 @@ def build_result(
         "left_over": left_over,
         "balanced": left_over >= 0,
         "per_person": per_person,
+        "remainder": remainder,
         "history": history,
     }
+
+
+REMAINDER_POT_NAME = "Taschengeld"
+
+
+async def async_upsert_remainder_pots(manager: Any, result: dict[str, Any]) -> list[dict[str, Any]]:
+    """Upsert one auto "Taschengeld" pot per person from the result's pocket money.
+
+    An existing auto-remainder pot of the person is updated, never duplicated; a
+    manually created pot of the same name is left alone. Pocket money <= 0 sets the
+    auto pot to 0 (kept, not deleted). Pots use ``"shared"`` as shared owner, the
+    plan ``__shared__``; only real persons get a pot, so the keys never meet here.
+    """
+    from .pots import POT_AUTO_REMAINDER
+
+    out = []
+    for row in result["per_person"]:
+        person = row["person"]
+        budget = round(max(0.0, float(row["pocket_money"])), 2)
+        existing = next(
+            (p for p in manager.pots if p.auto == POT_AUTO_REMAINDER and p.owner == person),
+            None,
+        )
+        if existing is not None:
+            saved = await manager.async_save_pot(
+                {**existing.to_dict(), "cycle_budget": budget}, replace=True
+            )
+        else:
+            saved = await manager.async_save_pot(
+                {
+                    "name": REMAINDER_POT_NAME,
+                    "owner": person,
+                    "cycle_budget": budget,
+                    "auto": POT_AUTO_REMAINDER,
+                },
+                replace=False,
+            )
+        out.append({"person": person, "pot_id": saved["id"], "cycle_budget": saved["cycle_budget"]})
+    return out
+
+
+def restart_state() -> dict[str, Any]:
+    """Fresh wizard state for a rebuild: all steps pending, not completed."""
+    return default_state()
