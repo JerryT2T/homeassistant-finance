@@ -426,6 +426,7 @@ _REF = re.compile(
     re.IGNORECASE,
 )
 MIN_BAND_OCCURRENCES = 3
+BAND_TOLERANCE = 0.05  # a stream inside a mixed payee keeps its amount; steps are joined
 _FINITE_INSTALMENT = re.compile(r"\b(?:teil|rate)\s*\d+\s*(?:/|von|of)\s*\d+\b", re.IGNORECASE)
 
 
@@ -484,14 +485,20 @@ def _as_series(rows, date_tol: int, amount_tol: float):
 
 
 def _amount_bands(rows, tolerance: float):
-    """Rows clustered by amount (each band within ``tolerance`` of its smallest)."""
+    """Rows clustered around their most frequent amounts, each band within
+    ``tolerance`` of its anchor; a price step becomes two bands that
+    :func:`_join_successors` puts back together."""
+    left = list(rows)
     bands: list[list[tuple[date, float, dict[str, Any]]]] = []
-    for row in sorted(rows, key=lambda r: abs(r[1])):
-        if bands and abs(row[1]) <= abs(bands[-1][0][1]) * (1 + tolerance):
-            bands[-1].append(row)
-        else:
-            bands.append([row])
-    return [sorted(b, key=lambda r: r[0]) for b in bands]
+    while left:
+        counts: dict[float, int] = defaultdict(int)
+        for row in left:
+            counts[round(abs(row[1]), 2)] += 1
+        anchor = max(counts, key=lambda a: (counts[a], a))
+        band = [r for r in left if abs(abs(r[1]) - anchor) <= anchor * tolerance]
+        left = [r for r in left if r not in band]
+        bands.append(sorted(band, key=lambda r: r[0]))
+    return bands
 
 
 def _whole_or_bands(rows, date_tol: int, amount_tol: float, tag: str = "", ref: str = ""):
@@ -499,7 +506,9 @@ def _whole_or_bands(rows, date_tol: int, amount_tol: float, tag: str = "", ref: 
     if whole:
         return [_Part(whole[0], whole[1], tag, ref)]
     plain = [r for r in rows if not _FINITE_INSTALMENT.search(_remittance(r[2]))]
-    found = [_as_series(band, date_tol, amount_tol) for band in _amount_bands(plain, amount_tol)]
+    found = [
+        _as_series(band, date_tol, amount_tol) for band in _amount_bands(plain, BAND_TOLERANCE)
+    ]
     streams = sorted(
         (f for f in found if f and _band_is_regular(f[0], f[1], date_tol)),
         key=lambda f: f[0][0][0],
