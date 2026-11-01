@@ -117,10 +117,19 @@ _STATE = _words(
 )
 _CAPITAL = _words(r"zins\w*", r"dividende\w*", r"ausschüttung\w*", r"ertrag\w*", r"kupon")
 _REFUND = _words(
-    r"erstattung\w*", r"rückerstattung\w*", r"gutschrift\w*", r"storno\w*",
+    r"erstattung\w*", r"rückerstattung\w*", r"rueckerstattung\w*", r"gutschrift\w*", r"storno\w*",
     r"retoure\w*", r"refund\w*", r"rückzahlung\w*", r"rueckzahlung\w*",
 )
 _WORK = _words(r"gehalt\w*", r"lohn\w*", r"salary", r"bezüge", r"vergütung\w*", r"honorar\w*")
+
+
+# Insurers and health funds: under health they are a contract, not a doctor.
+INSURER = re.compile(
+    r"(?<![a-z0-9äöüß])(\w*versicher\w*|krankenkasse|pflegekasse|police|tk|aok|barmer|dak"
+    r"|ikk|hkk|bkk\w*|allianz|huk\w*|devk|ergo|axa|debeka|signal iduna|hansemerkur"
+    r"|generali|cosmosdirekt)(?![a-z0-9äöüß])",
+    re.IGNORECASE,
+)
 
 
 def _first(text: str, splits: tuple[tuple[re.Pattern[str], str], ...]) -> str | None:
@@ -189,6 +198,11 @@ def migrate_targets(slug: str) -> tuple[str, ...]:
     if default != OTHER:
         areas.insert(0, default)
     return tuple(dict.fromkeys(areas)) or (default,)
+
+
+def is_refund(text: str) -> bool:
+    """A refund or credit note in the booking text."""
+    return bool(_REFUND.search(text))
 
 
 def income_area_for(text: str) -> str:

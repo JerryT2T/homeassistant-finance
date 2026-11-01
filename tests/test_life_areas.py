@@ -231,3 +231,62 @@ def test_number_entities_move_to_the_new_slugs(monkeypatch):
     assert reg.updates == {"number.a": "finance_dashboard_budget_groceries"}
     # income has no target; housing's target already exists (no duplicate)
     assert reg.removed == ["number.b", "number.d"]
+
+
+# --- QA #112 regressions -----------------------------------------------------
+
+
+def _cat(text, amount):
+    from custom_components.finance_dashboard.categorizer import TransactionCategorizer
+
+    return TransactionCategorizer().categorize(
+        {"remittanceInformationUnstructured": text, "transactionAmount": {"amount": str(amount)}}
+    )
+
+
+@pytest.mark.parametrize(
+    ("text", "amount", "expected"),
+    [
+        ("Deutsche Rentenversicherung Rente", 1200, "income_state"),
+        ("Erstattung Finanzamt", 100, "income_refund"),
+        ("Rueckerstattung Versicherung", 50, "income_refund"),
+        ("Unterhalt von Vater", 300, "income_private"),
+        ("Miete Dezember", -900, "housing_cold"),
+        ("Rentenversicherung Beitrag", -100, "health"),
+        ("Betrag gezahlt", -20, "other"),
+        ("Tierarzt Praxis", -80, "health"),
+        ("Metropol Kino", -12, "leisure"),
+    ],
+)
+def test_direction_and_short_keywords(text, amount, expected):
+    assert _cat(text, amount) == expected
+
+
+def test_savings_goal_caps_move_with_their_category(monkeypatch):
+    disk = _Disk()
+    disk.files[tm.STORAGE_KEY_GOALS] = {
+        "goals": [
+            {"kind": "category_cap", "name": "Essen", "category": "food", "cap_amount": 500},
+            {"kind": "savings_rate", "name": "Rate", "rate_percent": 10},
+        ]
+    }
+    _run(disk, monkeypatch)
+    goals = disk.files[tm.STORAGE_KEY_GOALS]["goals"]
+    assert goals[0]["category"] == "groceries"
+    assert "category" not in goals[1]
+
+
+def test_insurer_without_the_word_versicherung_is_a_contract():
+    from custom_components.finance_dashboard.contract_kind import KIND_CONTRACT, suggest_kind
+
+    row = (None, -210.0, {"remittanceInformationUnstructured": "Beitrag", "creditorName": "AOK Nordost"})
+    assert suggest_kind([row] * 4, "monthly", "health") == KIND_CONTRACT
+
+
+def test_demo_data_speaks_only_life_areas():
+    from custom_components.finance_dashboard import demo
+
+    allowed = {*ALL_CATEGORIES}
+    assert {t["cat"] for t in demo._TRANSACTION_TEMPLATES} <= allowed  # noqa: SLF001
+    assert {t["category"] for t in demo._RECURRING_TEMPLATES} <= allowed  # noqa: SLF001
+    assert {k for p in demo.DEMO_POTS for k in p["category_keys"]} <= allowed

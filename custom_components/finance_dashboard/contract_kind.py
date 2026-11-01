@@ -21,6 +21,8 @@ import re
 from datetime import date
 from typing import Any
 
+from .life_areas import INSURER as _INSURANCE
+
 KIND_CONTRACT = "contract"
 KIND_SUBSCRIPTION = "subscription"
 KIND_REGULAR = "regular"
@@ -46,7 +48,6 @@ _TELECOM = re.compile(
     re.IGNORECASE,
 )
 _FITNESS = re.compile(r"\b(fitness\w*|mcfit|gym|urban sports|sportverein|verein)\b", re.IGNORECASE)
-_INSURANCE = re.compile(r"\b(\w*versicherung\w*|krankenkasse|pflegekasse|police)\b", re.IGNORECASE)
 # Life areas as the categorizer writes them (#112). Media is a contract only
 # with the telecom trait; health only with an insurance word (else a doctor).
 _CONTRACT_CATEGORIES = {"housing_cold", "housing_warm", "finance"}

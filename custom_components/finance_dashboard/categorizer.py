@@ -14,7 +14,7 @@ import re
 from typing import Any
 
 from .const import CATEGORIZATION_RULES, CATEGORY_OTHER
-from .life_areas import income_area_for, is_income
+from .life_areas import INCOME_REFUND, income_area_for, is_income, is_refund
 from .text_norm import is_processor_only, processor_remittance
 
 _LOGGER = logging.getLogger(__name__)
@@ -57,7 +57,7 @@ EXTRA_RULES: dict[str, list[str]] = {
     "mobility": [
         "esso", "total energies", "totalenergies", "jet tank", "hem tank",
         "flixbus", "bolt", "freenow", "free now", "sixt", "parkhaus", "parkgebühr",
-        "kvb", "bvg", "rmv", "vrs", "mvg", "hvv", "lime", "tier ",
+        "kvb", "bvg", "rmv", "vrs", "mvg", "hvv", "lime", "tier mobility",
     ],
     "health": [
         "allianz", "huk", "devk", "ergo", "axa", "generali", "signal iduna", "debeka",
@@ -69,7 +69,7 @@ EXTRA_RULES: dict[str, list[str]] = {
     ],
 }
 
-_WORD_MAX = 3  # keywords this short (after stripping) must start a word; <=2 chars are whole words
+_WORD_MAX = 3  # keywords this short (after stripping) are whole words ("gez" never hits "gezahlt")
 
 
 def _kw_match(keyword: str, haystack: str) -> bool:
@@ -78,7 +78,7 @@ def _kw_match(keyword: str, haystack: str) -> bool:
     if not kw:
         return False
     if len(kw) <= _WORD_MAX:
-        tail = "(?![a-z0-9äöüß])" if len(kw) <= 2 else ""  # noqa: PLR2004
+        tail = "(?![a-z0-9äöüß])"
         return re.search(rf"(?<![a-z0-9äöüß]){re.escape(kw)}{tail}", haystack) is not None
     return kw in haystack
 
@@ -145,9 +145,17 @@ class TransactionCategorizer:
         # Check amount direction for income detection
         amount = float(transaction.get("transactionAmount", {}).get("amount", 0))
 
-        # Match against rules; income rules only for money coming in
+        # Money coming in: income rules first, then a refund, only then the
+        # areas (a shop's credit nets in its area). Income rules never match
+        # money going out ("Zinsen" on a loan is a cost).
+        if amount > 0:
+            for category, keywords in self._rules.items():
+                if is_income(category) and any(_kw_match(k, search_lower) for k in keywords):
+                    return category
+            if is_refund(search_lower):
+                return INCOME_REFUND
         for category, keywords in self._rules.items():
-            if is_income(category) and amount <= 0:
+            if is_income(category):
                 continue
             for keyword in keywords:
                 if _kw_match(keyword, search_lower):

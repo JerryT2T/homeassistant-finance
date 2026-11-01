@@ -40,6 +40,7 @@ BACKUP_SUFFIX = "_backup_taxonomy_v1"
 STORAGE_KEY_MERCHANTS = f"{DOMAIN}_merchants"
 STORAGE_KEY_AI = f"{DOMAIN}.ai_provider"
 STORAGE_KEY_CONTRACTS = f"{DOMAIN}_contracts"
+STORAGE_KEY_GOALS = f"{DOMAIN}.savings_goals"
 
 # Budget-limit number entities: old unique-id slug -> new one. A slug without
 # a target (income, transfers) loses its entity; limits for them never made sense.
@@ -126,12 +127,21 @@ def migrate_contracts(data: dict[str, Any]) -> bool:
     return changed
 
 
+def migrate_goals(data: dict[str, Any]) -> bool:
+    changed = False
+    for goal in data.get("goals") or []:
+        if isinstance(goal, dict) and goal.get("kind") == "category_cap":
+            changed |= _rule_slug(goal, str(goal.get("name") or ""))
+    return changed
+
+
 _STORES = (
     (STORAGE_KEY_MERCHANTS, migrate_merchants),
     (STORAGE_KEY_AI, migrate_ai),
     (STORAGE_KEY_BUDGET_PLAN, migrate_plan),
     (STORAGE_KEY_POTS, migrate_pots),
     (STORAGE_KEY_CONTRACTS, migrate_contracts),
+    (STORAGE_KEY_GOALS, migrate_goals),
 )
 
 

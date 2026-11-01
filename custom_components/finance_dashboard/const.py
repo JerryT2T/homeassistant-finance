@@ -145,7 +145,7 @@ CATEGORIZATION_RULES = {
     ],
     CATEGORY_HOUSING_COLD: [
         "miete",
-        "rent",
+        "rent payment",
         "wohnung",
         "hausgeld",
         "mietpool",
@@ -176,7 +176,8 @@ CATEGORIZATION_RULES = {
         "kaufland",
         "penny",
         "globus",
-        "metro",
+        "metro cash",
+        "metro markt",
         "hellofresh",
         "supermarkt",
         "lebensmittel",
@@ -227,6 +228,12 @@ CATEGORIZATION_RULES = {
         "familienkasse",
         "bundesagentur",
         "rentenversicherung",
+        "rente ",
+    ],
+    CATEGORY_INCOME_PRIVATE: [
+        "unterhalt",
+        "untermiete",
+        "taschengeld",
     ],
     CATEGORY_INCOME_CAPITAL: [
         "zinsen",

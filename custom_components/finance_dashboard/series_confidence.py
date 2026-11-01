@@ -22,6 +22,7 @@ from .const import (
     CATEGORY_LEISURE,
     CATEGORY_MEDIA,
 )
+from .life_areas import INSURER
 
 CANDIDATE_BELOW = 50
 REASON_OWN_NAME = "own_name"  # paid to an own account holder's name (#109)
@@ -55,9 +56,7 @@ _CONTRACT_CATEGORIES = {
 _EVERYDAY_CATEGORIES = {CATEGORY_GROCERIES, CATEGORY_LEISURE}
 # Health holds both the insurance (a contract) and the doctor (habit): the
 # text decides which side it counts on.
-_INSURANCE = re.compile(
-    r"(versicher\w*|krankenkasse|police|\bpflegekasse|\btk\b|\baok\b)", re.IGNORECASE
-)
+_INSURANCE = INSURER
 _MONTH_BASED = ("monthly", "quarterly", "half_yearly", "yearly")
 
 

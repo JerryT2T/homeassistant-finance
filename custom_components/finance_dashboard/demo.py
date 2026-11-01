@@ -13,6 +13,8 @@ import random
 from datetime import datetime
 from typing import Any
 
+from .life_areas import migrate_slug
+
 # ---------------------------------------------------------------------------
 # Demo bank accounts
 # ---------------------------------------------------------------------------
@@ -417,6 +419,16 @@ _RECURRING_TEMPLATES: list[dict[str, Any]] = [
 ]
 
 # Month names for German formatting
+def _migrate_templates() -> None:
+    """Demo templates name legacy categories; translate them to life areas (#112)."""
+    for tpl in _TRANSACTION_TEMPLATES:
+        tpl["cat"] = migrate_slug(tpl["cat"], f"{tpl['creditor']} {tpl.get('desc', '')}")
+    for tpl in _RECURRING_TEMPLATES:
+        tpl["category"] = migrate_slug(tpl["category"], tpl["creditor"])
+
+
+_migrate_templates()
+
 _MONTH_NAMES = [
     "Januar",
     "Februar",
@@ -471,7 +483,7 @@ def generate_demo_data() -> dict[str, Any]:
             total_expenses += abs(amount)
         category_totals[cat] = category_totals.get(cat, 0) + amount
 
-    fixed_cats = {"housing", "loans", "utilities", "insurance"}
+    fixed_cats = {"housing_cold", "housing_warm", "finance", "health"}
     fixed_total = sum(abs(category_totals.get(c, 0)) for c in fixed_cats)
     variable_total = total_expenses - fixed_total
 
@@ -504,13 +516,13 @@ def generate_demo_data() -> dict[str, Any]:
 
     # Budget limits (demo defaults)
     budgets = {
-        "housing": 1200.0,
-        "food": 600.0,
-        "transport": 200.0,
-        "subscriptions": 100.0,
-        "insurance": 150.0,
-        "utilities": 200.0,
-        "loans": 300.0,
+        "housing_cold": 1200.0,
+        "housing_warm": 200.0,
+        "groceries": 600.0,
+        "mobility": 200.0,
+        "media": 100.0,
+        "health": 150.0,
+        "finance": 300.0,
         "other": 200.0,
     }
 
@@ -576,7 +588,7 @@ def _build_transactions(
 
         # Jitter amount by ±8% (except fixed amounts like rent, salary)
         base = tpl["base"]
-        if abs(base) > 100 and tpl["cat"] not in ("income", "housing", "loans"):
+        if abs(base) > 100 and tpl["cat"] not in ("income_work", "housing_cold", "finance"):
             jitter = rng.uniform(-0.08, 0.08)
             amount = round(base * (1 + jitter), 2)
         elif abs(base) < 100:
@@ -717,7 +729,7 @@ DEMO_POTS: list[dict[str, Any]] = [
         "name": "Lebensmittel",
         "owner": "shared",
         "cycle_budget": 520.0,
-        "category_keys": ["food"],
+        "category_keys": ["groceries"],
         "kind": "spend",
     },
     {
@@ -725,7 +737,7 @@ DEMO_POTS: list[dict[str, Any]] = [
         "name": "Anna Freizeit",
         "owner": "Anna",
         "cycle_budget": 180.0,
-        "category_keys": ["other", "subscriptions"],
+        "category_keys": ["other", "leisure", "media"],
         "kind": "spend",
     },
     {
@@ -733,7 +745,7 @@ DEMO_POTS: list[dict[str, Any]] = [
         "name": "Max Mobilität",
         "owner": "Max",
         "cycle_budget": 140.0,
-        "category_keys": ["transport"],
+        "category_keys": ["mobility"],
         "kind": "spend",
     },
     {
@@ -785,7 +797,7 @@ def generate_demo_home(
             "bookingDate": day.isoformat(),
             "transactionAmount": {"amount": str(amount), "currency": "EUR"},
             "creditorName": creditor,
-            "category": cat,
+            "category": migrate_slug(cat, creditor),
             "_account_id": acc_id,
             "_account_type": acc.get("type", "personal"),
             "_account_person": acc.get("person", ""),

@@ -175,7 +175,6 @@ const FB = {
 // Old servers without `contract.defaults`: mirrors contracts.CATEGORY_DEFAULTS.
 const CAT_DEFAULTS = {
   health: [12, 12, 3, "months"],
-  media: [24, 12, 1, "months"],
   housing_warm: [12, 12, 1, "months"],
   finance: [12, 12, 3, "months"],
   housing_cold: [12, 12, 3, "months"],
