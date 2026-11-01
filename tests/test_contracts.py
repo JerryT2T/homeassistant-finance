@@ -593,3 +593,25 @@ def test_parts_of_one_payee_never_share_an_id():
         used.add(sid)
         ids.append(sid)
     assert len(set(ids)) == 3
+
+
+def test_a_reference_on_two_invoices_does_not_split_a_contract():
+    rows = monthly([-40] * 5, name="Stadtwerke", start=date(2026, 1, 10))
+    for r in rows:
+        r["remittanceInformationUnstructured"] = "Abschlag Kd-Nr 5550123"
+    rows += [
+        txn(
+            "2026-02-14",
+            -12,
+            "Stadtwerke",
+            remittanceInformationUnstructured="Vertrag 77001 Gebuehr",
+        ),
+        txn(
+            "2026-04-02",
+            -35,
+            "Stadtwerke",
+            remittanceInformationUnstructured="Vertrag 77001 Zaehler",
+        ),
+    ]
+    (s,) = detect_series(rows, today=TODAY)
+    assert s["occurrences"] == 5

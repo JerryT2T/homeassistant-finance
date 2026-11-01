@@ -544,7 +544,10 @@ def _series_parts(rows, date_tol: int, amount_tol: float) -> list[_Part]:
     by_ref: dict[str, list[tuple[date, float, dict[str, Any]]]] = defaultdict(list)
     for row in rows:
         by_ref[contract_reference(_remittance(row[2]))].append(row)
-    recurring = {ref: rs for ref, rs in by_ref.items() if ref and len(rs) >= 2}
+    # only a reference whose payments are a series of their own is a contract
+    recurring = {
+        ref: rs for ref, rs in by_ref.items() if ref and _as_series(rs, date_tol, amount_tol)
+    }
     if len(recurring) >= 2 and _run_in_parallel(list(recurring.values())):
         parts: list[_Part] = []
         for ref, part_rows in recurring.items():
