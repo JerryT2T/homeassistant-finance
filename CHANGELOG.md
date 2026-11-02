@@ -2,6 +2,13 @@
 
 All notable changes to the Finance will be documented in this file.
 
+## [0.37.0] — 2026-11-02
+
+### Added
+- The contracts tab gets a search over name and payment purpose, filter chips for type and status (active, overdue, ended, candidate), a filter sheet for category, label, owner and monthly amount, and sorting by deadline or amount; the totals card sums exactly what the filter shows and the filter is remembered per browser
+- Optional AI search - ask in your own words ("was zahlen wir im Jahr für Energie?") and your own AI provider turns the question into a filter that Finance applies itself; only the question and the names of categories, labels and persons are sent, never amounts, IBANs, dates or bookings, and only after a separate consent for this purpose that counts against your monthly AI budget
+- An AI answer that cannot be read fully shows the understood filter and what was dropped, so you correct it instead of getting an error
+
 ## [0.36.0] — 2026-11-02
 
 ### Added
