@@ -776,6 +776,22 @@ def _remittance(txn: dict[str, Any]) -> str:
     return text
 
 
+REMITTANCE_SAMPLES = 3
+REMITTANCE_SAMPLE_LEN = 140
+
+
+def _remittance_samples(txns: list[dict[str, Any]]) -> list[str]:
+    """Distinct purpose texts of the latest bookings, for the contract search (#118)."""
+    out: list[str] = []
+    for txn in reversed(txns):
+        text = " ".join(_remittance(txn).split())[:REMITTANCE_SAMPLE_LEN]
+        if text and text not in out:
+            out.append(text)
+        if len(out) >= REMITTANCE_SAMPLES:
+            break
+    return out
+
+
 def _digest(value: str) -> str:
     return hashlib.sha1(value.encode()).hexdigest()[:10]  # noqa: S324 - not security
 
@@ -1079,6 +1095,7 @@ def _build_series(
         "account_key": _most_common_value([t.get("_account_key") for t in txns], ""),
         "account_type": _most_common_value([t.get("_account_type") for t in txns], "personal"),
         "account_person": _most_common_value([t.get("_account_person") for t in txns], ""),
+        "remittance": _remittance_samples(txns),
     }
 
 

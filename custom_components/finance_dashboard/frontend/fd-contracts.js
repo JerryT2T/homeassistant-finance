@@ -10,6 +10,10 @@
  *   POST finance_dashboard/contract_overrides   {action: merge|unmerge|split|unsplit|assign|unassign, ...}
  *        (admin, #117 E/F) -> {contracts, totals}
  *   GET  finance_dashboard/transactions?q=      booking search for "assign" in the sheet (admin)
+ *   GET  finance_dashboard/contracts/query      {usable, consented, remaining} - whether the AI search is offered (#118)
+ *   POST finance_dashboard/contracts/query      {question} -> {spec, errors}: a validated filter spec (purpose contract_query)
+ *   GET/PUT finance_dashboard/setup/ai/consents purpose "contract_query" (recurring), asked in a dialog on first use
+ *        Filter logic: fd-contract-filter.js (twin of contract_filter.py); the spec is kept per user in localStorage.
  *   GET  finance_dashboard/reserves             {reserves:{items,by_owner,total_monthly}, coverage|null}
  *   PUT  finance_dashboard/accounts/{key}/savings {savings:bool} (admin)
  *   GET  finance_dashboard/balances             account list for the savings toggles (admin)
@@ -456,6 +460,21 @@ button.ct { min-height: var(--fd-touch); }
 .kf { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 4px; }
 .kf button { min-height: 40px; padding: 0 12px; border: 1px solid var(--fd-line); border-radius: var(--fd-r-pill); background: transparent; font-size: 12.5px; }
 .kf button[aria-pressed="true"] { background: var(--fd-a50); border-color: var(--fd-a500); color: var(--fd-a900); font-weight: 500; }
+.fb { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 8px; }
+.fb input[type=search] { flex: 1 1 160px; min-width: 0; box-sizing: border-box; min-height: var(--fd-touch); padding: 0 12px; border: 1px solid var(--fd-line); border-radius: 10px; background: var(--fd-page); color: var(--fd-t1); font: inherit; }
+.fb select { flex: 0 1 auto; min-width: 0; max-width: 100%; min-height: var(--fd-touch); padding: 0 8px; border: 1px solid var(--fd-line); border-radius: 10px; background: var(--fd-page); color: var(--fd-t1); font: inherit; }
+.fbtn { display: inline-flex; align-items: center; gap: 6px; min-height: var(--fd-touch); padding: 0 14px; border: 1px solid var(--fd-line); border-radius: var(--fd-r-pill); background: transparent; }
+.cnt { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 10px; background: var(--fd-a700); color: #fff; font-size: 11.5px; }
+.lnk { padding: 0; border: 0; background: transparent; color: var(--fd-a700); text-decoration: underline; font-size: inherit; min-height: 32px; }
+.fcount { margin: 4px 0 6px; }
+.ai { display: flex; align-items: center; gap: 10px; margin: 0 0 6px; min-height: var(--fd-touch); }
+.ailbl { font-size: 12.5px; }
+.aiq { display: flex; flex-wrap: wrap; gap: 8px; }
+.aiq input { flex: 1 1 200px; min-width: 0; box-sizing: border-box; min-height: var(--fd-touch); padding: 0 12px; border: 1px solid var(--fd-line); border-radius: 10px; background: var(--fd-page); color: var(--fd-t1); font: inherit; }
+.aihint { margin: 4px 0 6px; }
+.plist { margin: 4px 0 4px; padding-left: 18px; }
+.nrow2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.tot > div.hl { outline: 2px solid var(--fd-a500); }
 .btn.ghost { background: transparent; color: var(--fd-a700); border-color: var(--fd-a100); }
 .btn:disabled { opacity: .5; cursor: default; }
 .scrim { position: fixed; inset: 0; z-index: 50; display: flex; align-items: flex-end; justify-content: center; background: rgba(0,0,0,.4); }
@@ -485,7 +504,13 @@ class FdContracts extends HTMLElement {
     this.attachShadow({ mode: "open" });
     this._hass = null;
     this._items = null;
-    this._kind = "all";
+    this._f = null; // the filter spec (contract_filter.py / fd-contract-filter.js)
+    this._me = null;
+    this._persons = [];
+    this._ai = null;
+    this._aiOn = false;
+    this._fs = null;
+    this._consent = null;
     this._reserves = null;
     this._coverage = null;
     this._accounts = [];
@@ -506,6 +531,10 @@ class FdContracts extends HTMLElement {
   async load() {
     if (!this._hass) return;
     await window._fd.t("ct.title");
+    // the pure filter logic is its own file; same cache-busting query as this module
+    try { await import(new URL("fd-contract-filter.js" + new URL(import.meta.url).search, import.meta.url).href); }
+    catch (e) { console.error("fd-contracts: filter module failed to load", e); }
+    if (!this._f) { this._f = this._cf().defaultSpec(); this._restoreSpec(); }
     this._err = false;
     this._render();
     try {
@@ -513,6 +542,8 @@ class FdContracts extends HTMLElement {
       this._labels = await window._fd.getLabels(this._hass);
       // Candidates (#129) are not sure to be contracts: kept out of the list
       // and the totals, asked under "Prüfen" (#130).
+      this._me = (r && r.viewer && r.viewer.me) || null;
+      this._persons = (r && r.viewer && r.viewer.persons) || [];
       const all = (r && r.contracts) || [];
       this._items = all.filter((c) => !c.candidate);
       this._candidates = all.filter((c) => c.candidate && c.status !== "ended");
@@ -521,6 +552,8 @@ class FdContracts extends HTMLElement {
       this._err = true;
       this._items = null;
     }
+    // The AI search is an add-on too: no status, no AI row.
+    try { this._ai = await this._hass.callApi("GET", `${DOMAIN}/contracts/query`); } catch (e) { this._ai = null; }
     // Reserves are an add-on: a failure there must not hide the contracts.
     try {
       const r = await this._hass.callApi("GET", `${DOMAIN}/reserves`);
@@ -580,7 +613,7 @@ class FdContracts extends HTMLElement {
     this._focusAfter = null;
     const top = sh.querySelector(".sheet")?.scrollTop || 0;
     sh.innerHTML = `<style>${window._fd.SHARED_CSS}${CSS}</style><div class="root">${head}<div class="cols">${body}</div><div id="sheet"></div></div>`;
-    if (this._sheet || this._add) this._paintSheet();
+    if (this._sheet || this._add || this._fs || this._consent) this._paintSheet();
     const sc = sh.querySelector(".sheet");
     if (sc) sc.scrollTop = top;
     if (keep) sh.querySelector(keep)?.focus();
@@ -601,57 +634,319 @@ class FdContracts extends HTMLElement {
 
   _kindOf(c) { return c.kind || "contract"; }
 
-  _kindFilterHtml() {
+  _cf() { return window._fd.contractFilter; }
+
+  /** Everything the filter works on: confirmed series plus (admin) the candidates under review. */
+  _pool() { return [...(this._items || []), ...(this._candidates || [])]; }
+
+  _ctx() { return { me: this._me, persons: this._persons }; }
+
+  _storageKey() {
+    const u = this._hass && this._hass.user;
+    return `fd_contracts_filter_${(u && u.id) || "anon"}`;
+  }
+
+  _restoreSpec() {
+    try {
+      const raw = window.localStorage.getItem(this._storageKey());
+      if (raw) this._f = this._cf().validateSpec(JSON.parse(raw)).spec;
+    } catch (e) { /* storage blocked or damaged: start with no filter */ }
+  }
+
+  _saveSpec() {
+    try { window.localStorage.setItem(this._storageKey(), JSON.stringify(this._f)); }
+    catch (e) { /* storage blocked: the filter just is not remembered */ }
+  }
+
+  /** The one way every control (chips, sheet, AI answer) changes the filter. */
+  _setSpec(partial) {
+    this._f = this._cf().validateSpec({ ...this._f, ...partial }).spec;
+    this._saveSpec();
+    this._render();
+  }
+
+  _toggleIn(field, value) {
+    const cur = this._f[field];
+    this._setSpec({ [field]: cur.includes(value) ? cur.filter((v) => v !== value) : [...cur, value] });
+  }
+
+  _filterCount() {
+    const f = this._f;
+    return f.categories.length + f.labels.length + f.owners.length + (f.amount_min != null || f.amount_max != null ? 1 : 0);
+  }
+
+  _chip(attr, value, label, n, pressed) {
     const e = window._fd.escHtml;
+    return `<button type="button" data-${attr}="${e(value)}" aria-pressed="${pressed}">${e(label)}${n == null ? "" : ` · ${n}`}</button>`;
+  }
+
+  _kindFilterHtml() {
     const count = (k) => this._items.filter((c) => this._kindOf(c) === k).length;
-    const kinds = KINDS.filter((k) => count(k));
-    if (kinds.length < 2) return "";
-    const btn = (k, label, n) => `<button type="button" data-kind="${k}" aria-pressed="${this._kind === k}">${e(label)} · ${n}</button>`;
-    return `<div class="kf" role="group" aria-label="${e(tr("ct.kind.filter"))}">${btn("all", tr("ct.kind.all"), this._items.length)}${kinds.map((k) => btn(k, tr(`ct.kind.${k}`), count(k))).join("")}</div>`;
+    const kinds = KINDS.filter((k) => count(k) || this._f.kinds.includes(k));
+    if (kinds.length < 2 && !this._f.kinds.length) return "";
+    const e = window._fd.escHtml;
+    return `<div class="kf" role="group" aria-label="${e(tr("ct.kind.filter"))}">${this._chip("kind", "all", tr("ct.kind.all"), this._items.length, !this._f.kinds.length)}${kinds.map((k) => this._chip("kind", k, tr(`ct.kind.${k}`), count(k), this._f.kinds.includes(k))).join("")}</div>`;
+  }
+
+  _statusFilterHtml() {
+    const cf = this._cf();
+    const pool = this._pool();
+    const count = (s) => pool.filter((c) => cf.statusOf(c) === s).length;
+    const shown = cf.STATUSES.filter((s) => count(s) || this._f.statuses.includes(s));
+    if (shown.length < 2 && !this._f.statuses.length) return "";
+    const e = window._fd.escHtml;
+    return `<div class="kf" role="group" aria-label="${e(tr("ct.status.filter"))}">${shown.map((s) => this._chip("status", s, tr(`ct.status.${s}`), count(s), this._f.statuses.includes(s))).join("")}</div>`;
+  }
+
+  _toolbarHtml(res) {
+    const e = window._fd.escHtml;
+    const f = this._f;
+    const n = this._filterCount();
+    const sortOpt = (v) => `<option value="${v}"${f.sort === v ? " selected" : ""}>${e(tr(`ct.sort.${v}`))}</option>`;
+    return `<div class="fb" role="search">
+  <input type="search" id="f-q" maxlength="100" autocomplete="off" value="${e(f.q)}" placeholder="${e(tr("ct.search.ph"))}" aria-label="${e(tr("ct.search.label"))}">
+  <button type="button" class="fbtn" id="f-open" data-act="fsheet" aria-haspopup="dialog">${e(tr("ct.filter.open"))}${n ? `<span class="cnt" aria-label="${e(tr("ct.filter.active", { n }))}">${n}</span>` : ""}</button>
+  <select id="f-sort" aria-label="${e(tr("ct.sort.label"))}">${sortOpt("deadline")}${sortOpt("amount")}</select>
+</div>${this._aiHtml()}${this._kindFilterHtml()}${this._statusFilterHtml()}
+<p class="muted fcount" role="status" aria-live="polite">${e(tr("ct.filter.count", { n: res.items.length, total: this._pool().length }))}${this._cf().isDefault(f) ? "" : ` <button type="button" class="lnk" data-act="freset">${e(tr("ct.filter.reset"))}</button>`}</p>`;
+  }
+
+  // ---- optional AI search (#118, purpose contract_query) --------------------
+  _aiOffered() {
+    const a = this._ai;
+    return !!(a && a.available !== false && a.usable && this._isAdmin);
+  }
+
+  _specSummary(spec) {
+    const l = [];
+    const list = (field, fn) => spec[field].map(fn).join(", ");
+    if (spec.q) l.push(`${tr("ct.fld.q")}: ${spec.q}`);
+    if (spec.kinds.length) l.push(`${tr("ct.fld.kinds")}: ${list("kinds", (k) => tr(`ct.kind.${k}`))}`);
+    if (spec.statuses.length) l.push(`${tr("ct.fld.statuses")}: ${list("statuses", (s) => tr(`ct.status.${s}`))}`);
+    if (spec.categories.length) l.push(`${tr("ct.fld.categories")}: ${list("categories", (c) => this._catLabel(c))}`);
+    if (spec.labels.length) l.push(`${tr("ct.fld.labels")}: ${list("labels", (i) => window._fd.labelName(i, this._labels))}`);
+    if (spec.owners.length) l.push(`${tr("ct.fld.owners")}: ${list("owners", (o) => this._ownerName(o))}`);
+    if (spec.amount_min != null) l.push(`${tr("ct.fld.amount_min")}: ${this._m(spec.amount_min)}`);
+    if (spec.amount_max != null) l.push(`${tr("ct.fld.amount_max")}: ${this._m(spec.amount_max)}`);
+    if (spec.aggregate) l.push(`${tr("ct.fld.aggregate")}: ${tr(`ct.agg.${spec.aggregate}`)}`);
+    l.push(`${tr("ct.sort.label")}: ${tr(`ct.sort.${spec.sort}`)}`);
+    return l;
+  }
+
+  _aiHtml() {
+    if (!this._aiOffered()) return "";
+    const e = window._fd.escHtml;
+    const on = !!this._aiOn;
+    let html = `<div class="ai"><button type="button" class="sw" role="switch" id="ai-sw" aria-checked="${on}" data-act="ai-toggle" aria-label="${e(tr("ct.ai.switch"))}"></button>
+  <label for="ai-sw" class="ailbl">${e(tr("ct.ai.switch"))}</label></div>`;
+    if (!on) return html;
+    const r = this._ai.remaining;
+    html += `<div class="aiq"><input type="text" id="ai-q" maxlength="200" autocomplete="off" value="${e(this._aiText || "")}" placeholder="${e(tr("ct.ai.ph"))}" aria-label="${e(tr("ct.ai.label"))}" ${this._aiBusy ? "disabled" : ""}>
+  <button type="button" class="btn" data-act="ai-ask" ${this._aiBusy ? "disabled aria-busy=\"true\"" : ""}>${e(tr(this._aiBusy ? "ct.ai.busy" : "ct.ai.ask"))}</button></div>
+  <p class="muted aihint">${e(tr("ct.ai.sends"))}${r != null ? ` ${e(tr("ct.ai.left", { n: r }))}` : ""}${this._isAdmin ? ` <button type="button" class="lnk" data-act="ai-revoke">${e(tr("ct.ai.revoke"))}</button>` : ""}</p>`;
+    const m = this._aiMsg;
+    if (m) {
+      if (m.error) html += `<p class="err" role="alert">${e(m.error)}</p>`;
+      if (m.spec) {
+        const dropped = [...new Set((m.errors || []).map((x) => x.field))];
+        const unreadable = dropped.includes("_");
+        html += `<div class="hint" role="status"><b>${e(tr("ct.ai.parsed"))}</b>
+  <ul class="plist">${this._specSummary(m.spec).map((x) => `<li>${e(x)}</li>`).join("")}</ul>
+  ${unreadable ? `<div>${e(tr("ct.ai.unreadable"))}</div>` : ""}
+  ${dropped.length && !unreadable ? `<div>${e(tr("ct.ai.dropped", { fields: dropped.map((f) => { const t = tr(`ct.fld.${f}`); return t === `ct.fld.${f}` ? f : t; }).join(", ") }))}</div>` : ""}
+  <div class="rvb" style="margin-top:6px"><button type="button" class="btn ghost" data-act="fsheet">${e(tr("ct.ai.adjust"))}</button>
+  <button type="button" class="btn ghost" data-act="freset">${e(tr("ct.ai.discard"))}</button></div></div>`;
+      }
+    }
+    return html;
+  }
+
+  _aiErr(err) {
+    const code = err && err.body && err.body.error;
+    const key = code ? `ct.ai.err.${code}` : "";
+    const t = key ? tr(key) : "";
+    return t && t !== key ? t : tr("ct.ai.err.generic");
+  }
+
+  async _aiToggle() {
+    if (this._aiOn) { this._aiOn = false; this._aiMsg = null; return this._render(); }
+    if (this._ai.consented) { this._aiOn = true; this._render(); return this.shadowRoot.getElementById("ai-q")?.focus(); }
+    // no consent yet: ask first (admin grants it; the dialog shows what leaves Home Assistant)
+    this._consent = { error: "", busy: false, meta: null };
+    try {
+      const c = await this._hass.callApi("GET", `${DOMAIN}/setup/ai/consents`);
+      this._consent.meta = ((c && c.purposes) || {}).contract_query || null;
+    } catch (e) { /* the dialog still states the essentials */ }
+    this._paintSheet();
+    this.shadowRoot.querySelector("#sheet button")?.focus();
+  }
+
+  async _consentGrant(granted) {
+    const c = this._consent;
+    if (!c || c.busy) return;
+    c.busy = true;
+    try {
+      await this._hass.callApi("PUT", `${DOMAIN}/setup/ai/consents`, { purpose: "contract_query", granted });
+    } catch (e) {
+      c.busy = false;
+      c.error = tr("ct.ai.err.generic");
+      return this._paintSheet();
+    }
+    this._ai = { ...this._ai, consented: granted };
+    this._aiOn = granted;
+    this._closeSheet();
+    this._render();
+    if (granted) this.shadowRoot.getElementById("ai-q")?.focus();
+  }
+
+  async _aiRevoke() {
+    try {
+      await this._hass.callApi("PUT", `${DOMAIN}/setup/ai/consents`, { purpose: "contract_query", granted: false });
+      this._ai = { ...this._ai, consented: false };
+      this._aiOn = false;
+      this._aiMsg = null;
+      this._toast(tr("ct.ai.revoked"));
+    } catch (e) { this._toast(tr("ct.ai.err.generic"), "error"); }
+    this._render();
+  }
+
+  async _aiAsk() {
+    const q = ((this.shadowRoot.getElementById("ai-q") || {}).value || this._aiText || "").trim();
+    this._aiText = q;
+    if (!q || this._aiBusy) return;
+    this._aiBusy = true;
+    this._aiMsg = null;
+    this._render();
+    try {
+      const r = await this._hass.callApi("POST", `${DOMAIN}/contracts/query`, { question: q });
+      // the very same normalisation as a hand-set filter
+      const spec = this._cf().validateSpec(r.spec).spec;
+      this._f = spec;
+      this._saveSpec();
+      this._aiMsg = { spec, errors: r.errors || [] };
+      if (this._ai.remaining != null) this._ai = { ...this._ai, remaining: Math.max(0, this._ai.remaining - 1) };
+    } catch (e) {
+      const code = e && e.body && e.body.error;
+      if (code === "consent_required") { this._ai = { ...this._ai, consented: false }; this._aiOn = false; }
+      this._aiMsg = { error: this._aiErr(e) };
+    }
+    this._aiBusy = false;
+    this._focusAfter = "#ai-q";
+    this._render();
+  }
+
+  _paintConsent(host) {
+    const e = window._fd.escHtml;
+    const c = this._consent;
+    const meta = c.meta || { pros: [], risks: [] };
+    const list = (keys) => `<ul class="plist">${(keys || []).slice(0, 3).map((k) => `<li>${e(tr(k))}</li>`).join("")}</ul>`;
+    const admin = this._isAdmin;
+    host.innerHTML = `<div class="scrim" data-act="scrim"><div class="sheet" role="dialog" aria-modal="true" aria-label="${e(tr("ct.ai.consent.title"))}" tabindex="-1">
+  <h3>${e(tr("ct.ai.consent.title"))}</h3>
+  <p class="muted" style="margin:0">${e(tr("ct.ai.consent.mode"))}</p>
+  <p>${e(tr("ct.ai.consent.sends"))}</p>
+  <div class="lbl">${e(tr("settings.ai.pros"))}</div>${list(meta.pros)}
+  <div class="lbl">${e(tr("settings.ai.risks"))}</div>${list(meta.risks)}
+  <p class="muted">${e(tr("ct.ai.consent.revoke"))}</p>
+  ${admin ? "" : `<div class="hint">${e(tr("ct.ai.consent.admin"))}</div>`}
+  ${c.error ? `<div class="err" role="alert">${e(c.error)}</div>` : ""}
+  <div class="acts"><button type="button" class="btn ghost" data-act="cancel">${e(tr("ct.cancel"))}</button>
+  ${admin ? `<button type="button" class="btn" data-act="consent-yes" ${c.busy ? "disabled" : ""}>${e(tr("ct.ai.consent.yes"))}</button>` : ""}</div>
+</div></div>`;
+  }
+
+  // ---- filter sheet -----------------------------------------------------------
+  _ownerName(o) {
+    if (o === "me") return tr("ct.owner.me");
+    if (o === "partner") return tr("ct.owner.partner");
+    return this._ownerLabel(o);
+  }
+
+  _openFilterSheet() {
+    this._sheet = null;
+    this._add = null;
+    this._fs = { min: this._f.amount_min ?? "", max: this._f.amount_max ?? "", rangeErr: false };
+    this._paintSheet();
+    this.shadowRoot.querySelector("#sheet button")?.focus();
+  }
+
+  _paintFilter(host) {
+    const e = window._fd.escHtml;
+    const f = this._f;
+    const pool = this._pool();
+    const press = (attr, v, label, on) => `<button type="button" data-${attr}="${e(v)}" aria-pressed="${on}">${e(label)}</button>`;
+    const cats = [...new Set([...pool.map((c) => c.category).filter(Boolean), ...f.categories])];
+    const ids = [...new Set([...pool.flatMap((c) => c.labels || []), ...f.labels])];
+    const owners = [];
+    if (this._me) owners.push("me");
+    if ((this._persons || []).some((p) => p && p !== this._me)) owners.push("partner");
+    owners.push("shared");
+    for (const o of f.owners) if (!owners.includes(o)) owners.push(o);
+    const res = this._cf().apply(pool, f, this._ctx());
+    const fs = this._fs;
+    host.innerHTML = `<div class="scrim" data-act="scrim"><div class="sheet" role="dialog" aria-modal="true" aria-label="${e(tr("ct.filter.title"))}" tabindex="-1">
+  <h3>${e(tr("ct.filter.title"))}</h3>
+  ${cats.length ? `<div class="lbl" id="fl-cat">${e(tr("ct.f.category"))}</div><div class="kf" role="group" aria-labelledby="fl-cat">${cats.map((c) => press("fcat", c, this._catLabel(c), f.categories.includes(c))).join("")}</div>` : ""}
+  ${ids.length ? `<div class="lbl" id="fl-lbl">${e(tr("ct.fld.labels"))}</div><div class="kf" role="group" aria-labelledby="fl-lbl">${ids.map((i) => press("flbl", i, window._fd.labelName(i, this._labels), f.labels.includes(i))).join("")}</div>` : ""}
+  <div class="lbl" id="fl-own">${e(tr("ct.fld.owners"))}</div><div class="kf" role="group" aria-labelledby="fl-own">${owners.map((o) => press("fown", o, this._ownerName(o), f.owners.includes(o))).join("")}</div>
+  <div class="lbl" id="fl-amt">${e(tr("ct.f.range"))}</div>
+  <div class="nrow2" role="group" aria-labelledby="fl-amt">
+    <input type="number" inputmode="decimal" min="0" step="1" id="fa-min" data-fa="min" value="${e(String(fs.min))}" placeholder="${e(tr("ct.f.from"))}" aria-label="${e(tr("ct.fld.amount_min"))}">
+    <input type="number" inputmode="decimal" min="0" step="1" id="fa-max" data-fa="max" value="${e(String(fs.max))}" placeholder="${e(tr("ct.f.to"))}" aria-label="${e(tr("ct.fld.amount_max"))}">
+  </div>
+  ${fs.rangeErr ? `<div class="err" role="alert">${e(tr("ct.f.range_err"))}</div>` : ""}
+  <p class="muted fcount" role="status" aria-live="polite">${e(tr("ct.filter.count", { n: res.items.length, total: pool.length }))}</p>
+  <div class="acts"><button type="button" class="btn ghost" data-act="freset">${e(tr("ct.filter.reset"))}</button>
+  <button type="button" class="btn" data-act="cancel">${e(tr("ct.filter.done"))}</button></div>
+</div></div>`;
+  }
+
+  _setRange() {
+    const num = (v) => (v === "" || v == null ? null : Number(v));
+    const lo = num(this._fs.min), hi = num(this._fs.max);
+    this._fs.rangeErr = lo != null && hi != null && lo > hi;
+    this._f = this._cf().validateSpec({ ...this._f, amount_min: lo, amount_max: this._fs.rangeErr ? null : hi }).spec;
+    this._saveSpec();
+    this._render();
   }
 
   _main() {
     const e = window._fd.escHtml;
-    const kinds = new Set(this._items.map((c) => this._kindOf(c)));
-    if (this._kind !== "all" && !kinds.has(this._kind)) this._kind = "all";
-    const shown = this._kind === "all" ? this._items : this._items.filter((c) => this._kindOf(c) === this._kind);
-    const live = shown.filter((c) => c.status !== "ended");
-    const sorted = [...shown].sort((a, b) =>
-      (a.status === "ended") - (b.status === "ended") || String(a.next_deadline || "9").localeCompare(String(b.next_deadline || "9")));
-    const list = sorted.length
-      ? sorted.map((c) => this._row(c)).join("")
-      : `<p class="muted">${e(tr("ct.empty"))}</p>`;
+    const pool = this._pool();
+    const res = this._cf().apply(pool, this._f, this._ctx());
+    const list = res.items.length
+      ? res.items.map((c) => this._row(c)).join("")
+      : pool.length
+        ? `<p class="muted">${e(tr("ct.no_match"))} <button type="button" class="lnk" data-act="freset">${e(tr("ct.filter.reset"))}</button></p>`
+        : `<p class="muted">${e(tr("ct.empty"))}</p>`;
     return `<div>
-  ${live.length || !this._isAdmin ? `<section class="card">
-    ${live.length ? this._totalsHtml(live) : ""}
+  ${res.totals.count || !this._isAdmin ? `<section class="card">
+    ${res.totals.count ? this._totalsHtml(res.totals) : ""}
     ${this._isAdmin ? "" : `<p class="muted" style="margin:8px 0 0">${e(tr("ct.member_note"))}</p>`}
   </section>` : ""}
-  <section class="card" aria-label="${e(tr("ct.title"))}">${this._kindFilterHtml()}${list}
+  <section class="card" aria-label="${e(tr("ct.title"))}">${this._toolbarHtml(res)}${list}
     ${this._isAdmin ? `<div class="acts" style="margin-top:8px"><button type="button" class="btn ghost" data-act="add">${e(tr("ct.add.open"))}</button></div>` : ""}</section>
   ${this._reviewHtml()}
 </div>
 <div>${this._reservesHtml()}</div>`;
   }
 
-  // Mirrors contracts.contract_totals (#115): fixed = contracts + subscriptions,
-  // regular = regular + irregular spending; candidates are never in _items.
-  _totalsHtml(live) {
+  // The totals of the filtered set (contract_filter.totals): fixed = contracts + subscriptions,
+  // regular = regular + irregular spending.
+  _totalsHtml(t) {
     const e = window._fd.escHtml;
-    const block = (items, label, note) => {
-      const year = items.reduce((s, c) => s + (c.annual_cost || 0), 0);
-      return `${label ? `<h3 class="tl">${e(label)}</h3>` : ""}<div class="tot"><div><span>${e(tr("ct.total_month"))}</span><b>${e(this._m(year / 12))}</b></div>
-      <div><span>${e(tr("ct.total_year"))}</span><b>${e(this._m(year))}</b></div></div>
+    const hl = this._f.aggregate;
+    const filtered = !this._cf().isDefault(this._f);
+    const block = (g, label, note) => `${label ? `<h3 class="tl">${e(label)}</h3>` : ""}<div class="tot"><div${hl === "month" ? ' class="hl"' : ""}><span>${e(tr("ct.total_month"))}</span><b>${e(this._m(g.monthly))}</b></div>
+      <div${hl === "year" ? ' class="hl"' : ""}><span>${e(tr("ct.total_year"))}</span><b>${e(this._m(g.yearly))}</b></div></div>
       <p class="muted" style="margin:8px 0 0">${e(note)}</p>`;
-    };
-    if (this._kind !== "all") {
-      return block(live, "", tr("ct.total_note_kind", { n: live.length, kind: tr(`ct.kind.${this._kind}`) }));
+    if (filtered && !(t.fixed.count && t.regular.count)) {
+      return block(t, "", tr("ct.total_note_filtered", { n: t.count }));
     }
-    const regular = live.filter((c) => NO_NOTICE.has(this._kindOf(c)));
-    const fixed = live.filter((c) => !NO_NOTICE.has(this._kindOf(c)));
-    if (!regular.length) return block(fixed, "", tr("ct.total_note", { n: fixed.length }));
+    if (!t.regular.count) return block(t.fixed, "", tr("ct.total_note", { n: t.fixed.count }));
     const parts = [];
-    if (fixed.length) parts.push(block(fixed, tr("ct.total_fixed"), tr("ct.total_note", { n: fixed.length })));
-    parts.push(block(regular, tr("ct.total_regular"), tr("ct.total_regular_note", { n: regular.length })));
+    if (t.fixed.count) parts.push(block(t.fixed, tr("ct.total_fixed"), filtered ? tr("ct.total_note_filtered", { n: t.fixed.count }) : tr("ct.total_note", { n: t.fixed.count })));
+    parts.push(block(t.regular, tr("ct.total_regular"), filtered ? tr("ct.total_note_filtered", { n: t.regular.count }) : tr("ct.total_regular_note", { n: t.regular.count })));
     return parts.join(`<div class="tsep"></div>`);
   }
 
@@ -797,6 +1092,7 @@ class FdContracts extends HTMLElement {
     if (!c || !c.contract) return;
     const k = c.contract;
     this._add = null;
+    this._fs = null;
     this._sheet = {
       id, c, error: "", saving: false, touched: new Set(),
       d: {
@@ -823,6 +1119,15 @@ class FdContracts extends HTMLElement {
     const back = this._sheet ? this._sheet.id : null;
     this._sheet = null;
     this._add = null;
+    const hadConsent = !!this._consent;
+    const hadFilter = !!(this._fs || this._consent);
+    this._fs = null;
+    this._consent = null;
+    if (hadFilter) {
+      // the consent dialog was opened from the AI switch; the filter sheet from the filter button
+      const back = hadConsent ? (this._aiOn ? "ai-q" : "ai-sw") : "f-open";
+      setTimeout(() => this.shadowRoot.getElementById(back)?.focus(), 0);
+    }
     // keyboard users land back on the row they opened
     if (back) setTimeout(() => [...this.shadowRoot.querySelectorAll("[data-edit]")].find((b) => b.dataset.edit === back)?.focus(), 0);
     const el = this.shadowRoot.getElementById("sheet");
@@ -846,6 +1151,7 @@ class FdContracts extends HTMLElement {
   // ---- manual contracts (#117 D) -------------------------------------------
   _openAdd() {
     this._sheet = null;
+    this._fs = null;
     this._add = { step: "pick", error: "", saving: false, d: null };
     this._paintSheet();
     this.shadowRoot.querySelector("#sheet button")?.focus();
@@ -975,6 +1281,11 @@ class FdContracts extends HTMLElement {
   }
 
   _paintSheetRaw() {
+    if (this._consent || this._fs) {
+      const host = this.shadowRoot.getElementById("sheet");
+      if (host) { if (this._consent) this._paintConsent(host); else this._paintFilter(host); }
+      return;
+    }
     if (this._add) {
       const host = this.shadowRoot.getElementById("sheet");
       if (host) this._paintAdd(host);
@@ -1281,6 +1592,11 @@ class FdContracts extends HTMLElement {
     }
   }
 
+  _caretEnd(sel) {
+    const el = this.shadowRoot.querySelector(sel);
+    if (el && el.setSelectionRange) el.setSelectionRange(el.value.length, el.value.length);
+  }
+
   _toast(message, type) {
     this.dispatchEvent(new CustomEvent("fd-toast", { bubbles: true, composed: true, detail: { message, type } }));
   }
@@ -1294,7 +1610,11 @@ class FdContracts extends HTMLElement {
       if (t.dataset.edit) return this._openSheet(t.dataset.edit);
       if (t.dataset.sav) return this._toggleSavings(t.dataset.sav);
       if (t.dataset.review) return this._review(t.dataset.id, t.dataset.review);
-      if (t.dataset.kind) { this._kind = t.dataset.kind; return this._render(); }
+      if (t.dataset.kind) return t.dataset.kind === "all" ? this._setSpec({ kinds: [] }) : this._toggleIn("kinds", t.dataset.kind);
+      if (t.dataset.status) return this._toggleIn("statuses", t.dataset.status);
+      if (t.dataset.fcat) return this._toggleIn("categories", t.dataset.fcat);
+      if (t.dataset.flbl) return this._toggleIn("labels", t.dataset.flbl);
+      if (t.dataset.fown) return this._toggleIn("owners", t.dataset.fown);
       if ((t.dataset.stlAdd || t.dataset.stlRm) && s) {
         const key = t.dataset.stlAdd || t.dataset.stlRm;
         s.d.settlements = s.d.settlements.filter((x) => x !== key);
@@ -1343,6 +1663,21 @@ class FdContracts extends HTMLElement {
       }
       switch (t.dataset.act) {
         case "retry": this.load(); break;
+        case "fsheet": this._openFilterSheet(); break;
+        case "freset": {
+          const keepSort = this._f.sort;
+          this._aiMsg = null;
+          if (this._fs) this._fs = { min: "", max: "", rangeErr: false };
+          this._f = this._cf().defaultSpec();
+          this._f.sort = keepSort;
+          this._saveSpec();
+          this._render();
+          break;
+        }
+        case "ai-toggle": this._aiToggle(); break;
+        case "ai-ask": this._aiAsk(); break;
+        case "ai-revoke": this._aiRevoke(); break;
+        case "consent-yes": this._consentGrant(true); break;
         case "cancel": this._closeSheet(); break;
         case "scrim": if (ev.target === t) this._closeSheet(); break;
         case "save": this._save(); break;
@@ -1363,6 +1698,16 @@ class FdContracts extends HTMLElement {
       }
     });
     sh.addEventListener("input", (ev) => {
+      if (ev.target.id === "f-q") {
+        // typing filters as you go; the repaint is debounced and keeps the caret
+        this._f.q = ev.target.value;
+        if (ev.isComposing) return;
+        clearTimeout(this._qTimer);
+        this._qTimer = setTimeout(() => { this._f = this._cf().validateSpec(this._f).spec; this._saveSpec(); this._focusAfter = "#f-q"; this._render(); this._caretEnd("#f-q"); }, 200);
+        return;
+      }
+      if (ev.target.id === "ai-q") { this._aiText = ev.target.value; return; }
+      if (ev.target.dataset && ev.target.dataset.fa && this._fs) { this._fs[ev.target.dataset.fa] = ev.target.value; return; }
       const af = ev.target.dataset && ev.target.dataset.af;
       if (af && this._add && this._add.d) { this._add.d[af] = ev.target.value; return; }
       if (ev.target.id === "f-bq" && this._sheet) return this._search(ev.target.value);
@@ -1375,8 +1720,13 @@ class FdContracts extends HTMLElement {
         if (prev && f === "plan_fixed_amount") prev.textContent = this._previewText(this._sheet);
       }
     });
+    sh.addEventListener("change", (ev) => {
+      if (ev.target.id === "f-sort") this._setSpec({ sort: ev.target.value });
+      else if (ev.target.dataset && ev.target.dataset.fa && this._fs) { this._fs[ev.target.dataset.fa] = ev.target.value; this._focusAfter = `#${ev.target.id}`; this._setRange(); }
+    });
     sh.addEventListener("keydown", (ev) => {
-      if (ev.key === "Escape" && (this._sheet || this._add)) { ev.stopPropagation(); this._closeSheet(); }
+      if (ev.key === "Enter" && ev.target.id === "ai-q") { ev.preventDefault(); this._aiAsk(); }
+      if (ev.key === "Escape" && (this._sheet || this._add || this._fs || this._consent)) { ev.stopPropagation(); this._closeSheet(); }
       if (ev.key === "Enter" && ev.target.id === "f-bq") ev.preventDefault();
     });
   }

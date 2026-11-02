@@ -10,7 +10,10 @@ from aiohttp import web
 from homeassistant.components.http import HomeAssistantView
 from homeassistant.util import dt as dt_util
 
+from .. import ai_consent, ai_provider
+from .. import contract_filter as cf
 from ..const import DOMAIN
+from ..life_areas import LIFE_AREAS, OTHER
 from ..contracts import (
     own_account_names,
     REVIEW_NOT_CONTRACT,
@@ -31,6 +34,14 @@ from ..recurring import PLAN_MODE_FIXED
 from ..pots import pot_coverage
 from ..household_summary import counted_transactions, pending_debits
 from ._helpers import _get_manager
+
+
+def _viewer(manager, request: web.Request) -> dict:
+    """Who is asking and who lives here: resolves the owner filters "me" and "partner" (#118)."""
+    resolve = getattr(manager, "resolve_person", None)
+    me = resolve(request.get("hass_user")) if resolve else None
+    persons = [str(p.get("name")) for p in getattr(manager, "persons", None) or [] if p.get("name")]
+    return {"me": me, "persons": persons}
 
 
 def _is_admin(request: web.Request) -> bool:
@@ -65,10 +76,22 @@ class FinanceDashboardContractsView(HomeAssistantView):
             return self.json({"error": "Not configured"}, status_code=404)
         _store, contracts = await _contracts_for(request, manager)
         if _is_admin(request):
-            return self.json({"contracts": contracts, "totals": contract_totals(contracts)})
+            return self.json(
+                {
+                    "contracts": contracts,
+                    "totals": contract_totals(contracts),
+                    "viewer": _viewer(manager, request),
+                }
+            )
         person = manager.resolve_person(request.get("hass_user"))
         shown = [aggregate_view(c) for c in contracts if visible_to(c, person)]
-        return self.json({"contracts": shown, "totals": contract_totals(shown)})
+        return self.json(
+            {
+                "contracts": shown,
+                "totals": contract_totals(shown),
+                "viewer": _viewer(manager, request),
+            }
+        )
 
     async def post(self, request: web.Request) -> web.Response:
         """Add a contract by hand (#117 D, admin only) -> the new contract, 201."""
@@ -113,6 +136,106 @@ async def _unknown_labels(request: web.Request, body: dict):
             {"error": "unknown_label", "detail": "label is not in the catalogue"}, status=400
         )
     return None
+
+
+async def _query_ai_status(hass, manager) -> dict:
+    cfg = await ai_provider.async_load_config(hass)
+    creds = getattr(manager, "_credential_manager", None)
+    svc = hass.services
+    usable = ai_provider.provider_usable(
+        cfg,
+        has_key=bool(ai_provider.read_key(cfg, creds)),
+        has_ai_task=svc.has_service("ai_task", "generate_data"),
+        has_conversation=svc.has_service("conversation", "process"),
+    )
+    usage = ai_provider.usage_view(cfg, dt_util.now().date())
+    return {
+        "usable": usable,
+        "consented": await ai_consent.async_granted(hass, "contract_query"),
+        "remaining": usage["remaining"],
+    }
+
+
+async def _query_vocab(hass, manager) -> dict:
+    """Names the AI may use: life areas, label ids / own label names, persons. No data."""
+    from ..labels import async_get_label_store
+
+    catalogue = (await async_get_label_store(hass)).catalogue()
+    labels = {i["id"]: i.get("name") for i in catalogue if i.get("kind") != "auto"}
+    owners = {str(p.get("name")) for p in getattr(manager, "persons", None) or [] if p.get("name")}
+    return {"categories": [*LIFE_AREAS, OTHER], "labels": labels, "owners": owners}
+
+
+async def run_contract_query(hass, manager, body, *, is_admin: bool = False) -> tuple[dict, int]:
+    """Ask the AI for a filter spec: ``(payload, http status)``. Never raises on AI output.
+
+    Admin only: the call spends the shared AI budget and sends the question out.
+    """
+    if not is_admin:
+        return {"error": "admin_required"}, 403
+    raw_q = body.get("question") if isinstance(body, dict) else None
+    question = cf.clean_question(raw_q) if isinstance(raw_q, str) else ""
+    if not question:
+        return {"error": "invalid_body", "detail": "Need a question"}, 400
+    status = await _query_ai_status(hass, manager)
+    if not status["consented"]:
+        return {"error": "consent_required"}, 403
+    if not status["usable"]:
+        return {"error": "no_provider"}, 400
+    if status["remaining"] < 1:
+        return {"error": "budget_exhausted"}, 400
+    vocab = await _query_vocab(hass, manager)
+    answers, error = await ai_provider.async_extract_history(
+        hass,
+        credentials=getattr(manager, "_credential_manager", None),
+        prompts=[cf.build_query_prompt(question, vocab)],
+        max_tokens=cf.QUERY_MAX_TOKENS,
+        today=dt_util.now().date(),
+        usable=True,
+    )
+    if error:
+        return {"error": error}, 502
+    await ai_consent.async_mark_used(hass, "contract_query")
+    raw = cf.parse_answer(answers[0] if answers else "")
+    spec, errors = cf.validate_spec(raw, vocab)
+    if raw is None:
+        errors = [{"field": "_", "reason": "unparsable"}]
+    return {"spec": spec, "errors": errors}, 200
+
+
+class FinanceDashboardContractQueryView(HomeAssistantView):
+    """Optional AI search: a question in, a validated filter spec out (#118, purpose ``contract_query``).
+
+    ``GET`` tells whether the AI search can be offered (provider usable, consent
+    given, budget left). ``POST {question}`` asks the AI for a **filter spec only**;
+    the spec is validated and answered as ``{spec, errors}`` - a partial or invalid
+    answer yields the valid parts plus the errors, never a failure. One call
+    against the shared monthly AI budget. Only the question and the allowed names
+    leave Home Assistant.
+    """
+
+    url = f"/api/{DOMAIN}/contracts/query"
+    name = f"api:{DOMAIN}:contracts_query"
+    requires_auth = True
+
+    async def get(self, request: web.Request) -> web.Response:
+        hass = request.app["hass"]
+        manager = _get_manager(hass)
+        if not manager:
+            return self.json({"error": "Not configured"}, status_code=404)
+        if not _is_admin(request):  # the AI search is an admin feature (shared budget)
+            return self.json({"available": False, "usable": False, "consented": False, "remaining": 0})
+        return self.json({"available": True, **await _query_ai_status(hass, manager)})
+
+    async def post(self, request: web.Request) -> web.Response:
+        hass = request.app["hass"]
+        manager = _get_manager(hass)
+        if not manager:
+            return self.json({"error": "Not configured"}, status_code=404)
+        data, status = await run_contract_query(
+            hass, manager, await _json_body(request), is_admin=_is_admin(request)
+        )
+        return self.json(data, status_code=status)
 
 
 class FinanceDashboardContractView(HomeAssistantView):

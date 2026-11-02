@@ -11,6 +11,9 @@ provider is granted on its own, and says what it sends (see the endpoint
 * ``history_import`` (once) rows of an uploaded booking-history file the local
                      parser could not read, incl. amounts and dates, IBANs
                      masked locally. Consumed by the import that uses it.
+* ``contract_query`` (recurring) the question typed into the contracts search plus
+                     the names of categories, labels and persons (never amounts,
+                     IBANs, dates or bookings). Stays granted until revoked.
 
 Stored in its own HA store. First load without a store migrates the legacy
 setup-wizard flag ``ai_opt_in`` into ``categorize``. Nothing here makes a call.
@@ -33,6 +36,7 @@ PURPOSES: dict[str, dict[str, str]] = {
     "categorize": {"mode": "recurring"},
     "sheet_analysis": {"mode": "once"},
     "history_import": {"mode": "once"},
+    "contract_query": {"mode": "recurring"},
 }
 
 

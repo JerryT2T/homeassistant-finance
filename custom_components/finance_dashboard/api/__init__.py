@@ -24,6 +24,7 @@ from .assignments import FinanceDashboardAssignmentsView
 from .contracts import (
     FinanceDashboardAccountSavingsView,
     FinanceDashboardContractOverridesView,
+    FinanceDashboardContractQueryView,
     FinanceDashboardContractsView,
     FinanceDashboardContractView,
     FinanceDashboardReservesView,
@@ -116,6 +117,7 @@ __all__ = [  # noqa: RUF022  # grouped by category, not alphabetical
     "FinanceDashboardPotCarryView",
     "FinanceDashboardAssignmentsView",
     "FinanceDashboardHouseholdSummaryView",
+    "FinanceDashboardContractQueryView",
     "FinanceDashboardContractsView",
     "FinanceDashboardContractView",
     "FinanceDashboardContractOverridesView",
@@ -175,6 +177,7 @@ async def async_register_api(hass: HomeAssistant) -> None:
     hass.http.register_view(FinanceDashboardAssignmentsView())
     hass.http.register_view(FinanceDashboardHouseholdSummaryView())
     hass.http.register_view(FinanceDashboardContractsView())
+    hass.http.register_view(FinanceDashboardContractQueryView())
     hass.http.register_view(FinanceDashboardContractView())
     hass.http.register_view(FinanceDashboardContractOverridesView())
     hass.http.register_view(FinanceDashboardReservesView())
