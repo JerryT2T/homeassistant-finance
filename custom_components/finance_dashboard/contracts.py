@@ -477,8 +477,17 @@ class ContractStructure:
             {"merges": self.merges, "splits": self.splits, "assignments": self.assignments}
         )
 
+    def final_target(self, sid: str) -> str:
+        """The series ``sid`` ends up in: itself, or the target it was merged into."""
+        return next((t for t, srcs in self.merges.items() if sid in srcs), sid)
+
     def merge(self, target: str, source: str) -> None:
-        if not target or not source or target == source:
+        """Merge ``source`` into ``target``; the map stays flat: every source
+        has exactly one final target, which is never a source itself."""
+        if not target or not source:
+            raise ContractError("invalid_merge", "Pick two different series")
+        target = self.final_target(target)  # B is already in C: A -> B means A -> C
+        if target == source:  # merging a series into its own source is a cycle
             raise ContractError("invalid_merge", "Pick two different series")
         if source in self.merges:  # a target merged on: its own sources come along
             for s in self.merges.pop(source):

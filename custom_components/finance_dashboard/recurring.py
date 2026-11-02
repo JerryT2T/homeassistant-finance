@@ -581,7 +581,13 @@ def detect_series(
             external_ids=external_ids,
             _retry=True,
         )
-    staged = _apply_merges(_apply_assignments(staged, assigned), merges or {}, date_tolerance_days, amount_tolerance)
+    staged = _apply_merges(
+        _apply_assignments(staged, assigned),
+        merges or {},
+        date_tolerance_days,
+        amount_tolerance,
+        overrides,
+    )
     for st in staged:
         sid, part, negative = st["sid"], st["part"], st["negative"]
         series = _build_series(
@@ -678,9 +684,14 @@ def _apply_assignments(staged, assigned):
     return staged
 
 
-def _apply_merges(staged, merges: dict[str, list[str]], date_tol: int, amount_tol: float):
-    """Move the payments of every merge source into its target. A merge whose
-    target is not detected right now changes nothing."""
+def _apply_merges(
+    staged, merges: dict[str, list[str]], date_tol: int, amount_tol: float, overrides=None
+):
+    """Move the payments of every merge source into its target, with its
+    settlements: keyword ones, its loose bookings and the keys assigned by
+    hand (stored on the source or via an assignment). A merge whose target is
+    not detected right now changes nothing."""
+    overrides = overrides or {}
     if not merges:
         return staged
     by_id = {st["sid"]: st for st in staged}
@@ -699,6 +710,15 @@ def _apply_merges(staged, merges: dict[str, list[str]], date_tol: int, amount_to
             tgt["part"] = _Part(rows, interval, tgt["part"].tag, tgt["part"].ref)
             tgt["pending"] += src["pending"]
             tgt["assigned"] += src["assigned"]
+            tgt["settle"] = sorted([*tgt["settle"], *src["settle"]], key=lambda r: r[0])
+            seen = {id(r) for r in tgt["loose"]}
+            tgt["loose"] = [*tgt["loose"], *(r for r in src["loose"] if id(r) not in seen)]
+            tgt["extra_manual"] = [
+                *tgt["extra_manual"],
+                *src["extra_manual"],
+                *(overrides.get(sid, {}).get("settlements") or ()),
+            ]
+            tgt["usage"] = tgt["usage"] or src["usage"]
             tgt["merged_from"].append({"id": sid, "name": src["name"]})
             gone.add(sid)
     return [st for st in staged if st["sid"] not in gone]

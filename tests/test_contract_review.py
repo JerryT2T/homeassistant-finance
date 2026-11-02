@@ -227,6 +227,49 @@ def test_merging_a_target_onto_another_moves_its_sources_along():
         store.structure.merge("c", "c")
 
 
+def test_chained_merges_stay_flat_and_cycles_are_rejected():
+    st = structured_store().structure
+    st.merge("c", "b")  # B -> C
+    st.merge("b", "a")  # A -> B, and B already is in C: A -> C
+    assert st.merges == {"c": ["b", "a"]}
+    sources = [s for srcs in st.merges.values() for s in srcs]
+    assert len(sources) == len(set(sources))  # every source has exactly one target
+    for target, source in (("a", "c"), ("b", "c")):  # C into its own source
+        with pytest.raises(ContractError):
+            st.merge(target, source)
+    assert st.merges == {"c": ["b", "a"]}
+
+
+def test_chained_merges_end_in_one_series():
+    third = _keyed(monthly([-12.99] * 3, name="Apple Services", start=date(2025, 10, 3)), "a")
+    rows = _two_sides() + third
+    store = structured_store()
+    ids = {c["creditor"]: c["id"] for c in build_contracts(rows, store, today=TODAY)}
+    a, b, c = ids["apple services"], ids["streamly"], ids["paypal europe"]
+    store.structure.merge(c, b)
+    store.structure.merge(b, a)
+    (one,) = build_contracts(rows, store, today=TODAY)
+    assert one["id"] == c and one["occurrences"] == 9
+    assert {m["id"] for m in one["merged_from"]} == {a, b}
+
+
+def test_merge_carries_the_sources_settlements_over():
+    store = structured_store()
+    credit = _keyed([txn("2026-05-20", 5.0, "PayPal Europe")], "c")
+    refund = _keyed([txn("2026-05-25", 20.0, "Inkasso Partner")], "r")
+    rows = _two_sides() + credit + refund
+    ids = {c["creditor"]: c["id"] for c in build_contracts(rows, store, today=TODAY)}
+    target, source = ids["streamly"], ids["paypal europe"]
+    store.contracts[source] = Contract(source, settlements=["acc0|c0"])  # same payee, by hand
+    store.structure.assign("acc0|r0", source)  # any booking, by assignment
+    (src,) = [c for c in build_contracts(rows, store, today=TODAY) if c["id"] == source]
+    assert {s["key"] for s in src["settlement"]["history"]} == {"acc0|c0", "acc0|r0"}
+    store.structure.merge(target, source)
+    (merged,) = build_contracts(rows, store, today=TODAY)
+    assert {s["key"] for s in merged["settlement"]["history"]} == {"acc0|c0", "acc0|r0"}
+    assert "acc0|r0" in merged["ledger_ids"]
+
+
 def test_split_by_amount_and_undo_keep_the_payee_id():
     rows = monthly([-10, -10, -10, -15, -15, -15], name="Gym")
     store = structured_store()

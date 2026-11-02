@@ -199,6 +199,7 @@ class FinanceDashboardContractOverridesView(HomeAssistantView):
                     if not st.unmerge(str(target), str(source)):
                         return self.json({"error": "unknown_merge"}, status_code=404)
                 else:
+                    target = st.final_target(str(target))  # a merged-away target means its final one
                     for sid in (target, source):
                         if sid not in by_id or by_id[sid].get("source") == SOURCE_MANUAL:
                             return self.json({"error": "unknown_series"}, status_code=404)
