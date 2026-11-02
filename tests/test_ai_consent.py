@@ -68,7 +68,7 @@ def _run(coro, *patches):
 def test_default_is_denied_and_shape() -> None:
     store = _FakeStore()
     state = _run(consent.async_load(_hass()), *_with_store(store))
-    assert set(state) == {"categorize", "sheet_analysis"}
+    assert set(state) == {"categorize", "sheet_analysis", "history_import"}
     assert state["categorize"] == {
         "granted": False, "mode": "recurring", "granted_at": None, "used_at": None,
     }

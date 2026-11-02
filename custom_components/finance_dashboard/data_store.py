@@ -391,6 +391,45 @@ class Ledger:
         acct["transactions"] = merged
         return new
 
+    # -- imported history (#121) -------------------------------------------
+
+    def import_batches(self) -> list[dict[str, Any]]:
+        """Imported batches, newest first (ids, dates, counts - no booking values)."""
+        return [dict(b) for b in reversed(self.meta.get("import_batches") or [])]
+
+    def add_import_batch(
+        self, key: str, batch_id: str, txs: list[dict[str, Any]], info: dict[str, Any]
+    ) -> int:
+        """Add imported bookings tagged ``_source = import:<id>`` as one batch.
+
+        The rows are plain ledger entries, so detection treats them like bank
+        rows.  They never replace a row the ledger already has (``_ledger_id``
+        wins), and a later bank fetch that covers their span supersedes them
+        through the normal ``ingest`` rules.  Returns how many were added.
+        """
+        acct = self._acct(key)
+        have = {t.get("_ledger_id") for t in acct["transactions"]}
+        fresh = [t for t in txs if t.get("_ledger_id") not in have]
+        acct["transactions"] = sorted(
+            acct["transactions"] + fresh, key=lambda t: str(t.get("bookingDate") or ""), reverse=True
+        )
+        batches = self.meta.setdefault("import_batches", [])
+        batches.append({**info, "id": batch_id, "account_key": key, "count": len(fresh)})
+        return len(fresh)
+
+    def remove_import_batch(self, batch_id: str) -> int:
+        """Undo one import as a whole.  Returns how many bookings were removed."""
+        tag = f"import:{batch_id}"
+        removed = 0
+        for acct in self.data.get("accounts", {}).values():
+            keep = [t for t in acct.get("transactions") or [] if t.get("_source") != tag]
+            removed += len(acct.get("transactions") or []) - len(keep)
+            acct["transactions"] = keep
+        self.meta["import_batches"] = [
+            b for b in self.meta.get("import_batches") or [] if b.get("id") != batch_id
+        ]
+        return removed
+
     def first_booked_date(self, key: str) -> str | None:
         dates = [
             str(t.get("bookingDate") or "")

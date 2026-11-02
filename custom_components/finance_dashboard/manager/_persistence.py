@@ -173,6 +173,59 @@ class PersistenceMixin:
         self.schedule_ai_categorization()
         return {**result, "transaction_count": len(derived)}
 
+    # -- imported booking history (#121) ----------------------------------
+
+    def history_accounts(self) -> list[dict]:
+        """Accounts a history file can be imported into (key, name, IBAN tail)."""
+        from ..account_identity import account_key
+
+        out = []
+        for a in self._accounts:
+            iban = str(a.get("iban") or "")
+            out.append(
+                {
+                    "key": account_key(a),
+                    "name": a.get("custom_name") or a.get("name", ""),
+                    "iban_masked": f"****{iban[-4:]}" if len(iban) >= 4 else "",
+                }
+            )
+        return out
+
+    def history_ledger_transactions(self, key: str) -> list[dict]:
+        return self._ledger.transactions(key)
+
+    def history_import_allowed(self) -> bool:
+        return not self._demo_mode and self._ledger_writable
+
+    async def _after_ledger_edit(self) -> None:
+        overrides = await self._async_load_transfer_overrides()
+        derived = self._derive_from_ledger(overrides)
+        try:
+            from ..recurring import detect_recurring
+
+            self._recurring_patterns = detect_recurring(derived)
+        except Exception:
+            _LOGGER.exception("Recurring detection failed - skipping")
+        await self._persist_transactions()
+
+    async def async_commit_history_import(
+        self, key: str, batch_id: str, txs: list[dict], info: dict
+    ) -> int:
+        """Store an import batch in the ledger and re-derive.  No bank call."""
+        async with self._refresh_lock:
+            added = self._ledger.add_import_batch(key, batch_id, txs, info)
+            await self._after_ledger_edit()
+        return added
+
+    async def async_undo_history_import(self, batch_id: str) -> int:
+        async with self._refresh_lock:
+            removed = self._ledger.remove_import_batch(batch_id)
+            await self._after_ledger_edit()
+        return removed
+
+    def history_batches(self) -> list[dict]:
+        return self._ledger.import_batches()
+
     def get_freshness(self, *, admin: bool) -> dict:
         """Freshness payload (cache read only, no bank call)."""
         from datetime import date
