@@ -45,6 +45,7 @@ from .contract_kind import (
     kind_defaults,
 )
 from .recurring import (
+    INTERVALS,
     IRREGULAR_INTERVALS,
     PLAN_MODE_FIXED,
     PLAN_MODES,
@@ -52,6 +53,9 @@ from .recurring import (
     detect_series,
 )
 from .series_confidence import REASON_OWN_NAME, own_name_contract
+from .settlement import MAX_MANUAL as MAX_MANUAL_SETTLEMENTS
+from .settlement import TRAIT_USAGE_BASED
+from .settlement import expected as expected_settlement
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -72,6 +76,9 @@ CATEGORY_DEFAULTS: dict[str, tuple[int, int, int, str]] = {
 }
 _FALLBACK_DEFAULTS = SUBSCRIPTION_DEFAULTS
 
+
+# Fields a bad stored value of must never cost the contract terms (QA #113, Codex #116).
+_ADD_ONS = ("labels", "settlements", "usage_based")
 
 REVIEW_CONTRACT = "contract"
 REVIEW_NOT_CONTRACT = "not_contract"
@@ -118,6 +125,8 @@ class Contract:
     review: str | None = None  # the user's answer to a candidate (#130)
     kind: str | None = None  # None = follow the detector's suggestion (#111)
     labels: list[str] | None = None  # passed on to every booking of the series (#113)
+    usage_based: bool | None = None  # None = follow the detected trait (#116)
+    settlements: list[str] | None = None  # booking keys assigned by hand as settlements
 
     _FIELDS = (
         "start",
@@ -135,11 +144,14 @@ class Contract:
         "review",
         "kind",
         "labels",
+        "usage_based",
+        "settlements",
     )
 
     def to_dict(self) -> dict[str, Any]:
         out = {f: getattr(self, f) for f in self._FIELDS}
         out["labels"] = list(self.labels) if self.labels else None
+        out["settlements"] = list(self.settlements) if self.settlements else None
         return out
 
     def apply(self, data: dict[str, Any]) -> None:
@@ -160,8 +172,10 @@ class Contract:
         try:
             c.apply(fields)
         except ContractError:
-            try:  # labels are an add-on: never lose the contract terms over them
-                c.apply({k: v for k, v in fields.items() if k != "labels"})
+            try:  # add-ons: never lose the contract terms over them
+                c.apply(
+                    {k: v for k, v in fields.items() if k not in _ADD_ONS}
+                )
             except ContractError:
                 _LOGGER.warning("Skipping unreadable contract fields")
         return c
@@ -216,6 +230,17 @@ def _validate(d: dict[str, Any]) -> None:
         d["labels"] = clean_ids(d["labels"]) or None
     except LabelError as err:
         raise ContractError(err.code, err.detail) from err
+    if d["usage_based"] is not None and not isinstance(d["usage_based"], bool):
+        raise ContractError("invalid_usage_based", "Must be a boolean or null")
+    keys = d["settlements"]
+    if keys is not None:
+        if (
+            not isinstance(keys, list)
+            or len(keys) > MAX_MANUAL_SETTLEMENTS
+            or any(not isinstance(k, str) or not 0 < len(k) <= 200 for k in keys)
+        ):
+            raise ContractError("invalid_settlements", "Must be a list of booking keys")
+        d["settlements"] = list(dict.fromkeys(keys)) or None
     if d["plan_mode"] == PLAN_MODE_FIXED and d["plan_fixed_amount"] is None:
         raise ContractError("invalid_plan_fixed_amount", "Fixed mode needs an amount")
 
@@ -274,9 +299,13 @@ class ContractStore:
 
     def overrides(self) -> dict[str, dict[str, Any]]:
         return {
-            sid: {"plan_mode": c.plan_mode, "plan_fixed_amount": c.plan_fixed_amount}
+            sid: {
+                "plan_mode": c.plan_mode,
+                "plan_fixed_amount": c.plan_fixed_amount,
+                "settlements": list(c.settlements or ()),
+            }
             for sid, c in self.contracts.items()
-            if c.plan_mode
+            if c.plan_mode or c.settlements
         }
 
 
@@ -419,6 +448,19 @@ def _contract_view(s: dict[str, Any], c: Contract, today: date) -> dict[str, Any
         return defaults[name] if v is None else v
 
     pc = s["price_change"]
+    detected_usage = trait == TRAIT_USAGE_BASED
+    usage_based = detected_usage if c.usage_based is None else c.usage_based
+    history = s.get("settlements") or []
+    exp = (
+        expected_settlement(
+            history, s.get("advance_at_settlement"), s["last_amount"],
+            INTERVALS[s["interval"]][1], today,
+        )
+        if usage_based
+        else None
+    )
+    # a back-payment adds to the yearly cost, a refund lowers it
+    annual_total = round(s["annual_cost"] + (exp["amount"] if exp else 0.0), 2)
     special_default = special_termination_default(s)
     special_checked = special_default if c.special_termination is None else c.special_termination
     deadline = effective = None
@@ -458,6 +500,14 @@ def _contract_view(s: dict[str, Any], c: Contract, today: date) -> dict[str, Any
             "stored": c.to_dict(),
         },
         "labels": list(c.labels or []),
+        "settlement": {
+            "usage_based": usage_based,
+            "usage_based_detected": detected_usage,
+            "history": history,
+            "expected": exp,
+            "candidates": s.get("settlement_candidates") or [],
+        },
+        "annual_total": annual_total,
         "next_deadline": deadline.isoformat() if deadline else None,
         "effective_end": effective.isoformat() if effective else None,
         "days_until_deadline": days_left,
@@ -490,7 +540,8 @@ def contract_totals(contracts: list[dict[str, Any]]) -> dict[str, dict[str, Any]
         if c.get("candidate") or c.get("status") == "ended":
             continue
         group = out[_TOTAL_GROUP.get(c.get("kind") or KIND_CONTRACT, TOTAL_FIXED)]
-        group["yearly"] = round(group["yearly"] + float(c.get("annual_cost") or 0), 2)
+        yearly = c.get("annual_total", c.get("annual_cost"))
+        group["yearly"] = round(group["yearly"] + float(yearly or 0), 2)
         group["count"] += 1
     for group in out.values():
         group["monthly"] = round(group["yearly"] / 12, 2)
@@ -509,6 +560,7 @@ def aggregate_view(item: dict[str, Any]) -> dict[str, Any]:
         "kind",
         "owner",
         "annual_cost",
+        "annual_total",
         "monthly_equivalent",
         "next_expected",
         "last_seen",
@@ -537,13 +589,32 @@ def visible_to(item: dict[str, Any], person: str | None) -> bool:
 
 
 def build_reserves(contracts: list[dict[str, Any]]) -> dict[str, Any]:
-    """Monthly reserve for every annual/irregular expense series."""
+    """Monthly reserve for every annual/irregular expense series, plus the
+    expected back-payment of a usage-based contract (#116)."""
     items = []
     by_owner: dict[str, float] = {}
     for c in contracts:
-        if c["interval"] not in IRREGULAR_INTERVALS or c["status"] == "ended":
+        if c["status"] == "ended" or c.get("candidate"):  # no reserve for a guess (#129)
             continue
-        if c.get("candidate"):  # not sure it is a contract: no reserve (#129)
+        exp = (c.get("settlement") or {}).get("expected")
+        if exp and exp["monthly_reserve"] > 0:
+            items.append(
+                {
+                    "series_id": c["id"],
+                    "type": "settlement",
+                    "creditor": c["creditor"],
+                    "display_name": c.get("display_name", c["creditor"]),
+                    "category": c["category"],
+                    "owner": c["owner"],
+                    "interval": "yearly",
+                    "amount": exp["amount"],
+                    "next_due": exp["next_due"],
+                    "monthly_reserve": exp["monthly_reserve"],
+                    "annual_cost": exp["amount"],
+                }
+            )
+            by_owner[c["owner"]] = round(by_owner.get(c["owner"], 0.0) + exp["monthly_reserve"], 2)
+        if c["interval"] not in IRREGULAR_INTERVALS:
             continue
         monthly = round(c["annual_cost"] / 12, 2)
         items.append(

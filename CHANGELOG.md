@@ -2,6 +2,17 @@
 
 All notable changes to the Finance will be documented in this file.
 
+## [0.33.0] — 2026-11-02
+
+### Added
+- Energy, water, heating and service-charge contracts are recognised as "Verbrauchsabhängig" - the monthly advance stays one stable contract, and the yearly settlement (Nachzahlung or Erstattung) is shown separately under "Abrechnungen" instead of breaking the series
+- The expected next back-payment becomes a monthly reserve ("Erwartete Jahresabrechnung"); it is the last settlement minus what a raised advance already covers, and an expected refund lowers the contract's yearly cost instead
+- A settlement without a keyword can be assigned from the payee's other bookings in the contract sheet, and removed again; "Verbrauchsabhängig" can be switched on or off
+
+### Fixed
+- A price step stays reported as a price change after the next payments at the new price, not only on the first one
+- Mobile, streaming, app-store and automobile-club payments land in their life area more often
+
 ## [0.32.0] — 2026-11-02
 
 ### Added

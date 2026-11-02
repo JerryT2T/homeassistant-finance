@@ -80,6 +80,23 @@ const FB = {
     "rs.total": "Zusammen $amount pro Monat",
     "rs.month": "$amount pro Monat",
     "rs.due": "fällig $date",
+    "st.title": "Abrechnungen",
+    "st.usage": "Verbrauchsabhängig (Abschlag + Jahresabrechnung)",
+    "st.detected": "erkannt",
+    "st.none": "Noch keine Abrechnung zugeordnet.",
+    "st.back": "Nachzahlung $amount",
+    "st.refund": "Erstattung $amount",
+    "st.src.keyword": "erkannt",
+    "st.src.manual": "zugeordnet",
+    "st.remove": "Zuordnung entfernen",
+    "st.expected_back": "Erwartet: Nachzahlung $amount bis $date · Rücklage $month/Monat",
+    "st.expected_refund": "Erwartet: Erstattung $amount bis $date · senkt die Jahreskosten",
+    "st.expected_none": "Keine Nachzahlung erwartet: der neue Abschlag deckt die letzte Abrechnung.",
+    "st.step": "Abschlag seit der letzten Abrechnung $step/Monat geändert",
+    "st.candidates": "Weitere Buchungen dieses Zahlungsempfängers",
+    "st.assign": "Als Abrechnung",
+    "st.recalc": "Wird nach dem Speichern neu berechnet.",
+    "rs.settlement": "Erwartete Jahresabrechnung",
     "rs.empty": "Keine jährlichen oder vierteljährlichen Zahlungen erkannt.",
     "rs.owner_total": "$owner: $amount pro Monat",
     "rs.coverage": "Töpfe und Kontostand",
@@ -155,6 +172,23 @@ const FB = {
     "rs.total": "Together $amount per month",
     "rs.month": "$amount per month",
     "rs.due": "due $date",
+    "st.title": "Settlements",
+    "st.usage": "Usage-based (advance + annual settlement)",
+    "st.detected": "detected",
+    "st.none": "No settlement assigned yet.",
+    "st.back": "Back-payment $amount",
+    "st.refund": "Refund $amount",
+    "st.src.keyword": "detected",
+    "st.src.manual": "assigned",
+    "st.remove": "Remove assignment",
+    "st.expected_back": "Expected: back-payment $amount by $date · reserve $month/month",
+    "st.expected_refund": "Expected: refund $amount by $date · lowers the yearly cost",
+    "st.expected_none": "No back-payment expected: the new advance covers the last settlement.",
+    "st.step": "Advance changed by $step/month since the last settlement",
+    "st.candidates": "Other bookings of this payee",
+    "st.assign": "As settlement",
+    "st.recalc": "Recalculated after saving.",
+    "rs.settlement": "Expected annual settlement",
     "rs.empty": "No yearly or quarterly payments detected.",
     "rs.owner_total": "$owner: $amount per month",
     "rs.coverage": "Pots and account balance",
@@ -550,7 +584,7 @@ class FdContracts extends HTMLElement {
     let h = `<section class="card"><h3>${e(tr("rs.title"))}</h3><p class="muted" style="margin:0 0 6px">${e(tr("rs.intro"))}</p>`;
     if (!items.length) h += `<p class="muted">${e(tr("rs.empty"))}</p>`;
     else {
-      h += items.map((i) => `<div class="rw"><span><b>${e(i.display_name || i.creditor)}</b><span class="muted">${e(tr(`ct.interval.${i.interval}`))} · ${e(tr("rs.due", { date: this._date(i.next_due) }))}</span></span>
+      h += items.map((i) => `<div class="rw"><span><b>${e(i.display_name || i.creditor)}</b><span class="muted">${e(i.type === "settlement" ? tr("rs.settlement") : tr(`ct.interval.${i.interval}`))} · ${e(tr("rs.due", { date: this._date(i.next_due) }))}</span></span>
         <b>${e(tr("rs.month", { amount: this._m(i.monthly_reserve, 2) }))}</b></div>`).join("");
       h += `<div class="rw"><span><b>${e(tr("rs.total", { amount: this._m(r.total_monthly, 2) }))}</b>${owners.length > 1
         ? `<span class="muted">${owners.map(([o, v]) => e(tr("rs.owner_total", { owner: this._ownerLabel(o), amount: this._m(v, 2) }))).join(" · ")}</span>` : ""}</span></div>`;
@@ -608,6 +642,8 @@ class FdContracts extends HTMLElement {
         plan_mode: c.plan_mode || "auto",
         plan_fixed_amount: c.plan_fixed_amount ?? "",
         labels: [...(c.labels || [])],
+        usage_based: !!(c.settlement && c.settlement.usage_based),
+        settlements: [...((k.stored || {}).settlements || [])],
       },
     };
     this._paintSheet();
@@ -658,6 +694,7 @@ class FdContracts extends HTMLElement {
   ${notice ? `<div class="rw" style="margin-top:8px"><span><b>${e(tr("ct.f.special"))}</b>${s.c.contract.special_termination_prefilled ? `<span class="muted">${e(tr("ct.special_prefilled"))}</span>` : ""}</span>
     <span class="hit"><button type="button" class="sw" role="switch" aria-checked="${d.special_termination}" data-grp="special" aria-label="${e(tr("ct.f.special"))}"></button></span></div>
   <div class="hint">${e(tr("ct.defaults", { cat: d.kind === "contract" ? this._catLabel(s.c.category) : tr(`ct.kind.${d.kind}`), term: def.min_term_months, renewal: def.renewal_months, notice: def.notice_value, unit: tr("ct.unit." + def.notice_unit) }))}</div>` : ""}
+  ${this._settlementHtml(s)}
   <div class="lbl" id="lbh">${e(tr("lb.title"))}</div>
   <div class="opts" role="group" aria-labelledby="lbh">${(this._labels || []).filter((l) => l.kind !== "auto").map((l) => `<button type="button" role="checkbox" aria-checked="${d.labels.includes(l.id)}" data-lbl="${e(l.id)}">${e(window._fd.labelName(l.id, this._labels))}</button>`).join("") || `<span class="muted">${e(tr("lb.none"))}</span>`}</div>
   <div class="err" id="sheeterr" role="alert">${e(s.error)}</div>
@@ -665,6 +702,45 @@ class FdContracts extends HTMLElement {
     <button type="button" class="btn ghost" data-act="cancel">${e(tr("ct.cancel"))}</button>
     <button type="button" class="btn" data-act="save" ${s.saving ? "disabled" : ""}>${e(tr(s.saving ? "ct.saving" : "ct.save"))}</button></div>
 </div></div>`;
+  }
+
+  _settlementHtml(s) {
+    const st = s.c.settlement;
+    if (!st) return ""; // aggregate view: no amounts per payment
+    const e = window._fd.escHtml;
+    const d = s.d;
+    const money = (v) => this._m(Math.abs(v), 2);
+    let h = `<div class="rw" style="margin-top:8px"><span><b>${e(tr("st.usage"))}</b>${st.usage_based_detected ? `<span class="muted">${e(tr("st.detected"))}</span>` : ""}</span>
+    <span class="hit"><button type="button" class="sw" role="switch" aria-checked="${d.usage_based}" data-grp="usage" aria-label="${e(tr("st.usage"))}"></button></span></div>`;
+    if (!d.usage_based) return h;
+    const manual = new Set(d.settlements);
+    const stored = new Set((s.c.contract.stored || {}).settlements || []);
+    const dirty = manual.size !== stored.size || [...manual].some((k) => !stored.has(k)) || d.usage_based !== st.usage_based;
+    // keyword hits stay; manual ones follow the sheet's current selection
+    const pool = [...st.history, ...st.candidates];
+    const rows = pool.filter((x) => (x.source === "keyword") || (x.key && manual.has(x.key)))
+      .sort((a, b) => (a.date < b.date ? -1 : 1));
+    const loose = st.candidates.concat(st.history.filter((x) => x.source === "manual"))
+      .filter((x) => x.key && !manual.has(x.key));
+    const label = (x) => tr(x.amount < 0 ? "st.back" : "st.refund", { amount: money(x.amount) });
+    h += `<div class="lbl" id="sth">${e(tr("st.title"))}</div><div role="group" aria-labelledby="sth">`;
+    h += rows.length ? rows.map((x) => `<div class="rw"><span><b>${e(label(x))}</b><span class="muted">${e(this._date(x.date, true))} · ${e(tr(x.source === "keyword" ? "st.src.keyword" : "st.src.manual"))}</span></span>${x.source === "keyword" ? ""
+      : `<span class="hit"><button type="button" class="btn ghost" data-stl-rm="${e(x.key)}" aria-label="${e(`${tr("st.remove")}: ${label(x)}, ${this._date(x.date, true)}`)}">✕</button></span>`}</div>`).join("")
+      : `<p class="muted" style="margin:4px 0">${e(tr("st.none"))}</p>`;
+    h += `</div>`;
+    const x = st.expected;
+    if (dirty) h += `<div class="hint">${e(tr("st.recalc"))}</div>`;
+    else if (x) {
+      const key = x.amount > 0 ? "st.expected_back" : x.amount < 0 ? "st.expected_refund" : "st.expected_none";
+      h += `<div class="hint">${e(tr(key, { amount: money(x.amount), date: this._date(x.next_due, true), month: this._m(x.monthly_reserve, 2) }))}${x.advance_step ? ` · ${e(tr("st.step", { step: (x.advance_step > 0 ? "+" : "−") + money(x.advance_step) }))}` : ""}</div>`;
+    }
+    if (loose.length) {
+      h += `<div class="lbl" id="stc">${e(tr("st.candidates"))}</div><div role="group" aria-labelledby="stc">`;
+      h += loose.map((c) => `<div class="rw"><span><b>${e(label(c))}</b><span class="muted">${e(this._date(c.date, true))}</span></span>
+        <span class="hit"><button type="button" class="btn ghost" data-stl-add="${e(c.key)}" aria-label="${e(`${tr("st.assign")}: ${label(c)}, ${this._date(c.date, true)}`)}">${e(tr("st.assign"))}</button></span></div>`).join("");
+      h += `</div>`;
+    }
+    return h;
   }
 
   _previewText(s) {
@@ -696,6 +772,12 @@ class FdContracts extends HTMLElement {
     const prevLabels = s.c.labels || [];
     if (d.labels.length !== prevLabels.length || d.labels.some((id) => !prevLabels.includes(id))) body.labels = d.labels.length ? d.labels : null;
     if (d.owner !== (s.c.owner || "shared")) body.owner = d.owner;
+    const st = s.c.settlement;
+    if (st) {
+      if (d.usage_based !== st.usage_based) body.usage_based = d.usage_based === st.usage_based_detected ? null : d.usage_based;
+      const prev = (k.stored || {}).settlements || [];
+      if (d.settlements.length !== prev.length || d.settlements.some((x) => !prev.includes(x))) body.settlements = d.settlements.length ? d.settlements : null;
+    }
     const mode = d.plan_mode === "auto" ? null : d.plan_mode;
     const fixed = mode === "fixed" ? num(d.plan_fixed_amount) : null;
     if (mode === "fixed" && fixed == null) {
@@ -760,6 +842,13 @@ class FdContracts extends HTMLElement {
       if (t.dataset.sav) return this._toggleSavings(t.dataset.sav);
       if (t.dataset.review) return this._review(t.dataset.id, t.dataset.review);
       if (t.dataset.kind) { this._kind = t.dataset.kind; return this._render(); }
+      if ((t.dataset.stlAdd || t.dataset.stlRm) && s) {
+        const key = t.dataset.stlAdd || t.dataset.stlRm;
+        s.d.settlements = s.d.settlements.filter((x) => x !== key);
+        if (t.dataset.stlAdd) s.d.settlements.push(key);
+        this._paintSheet();
+        return this.shadowRoot.querySelector("[data-grp=usage]")?.focus();
+      }
       if (t.dataset.lbl && s) {
         const i = s.d.labels.indexOf(t.dataset.lbl);
         if (i >= 0) s.d.labels.splice(i, 1); else s.d.labels.push(t.dataset.lbl);
@@ -769,6 +858,7 @@ class FdContracts extends HTMLElement {
       if (t.dataset.grp && s) {
         const grp = t.dataset.grp;
         if (grp === "special") s.d.special_termination = !s.d.special_termination;
+        else if (grp === "usage") s.d.usage_based = !s.d.usage_based;
         else if (grp === "kind" && s.d.kind !== t.dataset.val) {
           // Untouched terms the user never stored follow the new kind's defaults.
           const def = this._defaultsFor(s.c, t.dataset.val);
@@ -776,7 +866,7 @@ class FdContracts extends HTMLElement {
           for (const f of TERM_FIELDS) if (!s.touched.has(f) && stored[f] == null) s.d[f] = def[f];
           s.d.kind = t.dataset.val;
         } else s.d[grp] = t.dataset.val;
-        if (grp !== "kind" && grp !== "owner" && grp !== "plan_mode") s.touched.add(grp === "special" ? "special_termination" : grp);
+        if (grp !== "kind" && grp !== "owner" && grp !== "plan_mode" && grp !== "usage") s.touched.add(grp === "special" ? "special_termination" : grp);
         return this._paintSheet();
       }
       switch (t.dataset.act) {

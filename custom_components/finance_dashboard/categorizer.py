@@ -37,7 +37,8 @@ EXTRA_RULES: dict[str, list[str]] = {
         "rtl+", "joyn", "audible", "applemusic", "apple music", "disneyplus", "paramount",
         "crunchyroll", "openai", "chatgpt", "github", "dropbox", "microsoft 365", "adobe",
         "patreon", "playstation", "nintendo", "steam", "twitch", "zeit online", "spiegel+",
-        "nordvpn", "1password",
+        "nordvpn", "1password", "mobilfunk", "streaming", "stream", "cloudspeicher",
+        "appstore", "app store",
     ],
     "groceries": [
         "netto marken", "denn's", "denns", "alnatura", "bäckerei", "baeckerei", "bakery",
@@ -57,7 +58,7 @@ EXTRA_RULES: dict[str, list[str]] = {
     "mobility": [
         "esso", "total energies", "totalenergies", "jet tank", "hem tank",
         "flixbus", "bolt", "freenow", "free now", "sixt", "parkhaus", "parkgebühr",
-        "kvb", "bvg", "rmv", "vrs", "mvg", "hvv", "lime", "tier mobility",
+        "kvb", "bvg", "rmv", "vrs", "mvg", "hvv", "lime", "tier mobility", "autoclub",
     ],
     "health": [
         "allianz", "huk", "devk", "ergo", "axa", "generali", "signal iduna", "debeka",

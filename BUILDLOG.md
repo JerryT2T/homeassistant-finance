@@ -1,5 +1,15 @@
 # Build Log
 
+## 0.33.0 — 2026-11-02
+Version: 0.33.0
+Branch: feat/116-advance-settlement
+Changes:
+- feat(contracts): energy, water, heating and service-charge contracts are recognised as "Verbrauchsabhängig" - the monthly advance stays one stable contract, and the yearly settlement (Nachzahlung or Erstattung) is shown separately under "Abrechnungen" instead of breaking the series
+- feat(contracts): the expected next back-payment becomes a monthly reserve ("Erwartete Jahresabrechnung"); it is the last settlement minus what a raised advance already covers, and an expected refund lowers the contract's yearly cost instead
+- feat(contracts): a settlement without a keyword can be assigned from the payee's other bookings in the contract sheet, and removed again; "Verbrauchsabhängig" can be switched on or off
+- fix(contracts): a price step stays reported as a price change after the next payments at the new price, not only on the first one
+- fix(categories): mobile, streaming, app-store and automobile-club payments land in their life area more often
+
 ## 0.32.0 — 2026-11-02
 Version: 0.32.0
 Branch: feat/113-labels

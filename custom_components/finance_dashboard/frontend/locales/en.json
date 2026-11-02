@@ -799,5 +799,22 @@
   "tx.cancel": "Cancel",
   "tx.close": "Close",
   "tx.save_failed": "Saving failed.",
-  "tx.open_booking": "Open booking"
+  "tx.open_booking": "Open booking",
+  "st.title": "Settlements",
+  "st.usage": "Usage-based (advance + annual settlement)",
+  "st.detected": "detected",
+  "st.none": "No settlement assigned yet.",
+  "st.back": "Back-payment $amount",
+  "st.refund": "Refund $amount",
+  "st.src.keyword": "detected",
+  "st.src.manual": "assigned",
+  "st.remove": "Remove assignment",
+  "st.expected_back": "Expected: back-payment $amount by $date · reserve $month/month",
+  "st.expected_refund": "Expected: refund $amount by $date · lowers the yearly cost",
+  "st.expected_none": "No back-payment expected: the new advance covers the last settlement.",
+  "st.step": "Advance changed by $step/month since the last settlement",
+  "st.candidates": "Other bookings of this payee",
+  "st.assign": "As settlement",
+  "st.recalc": "Recalculated after saving.",
+  "rs.settlement": "Expected annual settlement"
 }

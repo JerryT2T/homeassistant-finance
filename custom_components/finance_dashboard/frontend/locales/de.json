@@ -799,5 +799,22 @@
   "tx.cancel": "Abbrechen",
   "tx.close": "Schließen",
   "tx.save_failed": "Speichern fehlgeschlagen.",
-  "tx.open_booking": "Buchung öffnen"
+  "tx.open_booking": "Buchung öffnen",
+  "st.title": "Abrechnungen",
+  "st.usage": "Verbrauchsabhängig (Abschlag + Jahresabrechnung)",
+  "st.detected": "erkannt",
+  "st.none": "Noch keine Abrechnung zugeordnet.",
+  "st.back": "Nachzahlung $amount",
+  "st.refund": "Erstattung $amount",
+  "st.src.keyword": "erkannt",
+  "st.src.manual": "zugeordnet",
+  "st.remove": "Zuordnung entfernen",
+  "st.expected_back": "Erwartet: Nachzahlung $amount bis $date · Rücklage $month/Monat",
+  "st.expected_refund": "Erwartet: Erstattung $amount bis $date · senkt die Jahreskosten",
+  "st.expected_none": "Keine Nachzahlung erwartet: der neue Abschlag deckt die letzte Abrechnung.",
+  "st.step": "Abschlag seit der letzten Abrechnung $step/Monat geändert",
+  "st.candidates": "Weitere Buchungen dieses Zahlungsempfängers",
+  "st.assign": "Als Abrechnung",
+  "st.recalc": "Wird nach dem Speichern neu berechnet.",
+  "rs.settlement": "Erwartete Jahresabrechnung"
 }
