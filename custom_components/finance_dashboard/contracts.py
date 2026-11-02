@@ -264,6 +264,41 @@ def _validate(d: dict[str, Any]) -> None:
         raise ContractError("invalid_plan_fixed_amount", "Fixed mode needs an amount")
 
 
+ANSWER_COINCIDENCE = "coincidence"
+ANSWER_NEW_PRICE = "new_price"
+ANSWER_ONE_OFF = "one_off"
+
+
+def answer_fields(qtype: str, answer: str, item: dict[str, Any]) -> dict[str, Any]:
+    """Contract fields a question answer writes (#117 B, G) - the same ones
+    the contract sheet writes, so both paths stay one model.
+
+    ``contract``: a kind confirms the candidate (the suggested kind is kept
+    as ``null`` so a better suggestion still applies), ``coincidence`` is
+    "Kein Vertrag". ``price``: a new price follows the last payment, a one-off
+    amount is ignored by the median; either way the step is marked answered.
+    """
+    if qtype == "contract":
+        if answer == ANSWER_COINCIDENCE:
+            return {"review": REVIEW_NOT_CONTRACT}
+        if answer not in KINDS:
+            raise ContractError("invalid_answer", "Unknown answer")
+        return {
+            "review": REVIEW_CONTRACT,
+            "kind": None if answer == item.get("kind_suggested") else answer,
+        }
+    if qtype == "price":
+        pc = item.get("price_change") or {}
+        if answer not in (ANSWER_NEW_PRICE, ANSWER_ONE_OFF) or not pc.get("date"):
+            raise ContractError("invalid_answer", "Unknown answer")
+        return {
+            "plan_mode": "last" if answer == ANSWER_NEW_PRICE else "median",
+            "plan_fixed_amount": None,
+            "price_reviewed": pc["date"],
+        }
+    raise ContractError("invalid_answer", "Unknown question type")
+
+
 class ContractStore:
     """Persists contract fields and the already-notified deadlines."""
 
