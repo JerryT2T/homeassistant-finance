@@ -18,6 +18,7 @@ from homeassistant.core import HomeAssistant
 from ._helpers import _get_manager, _get_setup_client
 from .ai_consent import VIEWS as AI_CONSENT_VIEWS
 from .labels import VIEWS as LABEL_VIEWS
+from .refunds import VIEWS as REFUND_VIEWS
 from .assignments import FinanceDashboardAssignmentsView
 from .contracts import (
     FinanceDashboardAccountSavingsView,
@@ -192,6 +193,6 @@ async def async_register_api(hass: HomeAssistant) -> None:
     hass.http.register_view(FinanceDashboardPlanWizardIncomeView())
     hass.http.register_view(FinanceDashboardPlanWizardFixedView())
     hass.http.register_view(FinanceDashboardPlanWizardResultView())
-    for view in (*AI_CONSENT_VIEWS, *PLAN_IDEAS_VIEWS, *LABEL_VIEWS):
+    for view in (*AI_CONSENT_VIEWS, *PLAN_IDEAS_VIEWS, *LABEL_VIEWS, *REFUND_VIEWS):
         hass.http.register_view(view())
     _LOGGER.debug("Finance API endpoints registered")

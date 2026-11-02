@@ -992,8 +992,29 @@ class FinanceDashboardManager(RefreshMixin, BankMixin, PersistenceMixin, Questio
             viewer_person=person,
             is_admin=is_admin,
             corrections=getattr(self, "_owner_corrections", None),
+            refund_allocations=self.get_refund_analysis()["allocations"],
             as_of=self._last_refresh,
         )
+
+    def get_refund_analysis(self) -> dict[str, Any]:
+        """Refund matches (#119) from cache and the stores the API views loaded.
+
+        Pure computation, never a bank call; a failure leaves the figures as
+        they were rather than breaking the summary.
+        """
+        from ..refund_matcher import analyse
+
+        data = self._hass.data.get(DOMAIN, {})
+        refunds, labels = data.get("_refund_store"), data.get("_label_store")
+        try:
+            return analyse(
+                self._transactions,
+                manual=refunds.manual if refunds else None,
+                labels=labels.bookings if labels else None,
+            )
+        except Exception:  # noqa: BLE001
+            _LOGGER.warning("Refund matching failed", exc_info=True)
+            return {"allocations": {}, "proposals": [], "confidence": {}}
 
     def get_budget_plan_view(
         self, month: int | None = None, year: int | None = None

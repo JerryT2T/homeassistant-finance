@@ -70,6 +70,13 @@ class QuestionsMixin:
         today = dt_util.now().date()
         return {
             "questions": data.get("questions", []),
+            # Refund matches the matcher is unsure about (#119): the user confirms
+            # or corrects them in the booking dialog (PUT /refunds/{id}).
+            "refund_proposals": [
+                {"refund": p["refund"], "expenses": list(p["allocation"]),
+                 "confidence": round(p["confidence"], 2), "reason": p["reason"]}
+                for p in self.get_refund_analysis()["proposals"]
+            ],
             "questions_open": data.get("questions_open", 0),
             "questions_total": data.get("questions_total", 0),
             "answered_total": mem.answered if mem else 0,

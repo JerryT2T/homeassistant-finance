@@ -8,6 +8,7 @@ from homeassistant.components.http import HomeAssistantView
 from ..const import DOMAIN
 from ..household_summary import CYCLES
 from ._helpers import _get_manager
+from .refunds import load_refund_inputs
 
 
 class FinanceDashboardHouseholdSummaryView(HomeAssistantView):
@@ -35,6 +36,7 @@ class FinanceDashboardHouseholdSummaryView(HomeAssistantView):
         # An admin who is a person sees the person view only on request.
         if is_admin and request.query.get("view") != "person":
             person = None
+        await load_refund_inputs(request.app["hass"])  # manual allocations + labels (#119)
         return self.json(
             manager.get_household_summary(cycle=cycle, person=person, is_admin=is_admin)
         )
