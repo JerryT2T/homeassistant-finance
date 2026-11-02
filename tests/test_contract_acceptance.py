@@ -134,7 +134,6 @@ def _all_pairs():
         yield case, pairs, extra
 
 
-@pytest.mark.xfail(strict=True, reason="#123: targets met once every milestone issue has landed")
 def test_detection_meets_epic_targets():
     expected = matched = detected = false_pos = 0
     want_total = got_total = 0.0
@@ -145,7 +144,8 @@ def test_detection_meets_epic_targets():
         fixed_extra = _fixed(extra)
         detected += len(fixed_hits) + len(fixed_extra)
         false_pos += len(fixed_extra)
-        want_total += sum(_annual(w) for w, _hit in pairs)
+        # an expected candidate (#109) is a question, not a fixed cost, until confirmed
+        want_total += sum(_annual(w) for w, _hit in pairs if not w.get("candidate"))
         got_total += sum(float(f["annual_cost"]) for f in fixed_hits + fixed_extra)
     recall = matched / expected
     fp_rate = false_pos / detected if detected else 0.0
