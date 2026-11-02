@@ -27,6 +27,12 @@ const DESKTOP = "(min-width: 1024px)";
 /*FB-START*/
 const FB = {
   de: {
+    "tx.ct.title": "Vertrag zuordnen",
+    "tx.ct.none": "Kein Vertrag",
+    "tx.ct.assign": "Übernehmen",
+    "tx.ct.done": "Dem Vertrag zugeordnet",
+    "tx.ct.removed": "Zuordnung entfernt",
+    "tx.ct.detected": "Die Erkennung ordnet diese Buchung dem Vertrag zu. Wähle einen anderen Vertrag oder teile die Zahlungsreihe im Vertrag.",
     "tx.title": "Transaktionen",
     "tx.search": "Suche in Verwendungszweck, Gegenpartei, Konto",
     "tx.search_label": "Transaktionen durchsuchen",
@@ -44,6 +50,12 @@ const FB = {
     "tx.desktop_only": "Die Transaktionsliste gibt es nur am Desktop.",
   },
   en: {
+    "tx.ct.title": "Assign to contract",
+    "tx.ct.none": "No contract",
+    "tx.ct.assign": "Apply",
+    "tx.ct.done": "Assigned to the contract",
+    "tx.ct.removed": "Assignment removed",
+    "tx.ct.detected": "Detection links this booking to the contract. Pick another contract or split the series in the contract.",
     "tx.title": "Transactions",
     "tx.search": "Search purpose, counterparty, account",
     "tx.search_label": "Search transactions",
@@ -129,6 +141,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .pick label:has(input:checked) { background: var(--fd-a50); border-color: var(--fd-a500); color: var(--fd-a900); font-weight: 500; }
 .pick label:has(input:focus-visible) { outline: 2px solid var(--fd-a500); outline-offset: 2px; }
 .newrow { display: flex; gap: 8px; margin-top: 8px; }
+.newrow select { flex: 1 1 auto; min-width: 0; min-height: var(--fd-touch); padding: 0 8px; border: 1px solid var(--fd-line); border-radius: 10px; background: var(--fd-page); color: var(--fd-t1); font: inherit; }
 .newrow input { flex: 1 1 auto; min-width: 0; box-sizing: border-box; min-height: var(--fd-touch); padding: 0 12px; border: 1px solid var(--fd-line); border-radius: 10px; background: var(--fd-page); color: var(--fd-t1); }
 .acts { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 16px; }
 .err { margin-top: 8px; color: var(--fd-over); font-size: 12px; }
@@ -321,6 +334,14 @@ class FdTransactions extends HTMLElement {
       this._labels = await window._fd.getLabels(this._hass);
       if (this._dlg && this._dlg.x === x) { this._paintDialog(); this._focusDialog(); }
     }
+    if (!this._contracts) {
+      await this._loadContracts();
+      if (this._dlg && this._dlg.x === x && this._contracts) {
+        const had = this.shadowRoot.activeElement;
+        this._paintDialog();
+        this._focusDialog(had && had.id ? `#${had.id}` : undefined);
+      }
+    }
   }
 
   // Refund allocation (#119): an incoming booking picks the expenses it paid back.
@@ -406,6 +427,7 @@ class FdTransactions extends HTMLElement {
       host.addEventListener("keydown", (ev) => this._onDlgKey(ev));
       host.addEventListener("input", (ev) => { if (ev.target.id === "newlb" && this._dlg) this._dlg.newName = ev.target.value; });
       host.addEventListener("change", (ev) => {
+        if (ev.target.id === "ctsel" && this._dlg) { this._dlg.ct = ev.target.value; return; }
         const id = ev.target.dataset && ev.target.dataset.lb;
         if (id && this._dlg) { if (ev.target.checked) this._dlg.sel.add(id); else this._dlg.sel.delete(id); }
         const rf = ev.target.dataset && ev.target.dataset.rf;
@@ -430,6 +452,7 @@ class FdTransactions extends HTMLElement {
   <h3 id="dlgt">${e(tr("tx.booking"))}: ${e(party)}</h3>
   <div class="muted">${e(fmtDate(x.date))}${x.account_name ? " · " + e(x.account_name) : ""}</div>
   ${catLine ? `<div class="sec">${e(tr("tx.category"))}</div><div>${catLine}</div>` : ""}
+  ${this._dlgContractHtml(d)}
   ${inh.length ? `<div class="sec">${e(tr("lb.from_contract"))}</div><div class="lcs">${labelChips(inh, this._labels, "inherited")}</div>` : ""}
   ${auto.length ? `<div class="sec">${e(tr("lb.auto"))}</div><div class="lcs">${labelChips(auto, this._labels, "auto")}</div>` : ""}
   <div class="sec" id="ownh">${e(tr("lb.own"))}</div>
@@ -444,12 +467,65 @@ class FdTransactions extends HTMLElement {
 </div></div>`;
   }
 
+  // ---- "Vertrag zuordnen" (#117 F): self-contained, acts right away ---------
+  _dlgContractHtml(d) {
+    const e = window._fd.escHtml;
+    const list = this._contracts;
+    if (!list) return "";
+    const cur = d.x.contract_id || "";
+    const opts = list.map((c) => `<option value="${e(c.id)}"${c.id === (d.ct ?? cur) ? " selected" : ""}>${e(c.display_name || c.creditor)}</option>`).join("");
+    return `<div class="sec"><label for="ctsel">${e(tr("tx.ct.title"))}</label></div>
+  <div class="newrow"><select id="ctsel"><option value=""${(d.ct ?? cur) ? "" : " selected"}>${e(tr("tx.ct.none"))}</option>${opts}</select>
+    <button type="button" class="btn ghost" data-act="ct-assign" ${d.ctBusy ? "disabled" : ""}>${e(tr("tx.ct.assign"))}</button></div>
+  ${d.ctMsg ? `<div class="muted" role="status">${e(d.ctMsg)}</div>` : ""}`;
+  }
+
+  async _loadContracts() {
+    if (this._contracts || !this._isAdmin) return;
+    try {
+      const r = await this._hass.callApi("GET", `${DOMAIN}/contracts`);
+      this._contracts = ((r && r.contracts) || []).filter((c) => !c.candidate && c.status !== "ended");
+    } catch (_) {
+      this._contracts = null;
+    }
+  }
+
+  async _assignContract() {
+    const d = this._dlg;
+    if (!d || d.ctBusy) return;
+    const want = d.ct ?? (d.x.contract_id || "");
+    if (want === (d.x.contract_id || "")) return;
+    d.ctBusy = true;
+    d.ctMsg = "";
+    this._paintDialog();
+    try {
+      const body = want ? { action: "assign", booking: d.x.ledger_id, series_id: want } : { action: "unassign", booking: d.x.ledger_id };
+      const r = await this._hass.callApi("POST", `${DOMAIN}/contract_overrides`, body);
+      const all = (r && r.contracts) || [];
+      this._contracts = all.filter((c) => !c.candidate && c.status !== "ended");
+      const hit = all.find((c) => (c.ledger_ids || []).includes(d.x.ledger_id));
+      d.x.contract_id = hit ? hit.id : null;
+      d.x.contract_name = hit ? hit.display_name || hit.creditor : null;
+      if (hit) { d.x.category = hit.category; d.x.category_source = "contract"; }
+      d.ct = undefined;
+      d.ctMsg = tr(want ? "tx.ct.done" : "tx.ct.removed");
+      this._paintList();
+    } catch (err) {
+      const code = err && err.body && err.body.error;
+      d.ctMsg = tr(code === "unknown_assignment" ? "tx.ct.detected" : "tx.save_failed");
+    }
+    d.ctBusy = false;
+    if (this._dlg !== d) return;
+    this._paintDialog();
+    this._focusDialog("#ctsel");
+  }
+
   _onDlgKey(ev) {
     if (!this._dlg) return;
     if (ev.key === "Escape") { ev.stopPropagation(); this._closeDialog(); return; }
     if (ev.key === "Enter" && ev.target.id === "newlb") { ev.preventDefault(); this._createLabel(); return; }
     if (ev.key !== "Tab") return;
-    const f = [...this.shadowRoot.querySelectorAll("#dlg input, #dlg button:not([disabled])")];
+    const f = [...this.shadowRoot.querySelectorAll("#dlg input, #dlg select, #dlg button:not([disabled])")];
     if (!f.length) return;
     const idx = f.indexOf(this.shadowRoot.activeElement);
     if (ev.shiftKey && idx <= 0) { ev.preventDefault(); f[f.length - 1].focus(); }
@@ -466,6 +542,7 @@ class FdTransactions extends HTMLElement {
       case "save": this._saveLabels(); break;
       case "rf-save": this._saveRefund(false); break;
       case "rf-reset": this._saveRefund(true); break;
+      case "ct-assign": this._assignContract(); break;
       default: break;
     }
   }

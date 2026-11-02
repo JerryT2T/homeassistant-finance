@@ -21,6 +21,32 @@ const DOMAIN = "finance_dashboard";
 // Fallback texts: used until locales/*.json carry the ct.* / rs.* keys.
 const FB = {
   "de": {
+    "ct.st.title": "Zusammenführen, teilen, Buchungen",
+    "ct.st.say": "Wirkt sofort und lässt sich jederzeit rückgängig machen.",
+    "ct.st.merged": "zusammengeführt",
+    "ct.st.unmerge": "Wieder trennen",
+    "ct.st.merge_with": "Mit einer anderen Zahlungsreihe zusammenführen (z. B. PayPal und Bank)",
+    "ct.st.merge": "Zusammenführen",
+    "ct.st.split_ref": "Nach Vertragsnummer teilen",
+    "ct.st.split_amount": "Nach Betrag teilen",
+    "ct.st.unsplit": "Teilung aufheben",
+    "ct.st.assigned": "Von Hand zugeordnete Buchungen",
+    "ct.st.none": "Keine.",
+    "ct.st.search": "Buchung suchen und zuordnen",
+    "ct.st.search_ph": "Name oder Verwendungszweck",
+    "ct.st.no_hits": "Keine passende Buchung gefunden.",
+    "ct.st.now_in": "jetzt bei $name",
+    "ct.st.assign": "Zuordnen",
+    "ct.st.unassign": "Zuordnung entfernen",
+    "ct.st.done.merge": "Zusammengeführt",
+    "ct.st.done.unmerge": "Wieder getrennt",
+    "ct.st.done.split": "Geteilt",
+    "ct.st.done.unsplit": "Teilung aufgehoben",
+    "ct.st.done.assign": "Buchung zugeordnet",
+    "ct.st.done.unassign": "Zuordnung entfernt",
+    "ct.st.err.nothing_to_split": "Keine zweite Zahlungsreihe gefunden – hier gibt es nichts zu teilen.",
+    "ct.st.err.unknown_series": "Diese Zahlungsreihe gibt es nicht mehr. Lade die Seite neu.",
+    "ct.st.err.unknown_booking": "Diese Buchung gibt es nicht mehr.",
     "ct.manual": "von Hand",
     "ct.f.amount": "Betrag pro Zahlung",
     "ct.delete": "Löschen",
@@ -140,6 +166,32 @@ const FB = {
     "rs.savings_failed": "Konnte nicht gespeichert werden"
   },
   "en": {
+    "ct.st.title": "Merge, split, bookings",
+    "ct.st.say": "Takes effect right away and can be undone at any time.",
+    "ct.st.merged": "merged",
+    "ct.st.unmerge": "Separate again",
+    "ct.st.merge_with": "Merge with another payment series (e.g. PayPal and bank)",
+    "ct.st.merge": "Merge",
+    "ct.st.split_ref": "Split by contract number",
+    "ct.st.split_amount": "Split by amount",
+    "ct.st.unsplit": "Undo split",
+    "ct.st.assigned": "Bookings assigned by hand",
+    "ct.st.none": "None.",
+    "ct.st.search": "Find and assign a booking",
+    "ct.st.search_ph": "Name or remittance text",
+    "ct.st.no_hits": "No matching booking found.",
+    "ct.st.now_in": "now in $name",
+    "ct.st.assign": "Assign",
+    "ct.st.unassign": "Remove assignment",
+    "ct.st.done.merge": "Merged",
+    "ct.st.done.unmerge": "Separated again",
+    "ct.st.done.split": "Split",
+    "ct.st.done.unsplit": "Split undone",
+    "ct.st.done.assign": "Booking assigned",
+    "ct.st.done.unassign": "Assignment removed",
+    "ct.st.err.nothing_to_split": "No second payment series found – nothing to split here.",
+    "ct.st.err.unknown_series": "This payment series no longer exists. Reload the page.",
+    "ct.st.err.unknown_booking": "This booking no longer exists.",
     "ct.manual": "added by hand",
     "ct.f.amount": "Amount per payment",
     "ct.delete": "Delete",
@@ -905,6 +957,7 @@ class FdContracts extends HTMLElement {
     <span class="hit"><button type="button" class="sw" role="switch" aria-checked="${d.special_termination}" data-grp="special" aria-label="${e(tr("ct.f.special"))}"></button></span></div>
   <div class="hint">${e(tr("ct.defaults", { cat: d.kind === "contract" ? this._catLabel(s.c.category) : tr(`ct.kind.${d.kind}`), term: def.min_term_months, renewal: def.renewal_months, notice: def.notice_value, unit: tr("ct.unit." + def.notice_unit) }))}</div>` : ""}
   ${this._settlementHtml(s)}
+  ${this._structureHtml(s)}
   <div class="lbl" id="lbh">${e(tr("lb.title"))}</div>
   <div class="opts" role="group" aria-labelledby="lbh">${(this._labels || []).filter((l) => l.kind !== "auto").map((l) => `<button type="button" role="checkbox" aria-checked="${d.labels.includes(l.id)}" data-lbl="${e(l.id)}">${e(window._fd.labelName(l.id, this._labels))}</button>`).join("") || `<span class="muted">${e(tr("lb.none"))}</span>`}</div>
   <div class="err" id="sheeterr" role="alert">${e(s.error)}</div>
@@ -951,6 +1004,112 @@ class FdContracts extends HTMLElement {
       h += `</div>`;
     }
     return h;
+  }
+
+  // ---- merge / split / booking assignment (#117 E, F) ------------------------
+  // These act right away (own endpoint), separate from "Speichern".
+  _structureHtml(s) {
+    const e = window._fd.escHtml;
+    const c = s.c;
+    const busy = s.structBusy ? " disabled" : "";
+    const money = (v) => this._m(Math.abs(v), 2);
+    let h = `<div class="lbl" id="sth2">${e(tr("ct.st.title"))}</div><div role="group" aria-labelledby="sth2"><p class="muted" style="margin:0 0 4px">${e(tr("ct.st.say"))}</p>`;
+    if (c.source !== "manual") {
+      for (const m of c.merged_from || []) {
+        h += `<div class="rw"><span><b>${e(m.name)}</b><span class="muted">${e(tr("ct.st.merged"))}</span></span>
+        <span class="hit"><button type="button" class="btn ghost" data-st="unmerge" data-sid="${e(m.id)}"${busy}>${e(tr("ct.st.unmerge"))}</button></span></div>`;
+      }
+      const others = (this._items || []).filter((x) => x.id !== c.id && x.source !== "manual");
+      if (others.length) {
+        h += `<label for="f-merge">${e(tr("ct.st.merge_with"))}</label><div class="nrow" style="grid-template-columns:1fr auto">
+        <select id="f-merge">${others.map((x) => `<option value="${e(x.id)}"${x.id === s.mergeWith ? " selected" : ""}>${e(x.display_name || x.creditor)} · ${e(tr(`ct.interval.${x.interval}`))}</option>`).join("")}</select>
+        <button type="button" class="btn ghost" data-st="merge"${busy}>${e(tr("ct.st.merge"))}</button></div>`;
+      }
+      h += `<div class="opts" style="margin-top:8px">${c.split_by
+        ? `<button type="button" data-st="unsplit"${busy}>${e(tr("ct.st.unsplit"))}</button>`
+        : `<button type="button" data-st="split" data-by="reference"${busy}>${e(tr("ct.st.split_ref"))}</button><button type="button" data-st="split" data-by="amount"${busy}>${e(tr("ct.st.split_amount"))}</button>`}</div>`;
+    }
+    const assigned = c.assigned || [];
+    h += `<div class="lbl" id="asg">${e(tr("ct.st.assigned"))}</div>`;
+    h += assigned.length ? assigned.map((a) => `<div class="rw"><span><b>${e(a.name || "—")}</b><span class="muted">${e(this._date(a.date, true))} · ${e(money(a.amount))}</span></span>
+      <span class="hit"><button type="button" class="btn ghost" data-st="unassign" data-key="${e(a.key)}" aria-label="${e(`${tr("ct.st.unassign")}: ${a.name}, ${this._date(a.date, true)}`)}"${busy}>✕</button></span></div>`).join("")
+      : `<p class="muted" style="margin:4px 0">${e(tr("ct.st.none"))}</p>`;
+    h += `<label for="f-bq">${e(tr("ct.st.search"))}</label><input id="f-bq" type="search" autocomplete="off" value="${e(s.q || "")}" placeholder="${e(tr("ct.st.search_ph"))}">`;
+    const own = new Set(c.ledger_ids || []);
+    const hits = (s.hits || []).filter((x) => x.ledger_id && !own.has(x.ledger_id));
+    if (s.hits) {
+      h += hits.length ? hits.map((x) => {
+        const who = x.creditor || x.debtor || x.description || "";
+        return `<div class="rw"><span><b>${e(who)}</b><span class="muted">${e(this._date(x.date, true))} · ${e(money(Number(x.amount)))}${x.contract_name ? ` · ${e(tr("ct.st.now_in", { name: x.contract_name }))}` : ""}</span></span>
+        <span class="hit"><button type="button" class="btn ghost" data-st="assign" data-key="${e(x.ledger_id)}" aria-label="${e(`${tr("ct.st.assign")}: ${who}, ${this._date(x.date, true)}`)}"${busy}>${e(tr("ct.st.assign"))}</button></span></div>`;
+      }).join("") : `<p class="muted" style="margin:4px 0">${e(tr("ct.st.no_hits"))}</p>`;
+    }
+    return `${h}<div class="err" role="alert">${e(s.structError || "")}</div></div>`;
+  }
+
+  _search(q) {
+    const s = this._sheet;
+    if (!s) return;
+    s.q = q;
+    clearTimeout(this._qTimer);
+    if (q.trim().length < 2) { s.hits = null; return this._paintKeep("#f-bq"); }
+    this._qTimer = setTimeout(async () => {
+      try {
+        const r = await this._hass.callApi("GET", `${DOMAIN}/transactions?q=${encodeURIComponent(q.trim())}&limit=8`);
+        if (this._sheet !== s || s.q !== q) return;
+        s.hits = (r && r.transactions) || (r && r.items) || [];
+      } catch (_) {
+        if (this._sheet !== s) return;
+        s.hits = [];
+      }
+      this._paintKeep("#f-bq");
+    }, 300);
+  }
+
+  /** Repaint the sheet and put the focus (and caret) back where it was. */
+  _paintKeep(sel) {
+    const sc = this.shadowRoot.querySelector(".sheet");
+    const top = sc ? sc.scrollTop : 0;
+    this._paintSheet();
+    const sc2 = this.shadowRoot.querySelector(".sheet");
+    if (sc2) sc2.scrollTop = top;
+    const el = sel && this.shadowRoot.querySelector(sel);
+    if (el) {
+      el.focus();
+      if (el.setSelectionRange && el.type === "search") el.setSelectionRange(el.value.length, el.value.length);
+    }
+  }
+
+  async _structure(action, data) {
+    const s = this._sheet;
+    if (!s || s.structBusy) return;
+    s.structBusy = true;
+    s.structError = "";
+    this._paintKeep();
+    try {
+      const r = await this._hass.callApi("POST", `${DOMAIN}/contract_overrides`, { action, ...data });
+      const all = (r && r.contracts) || [];
+      this._items = all.filter((c) => !c.candidate);
+      this._candidates = all.filter((c) => c.candidate && c.status !== "ended");
+      this._toast(tr(`ct.st.done.${action}`), "success");
+      this._reloadReserves();
+      const still = this._items.find((c) => c.id === s.id);
+      if (still) {
+        const { q, hits } = s;
+        this._openSheet(s.id);
+        Object.assign(this._sheet, { q, hits });
+        this._render();
+        this.shadowRoot.querySelector("#sheet [data-st], #sheet button")?.focus();
+      } else {
+        this._closeSheet();
+        this._render();
+      }
+    } catch (err) {
+      s.structBusy = false;
+      const code = err && err.body && err.body.error;
+      s.structError = code && tr(`ct.st.err.${code}`) !== `ct.st.err.${code}` ? tr(`ct.st.err.${code}`) : tr("ct.save_failed");
+      this._paintKeep();
+    }
   }
 
   _previewText(s) {
@@ -1071,6 +1230,18 @@ class FdContracts extends HTMLElement {
         this._paintSheet();
         return [...this.shadowRoot.querySelectorAll("[data-lbl]")].find((b) => b.dataset.lbl === t.dataset.lbl)?.focus();
       }
+      if (t.dataset.st && s) {
+        const st = t.dataset.st;
+        if (st === "merge") {
+          const src = this.shadowRoot.getElementById("f-merge");
+          return src && src.value && this._structure("merge", { target: s.id, source: src.value });
+        }
+        if (st === "unmerge") return this._structure("unmerge", { target: s.id, source: t.dataset.sid });
+        if (st === "split") return this._structure("split", { series_id: s.id, by: t.dataset.by });
+        if (st === "unsplit") return this._structure("unsplit", { series_id: s.id });
+        if (st === "assign") return this._structure("assign", { booking: t.dataset.key, series_id: s.id });
+        if (st === "unassign") return this._structure("unassign", { booking: t.dataset.key });
+      }
       if (t.dataset.pick !== undefined && this._add) return this._pickTemplate(Number(t.dataset.pick));
       if (t.dataset.agrp && this._add && this._add.d) {
         const { agrp, val } = t.dataset;
@@ -1116,6 +1287,8 @@ class FdContracts extends HTMLElement {
     sh.addEventListener("input", (ev) => {
       const af = ev.target.dataset && ev.target.dataset.af;
       if (af && this._add && this._add.d) { this._add.d[af] = ev.target.value; return; }
+      if (ev.target.id === "f-bq" && this._sheet) return this._search(ev.target.value);
+      if (ev.target.id === "f-merge" && this._sheet) { this._sheet.mergeWith = ev.target.value; return; }
       const f = ev.target.dataset && ev.target.dataset.f;
       if (f && this._sheet) {
         this._sheet.d[f] = ev.target.value;
@@ -1126,6 +1299,7 @@ class FdContracts extends HTMLElement {
     });
     sh.addEventListener("keydown", (ev) => {
       if (ev.key === "Escape" && (this._sheet || this._add)) { ev.stopPropagation(); this._closeSheet(); }
+      if (ev.key === "Enter" && ev.target.id === "f-bq") ev.preventDefault();
     });
   }
 }
