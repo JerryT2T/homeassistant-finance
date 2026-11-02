@@ -33,7 +33,7 @@ from homeassistant.helpers.storage import Store
 
 from .account_identity import account_key
 from .const import DOMAIN, STORAGE_VERSION
-from .labels import LabelError, clean_ids
+from .labels import LabelError, booking_key, clean_ids
 from .contract_kind import CATEGORY_DEFAULTS as KIND_CATEGORY_DEFAULTS
 from .contract_kind import (
     KIND_CONTRACT,
@@ -51,6 +51,7 @@ from .recurring import (
     PLAN_MODE_FIXED,
     PLAN_MODES,
     SERIES_DATE_TOLERANCE_DAYS,
+    SPLIT_MODES,
     STATUS_ACTIVE,
     STATUS_ENDED,
     STATUS_MISSING,
@@ -316,6 +317,7 @@ class ContractStore:
         self.aliases: dict[str, str] = {}
         # contracts added by hand (#117 D): id -> {name, interval, created}
         self.manual: dict[str, dict[str, str]] = {}
+        self.structure = ContractStructure(hass)  # merges / splits / assignments, own store
         self._aliases_changed = False
         self._loaded = False
 
@@ -340,6 +342,7 @@ class ContractStore:
                         "interval": rec.get("interval") if rec.get("interval") in INTERVALS else "yearly",
                         "created": str(rec.get("created") or ""),
                     }
+        await self.structure.async_load()
         self._loaded = True
 
     async def async_save(self) -> None:
@@ -415,6 +418,10 @@ class ContractStore:
             return False
         del self.manual[mid]
         self.contracts.pop(mid, None)
+        structure = getattr(self, "structure", None)
+        if structure:  # its bookings go back to their payees
+            for key in [k for k, v in structure.assignments.items() if v == mid]:
+                del structure.assignments[key]
         return True
 
     def overrides(self) -> dict[str, dict[str, Any]]:
@@ -427,6 +434,95 @@ class ContractStore:
             for sid, c in self.contracts.items()
             if c.plan_mode or c.settlements
         }
+
+
+STORAGE_KEY_OVERRIDES = f"{DOMAIN}_contract_overrides"
+MAX_MERGES = 200
+MAX_ASSIGNMENTS = 1000
+
+
+class ContractStructure:
+    """The user's merges, splits and booking assignments (#117 E, F).
+
+    A store of its own (decision d-overrides), never the ledger. It holds
+    series ids, payee keys and booking keys - no names, no amounts.
+    """
+
+    def __init__(self, hass: HomeAssistant | None, store: Any | None = None) -> None:
+        self._store = store if store is not None else Store(hass, STORAGE_VERSION, STORAGE_KEY_OVERRIDES)
+        self.merges: dict[str, list[str]] = {}  # target id -> merged ids
+        self.splits: dict[str, str] = {}  # payee key -> split mode
+        self.assignments: dict[str, str] = {}  # booking key -> series id
+
+    async def async_load(self) -> None:
+        try:
+            raw = await self._store.async_load()
+        except Exception:
+            _LOGGER.exception("Contract overrides load failed - starting empty")
+            raw = None
+        if not isinstance(raw, dict):
+            return
+        self.merges = {
+            str(t): [str(s) for s in srcs if s]
+            for t, srcs in (raw.get("merges") or {}).items()
+            if isinstance(srcs, list)
+        }
+        self.splits = {
+            str(k): str(v) for k, v in (raw.get("splits") or {}).items() if v in SPLIT_MODES
+        }
+        self.assignments = {str(k): str(v) for k, v in (raw.get("assignments") or {}).items() if k and v}
+
+    async def async_save(self) -> None:
+        await self._store.async_save(
+            {"merges": self.merges, "splits": self.splits, "assignments": self.assignments}
+        )
+
+    def merge(self, target: str, source: str) -> None:
+        if not target or not source or target == source:
+            raise ContractError("invalid_merge", "Pick two different series")
+        if source in self.merges:  # a target merged on: its own sources come along
+            for s in self.merges.pop(source):
+                if s != target and s not in self.merges.setdefault(target, []):
+                    self.merges[target].append(s)
+        for t, srcs in list(self.merges.items()):
+            if source in srcs and t != target:
+                srcs.remove(source)
+                if not srcs:
+                    del self.merges[t]
+        if sum(len(v) for v in self.merges.values()) >= MAX_MERGES:
+            raise ContractError("too_many", "Too many merges")
+        srcs = self.merges.setdefault(target, [])
+        if source not in srcs:
+            srcs.append(source)
+
+    def unmerge(self, target: str, source: str) -> bool:
+        srcs = self.merges.get(target) or []
+        if source not in srcs:
+            return False
+        srcs.remove(source)
+        if not srcs:
+            del self.merges[target]
+        return True
+
+    def split(self, payee: str, mode: str) -> None:
+        if mode not in SPLIT_MODES:
+            raise ContractError("invalid_split", "Split by reference or amount")
+        if not payee:
+            raise ContractError("invalid_split", "Unknown payee")
+        self.splits[payee] = mode
+
+    def unsplit(self, payee: str) -> bool:
+        return self.splits.pop(payee, None) is not None
+
+    def assign(self, key: str, sid: str) -> None:
+        if not key or not sid or len(key) > 200:
+            raise ContractError("invalid_assignment", "Booking key and series id required")
+        if key not in self.assignments and len(self.assignments) >= MAX_ASSIGNMENTS:
+            raise ContractError("too_many", "Too many assignments")
+        self.assignments[key] = sid
+
+    def unassign(self, key: str) -> bool:
+        return self.assignments.pop(key, None) is not None
 
 
 async def async_get_store(hass: HomeAssistant) -> ContractStore:
@@ -520,12 +616,17 @@ def build_contracts(
     chain detector missed, never a contract.
     """
     today = today or date.today()
+    structure = getattr(store, "structure", None)
     series_list = detect_series(
         transactions,
         today=today,
         overrides=store.overrides(),
         aliases=store.aliases,
         known_ids=set(store.contracts),
+        merges=structure.merges if structure else None,
+        splits=structure.splits if structure else None,
+        assignments=structure.assignments if structure else None,
+        external_ids=set(getattr(store, "manual", {})),
     )
     out: list[dict[str, Any]] = []
     for s in series_list:
@@ -550,15 +651,26 @@ def build_contracts(
             # confirmed, or edited by the user: a contract, whatever the score says
             s = {**s, "candidate": False}
         out.append(_contract_view({**s, "source": SOURCE_DETECTED}, store.get(s["id"]), today))
-    for mid, rec in getattr(store, "manual", {}).items():
-        out.append(_contract_view(_manual_series(mid, rec, store.get(mid), today), store.get(mid), today))
+    manual = getattr(store, "manual", {})
+    by_manual: dict[str, list[dict[str, Any]]] = {}
+    if manual and structure and structure.assignments:
+        for txn in transactions:
+            mid = structure.assignments.get(booking_key(txn) or "")
+            if mid in manual and txn.get("_status") == "booked":
+                by_manual.setdefault(mid, []).append(txn)
+    for mid, rec in manual.items():
+        s = _manual_series(mid, rec, store.get(mid), today, by_manual.get(mid) or [])
+        out.append(_contract_view(s, store.get(mid), today))
     out.sort(key=lambda c: (c["next_deadline"] is None, c["next_deadline"] or ""))
     return out
 
 
-def _manual_series(mid: str, rec: dict[str, str], c: Contract, today: date) -> dict[str, Any]:
-    """A series-shaped record for a contract added by hand (#117 D): no
-    payments, the user's amount every interval from the start date on."""
+def _manual_series(
+    mid: str, rec: dict[str, str], c: Contract, today: date, assigned: list[dict[str, Any]] = ()
+) -> dict[str, Any]:
+    """A series-shaped record for a contract added by hand (#117 D): the
+    user's amount every interval from the start date on. Bookings assigned
+    to it (#117 F) are linked (labels, category) but never move the amount."""
     created = rec.get("interval") or "yearly"
     interval = c.interval or created  # the sheet's override is the rhythm itself here
     nominal, per_year, _ = INTERVALS[interval]
@@ -599,7 +711,22 @@ def _manual_series(mid: str, rec: dict[str, str], c: Contract, today: date) -> d
         "status": STATUS_ACTIVE,
         "price_change": None,
         "category": "other",
-        "ledger_ids": [],
+        "ledger_ids": [k for k in (booking_key(t) for t in assigned) if k],
+        "assigned": sorted(
+            (
+                {
+                    "key": booking_key(t),
+                    "date": str(t.get("bookingDate") or ""),
+                    "amount": round(float((t.get("transactionAmount") or {}).get("amount") or 0), 2),
+                    "name": " ".join(str(t.get("creditorName") or t.get("debtorName") or "").split()),
+                }
+                for t in assigned
+            ),
+            key=lambda e: e["date"],
+        ),
+        "merged_from": [],
+        "split_by": None,
+        "payee_key": "",
         "account_key": "",
         "account_type": "shared",
         "account_person": "",

@@ -176,3 +176,141 @@ def test_manual_contract_input_is_validated(bad):
     with pytest.raises(ContractError):
         _manual(store, **bad)
     assert store.manual == {} and store.contracts == {}
+
+
+# --- E / F: merge, split, booking assignment -----------------------------------
+
+
+def structured_store():
+    from custom_components.finance_dashboard.contracts import ContractStructure
+
+    store = blank_store()
+    store.structure = ContractStructure(None, store=object())
+    return store
+
+
+def _keyed(rows, prefix):
+    for i, r in enumerate(rows):
+        r.update(_ledger_id=f"{prefix}{i}", _account_key="acc0")
+    return rows
+
+
+def _two_sides():
+    bank = _keyed(monthly([-12.99] * 3, name="Streamly", start=date(2026, 1, 3)), "b")
+    paypal = _keyed(monthly([-12.99] * 3, name="PayPal Europe", start=date(2026, 4, 3)), "p")
+    return bank + paypal
+
+
+def test_merge_joins_two_series_and_undo_brings_both_back_under_their_ids():
+    store = structured_store()
+    before = {c["creditor"]: c["id"] for c in build_contracts(_two_sides(), store, today=TODAY)}
+    assert len(before) == 2
+    target, source = before["streamly"], before["paypal europe"]
+    store.contracts[target] = Contract(target, display_name="Streamly Abo")
+    store.structure.merge(target, source)
+    (merged,) = build_contracts(_two_sides(), store, today=TODAY)
+    assert merged["id"] == target and merged["display_name"] == "Streamly Abo"
+    assert merged["occurrences"] == 6 and merged["status"] == "active"
+    assert merged["merged_from"] == [{"id": source, "name": "paypal europe"}]
+    assert len(merged["ledger_ids"]) == 6
+    assert store.structure.unmerge(target, source)
+    after = {c["creditor"]: c["id"] for c in build_contracts(_two_sides(), store, today=TODAY)}
+    assert after == before
+
+
+def test_merging_a_target_onto_another_moves_its_sources_along():
+    store = structured_store()
+    store.structure.merge("a", "b")
+    store.structure.merge("c", "a")
+    assert store.structure.merges == {"c": ["b", "a"]}
+    with pytest.raises(ContractError):
+        store.structure.merge("c", "c")
+
+
+def test_split_by_amount_and_undo_keep_the_payee_id():
+    rows = monthly([-10, -10, -10, -15, -15, -15], name="Gym")
+    store = structured_store()
+    (whole,) = build_contracts(rows, store, today=TODAY)
+    store.structure.split(whole["payee_key"], "amount")
+    parts = build_contracts(rows, store, today=TODAY)
+    assert len(parts) == 2 and all(p["split_by"] == "amount" for p in parts)
+    assert whole["id"] in {p["id"] for p in parts}
+    again = build_contracts(rows, store, today=TODAY)
+    assert {p["id"] for p in again} == {p["id"] for p in parts}
+    assert store.structure.unsplit(whole["payee_key"])
+    (back,) = build_contracts(rows, store, today=TODAY)
+    assert back["id"] == whole["id"]
+
+
+def test_split_by_reference_separates_successive_contracts():
+    rows = monthly([-40] * 3, name="Bank", remittanceInformationUnstructured="Darlehen 1234567")
+    rows += monthly([-40] * 3, name="Bank", start=date(2026, 4, 12),
+                    remittanceInformationUnstructured="Darlehen 7654321")
+    store = structured_store()
+    (whole,) = build_contracts(rows, store, today=TODAY)
+    store.structure.split(whole["payee_key"], "reference")
+    assert len(build_contracts(rows, store, today=TODAY)) == 2
+
+
+def test_split_that_finds_nothing_to_split_keeps_one_series():
+    rows = monthly([-10] * 5, name="Gym")
+    store = structured_store()
+    (whole,) = build_contracts(rows, store, today=TODAY)
+    store.structure.split(whole["payee_key"], "reference")
+    (still,) = build_contracts(rows, store, today=TODAY)
+    assert still["id"] == whole["id"]
+    with pytest.raises(ContractError):
+        store.structure.split(whole["payee_key"], "colour")
+
+
+def test_assigned_booking_joins_the_series_and_leaves_its_payee():
+    rows = _keyed(monthly([-12.99] * 4, name="Streamly", start=date(2026, 2, 3)), "s")
+    stray = _keyed([txn("2026-01-03", -12.99, "Kartenzahlung 4711")], "x")
+    store = structured_store()
+    (c,) = build_contracts(rows + stray, store, today=TODAY)
+    assert c["occurrences"] == 4
+    store.structure.assign("acc0|x0", c["id"])
+    (c,) = build_contracts(rows + stray, store, today=TODAY)
+    assert c["occurrences"] == 5 and "acc0|x0" in c["ledger_ids"]
+    assert [a["key"] for a in c["assigned"]] == ["acc0|x0"]
+
+
+def test_assigned_refund_becomes_a_settlement_of_the_contract():
+    rows = _keyed(monthly([-80] * 5, name="Stadtwerke", start=date(2026, 1, 3)), "s")
+    refund = _keyed([txn("2026-05-20", 35.0, "Inkasso Partner")], "r")
+    store = structured_store()
+    (c,) = build_contracts(rows + refund, store, today=TODAY)
+    store.structure.assign("acc0|r0", c["id"])
+    (c,) = build_contracts(rows + refund, store, today=TODAY)
+    assert [(s["key"], s["source"]) for s in c["settlement"]["history"]] == [("acc0|r0", "manual")]
+    assert c["occurrences"] == 5
+
+
+def test_booking_assigned_to_a_manual_contract_is_linked_and_one_to_a_gone_id_returns():
+    store = structured_store()
+    mid = _manual(store)
+    paid = _keyed([txn("2025-11-02", -480, "HUK Coburg")], "k")
+    rows = _keyed(monthly([-12.99] * 4, name="Streamly", start=date(2026, 2, 3)), "s")
+    store.structure.assign("acc0|k0", mid)
+    store.structure.assign("acc0|s0", "s_gone")
+    out = {c["id"]: c for c in build_contracts(paid + rows, store, today=TODAY)}
+    assert out[mid]["ledger_ids"] == ["acc0|k0"] and out[mid]["annual_cost"] == 480.0
+    (streamly,) = [c for c in out.values() if c["source"] == "detected"]
+    assert streamly["occurrences"] == 4  # the booking assigned to a gone id is back
+    assert store.remove_manual(mid) and "acc0|k0" not in store.structure.assignments
+
+
+def test_structure_persists_and_reloads():
+    import asyncio
+
+    from custom_components.finance_dashboard.contracts import ContractStructure
+    from tests.fakes import FakeStore
+
+    st = ContractStructure(None, store=FakeStore(None, 1, "x"))
+    st.merge("s_a", "s_b")
+    st.split("acme|out", "amount")
+    st.assign("acc0|x0", "s_a")
+    asyncio.run(st.async_save())
+    again = ContractStructure(None, store=st._store)  # noqa: SLF001
+    asyncio.run(again.async_load())
+    assert (again.merges, again.splits, again.assignments) == (st.merges, st.splits, st.assignments)

@@ -13,6 +13,7 @@ from homeassistant.util import dt as dt_util
 from ..const import DOMAIN
 from ..contracts import (
     own_account_names,
+    SOURCE_MANUAL,
     Contract,
     ContractError,
     aggregate_view,
@@ -23,6 +24,7 @@ from ..contracts import (
     set_account_savings,
     visible_to,
 )
+from ..labels import booking_key
 from ..recurring import PLAN_MODE_FIXED
 from ..pots import pot_coverage
 from ..household_summary import counted_transactions, pending_debits
@@ -162,6 +164,80 @@ class FinanceDashboardContractView(HomeAssistantView):
             return self.json({"error": "not_manual"}, status_code=404)
         await store.async_save()
         return self.json({"id": series_id, "deleted": True})
+
+
+class FinanceDashboardContractOverridesView(HomeAssistantView):
+    """Merge / split series and assign bookings (#117 E, F; admin only).
+
+    ``POST {action, ...}``: ``merge`` / ``unmerge`` ``{target, source}``,
+    ``split`` ``{series_id, by: reference|amount}``, ``unsplit`` ``{series_id}``,
+    ``assign`` ``{booking, series_id}``, ``unassign`` ``{booking}``.
+    Answers the refreshed ``{contracts, totals}``.
+    """
+
+    url = f"/api/{DOMAIN}/contract_overrides"
+    name = f"api:{DOMAIN}:contract_overrides"
+    requires_auth = True
+
+    async def post(self, request: web.Request) -> web.Response:
+        if not _is_admin(request):
+            return self.json({"error": "admin_required"}, status_code=403)
+        manager = _get_manager(request.app["hass"])
+        if not manager:
+            return self.json({"error": "Not configured"}, status_code=404)
+        body = await _json_body(request)
+        if not isinstance(body, dict):
+            return self.json({"error": "invalid_body", "detail": "Body must be a JSON object"}, status_code=400)
+        store, contracts = await _contracts_for(request, manager)
+        st = store.structure
+        by_id = {c["id"]: c for c in contracts}
+        action = body.get("action")
+        try:
+            if action in ("merge", "unmerge"):
+                target, source = body.get("target"), body.get("source")
+                if action == "unmerge":
+                    if not st.unmerge(str(target), str(source)):
+                        return self.json({"error": "unknown_merge"}, status_code=404)
+                else:
+                    for sid in (target, source):
+                        if sid not in by_id or by_id[sid].get("source") == SOURCE_MANUAL:
+                            return self.json({"error": "unknown_series"}, status_code=404)
+                    st.merge(target, source)
+            elif action in ("split", "unsplit"):
+                item = by_id.get(body.get("series_id"))
+                if item is None or not item.get("payee_key"):
+                    return self.json({"error": "unknown_series"}, status_code=404)
+                if action == "unsplit":
+                    st.unsplit(item["payee_key"])
+                else:
+                    st.split(item["payee_key"], body.get("by"))
+                    _s, after = await _contracts_for(request, manager)
+                    if sum(1 for c in after if c.get("payee_key") == item["payee_key"]) < 2:
+                        st.unsplit(item["payee_key"])
+                        return self.json(
+                            {"error": "nothing_to_split", "detail": "No second series found"},
+                            status_code=400,
+                        )
+            elif action in ("assign", "unassign"):
+                key = body.get("booking")
+                if not isinstance(key, str) or not key:
+                    return self.json({"error": "invalid_booking"}, status_code=400)
+                if action == "unassign":
+                    if not st.unassign(key):
+                        return self.json({"error": "unknown_assignment"}, status_code=404)
+                else:
+                    if body.get("series_id") not in by_id:
+                        return self.json({"error": "unknown_series"}, status_code=404)
+                    if not any(booking_key(t) == key for t in manager._transactions):  # noqa: SLF001
+                        return self.json({"error": "unknown_booking"}, status_code=404)
+                    st.assign(key, body["series_id"])
+            else:
+                return self.json({"error": "invalid_action"}, status_code=400)
+        except ContractError as err:
+            return self.json({"error": err.code, "detail": err.detail}, status_code=400)
+        await st.async_save()
+        _store, contracts = await _contracts_for(request, manager)
+        return self.json({"contracts": contracts, "totals": contract_totals(contracts)})
 
 
 class FinanceDashboardReservesView(HomeAssistantView):
