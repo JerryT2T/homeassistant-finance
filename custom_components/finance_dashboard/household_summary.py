@@ -19,6 +19,8 @@ What is counted (and what is not):
   ``tx_dates.effective_day`` (PayPal lines often carry only a transaction date).
 - **Refunds** (``_refund_role == "refund"``) are netted against expenses, they
   are not income.
+- **Insurance refunds** matched to their expenses (``refund_matcher``, #119) are
+  netted into the *expense's* cycle, category and owner and leave income.
 - Only booked lines count; pending ones are ignored.
 
 Ownership of an expense resolves in the fixed chain: the account's owner is the
@@ -45,6 +47,7 @@ from typing import Any
 from .budget_plan import BudgetPlan
 from .const import OWNER_SHARED, POSITION_KIND_FIXED
 from .cycle import calendar_cycle, household_cycle, household_starts
+from .refund_matcher import net_refunds
 from .text_norm import canonical_name, processor_merchant_text
 from .tx_dates import effective_day
 
@@ -393,6 +396,7 @@ def build_household_summary(  # noqa: PLR0914
     viewer_person: str | None = None,
     is_admin: bool = False,
     corrections: dict[str, str] | None = None,
+    refund_allocations: dict[str, dict[str, float]] | None = None,
     as_of: datetime | None = None,
 ) -> dict[str, Any]:
     """Assemble the ``household_summary`` contract (docs/dev/contracts/household-summary.md)."""
@@ -400,6 +404,8 @@ def build_household_summary(  # noqa: PLR0914
     if cycle not in CYCLES:
         cycle = "current"
     txs = counted_transactions(transactions, accounts)
+    if refund_allocations:
+        txs = net_refunds(txs, refund_allocations)  # #119: into the expense's cycle
     windows, rule, anchor = cycle_windows(txs, today)
     clf = _Classifier(plan, recurring, corrections)
 

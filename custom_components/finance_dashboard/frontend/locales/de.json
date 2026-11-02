@@ -816,5 +816,19 @@
   "st.candidates": "Weitere Buchungen dieses Zahlungsempfängers",
   "st.assign": "Als Abrechnung",
   "st.recalc": "Wird nach dem Speichern neu berechnet.",
-  "rs.settlement": "Erwartete Jahresabrechnung"
+  "rs.settlement": "Erwartete Jahresabrechnung",
+  "rf.title": "Erstattung zuordnen",
+  "rf.hint": "Welche Ausgaben hat diese Zahlung erstattet? Mehrfachauswahl möglich.",
+  "rf.none": "Keine passenden Ausgaben in den letzten 8 Wochen.",
+  "rf.source_auto": "Automatisch zugeordnet.",
+  "rf.source_manual": "Von dir zugeordnet.",
+  "rf.proposal": "Unsicherer Vorschlag, bitte prüfen.",
+  "rf.save": "Zuordnung speichern",
+  "rf.reset": "Automatik wiederherstellen",
+  "rf.err": "Zuordnung konnte nicht gespeichert werden.",
+  "rf.refunded_by": "Erstattet durch",
+  "rf.state.matched": "Erstattung zugeordnet",
+  "rf.state.proposal": "Erstattung prüfen",
+  "rf.state.open_claim": "Erstattung offen",
+  "rf.state.refunded": "Erstattet"
 }

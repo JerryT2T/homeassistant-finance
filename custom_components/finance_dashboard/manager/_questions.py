@@ -16,6 +16,7 @@ from homeassistant.util import dt as dt_util
 from ..const import CATEGORY_OTHER, DEFAULT_CATEGORIES
 from ..merchants import POINT_EVERY, _counterparty, merchant_key
 from ..points_target import EVENT_POINTS_AWARDED, async_award, person_of_user
+from ..refund_matcher import QUESTION_PREFIX, refund_questions
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -68,10 +69,12 @@ class QuestionsMixin:
         )
         mem = getattr(self, "_memory", None)
         today = dt_util.now().date()
+        refunds = self.get_refund_questions()
         return {
-            "questions": data.get("questions", []),
-            "questions_open": data.get("questions_open", 0),
-            "questions_total": data.get("questions_total", 0),
+            # Unsure refund matches come first: one answer settles a whole bill (#119).
+            "questions": [*refunds, *data.get("questions", [])],
+            "questions_open": data.get("questions_open", 0) + len(refunds),
+            "questions_total": data.get("questions_total", 0) + len(refunds),
             "answered_total": mem.answered if mem else 0,
             "week_answered": mem.week_answered(today) if mem else 0,
             "points": mem.points if mem else 0,
@@ -205,11 +208,15 @@ class QuestionsMixin:
         reach: str,
         owner: str | None = None,
         user_id: str | None = None,
+        choice: str | None = None,
+        expenses: list[str] | None = None,
     ) -> dict[str, Any]:
         """Apply an answer; returns counters. Raises :class:`QuestionError`."""
         mem = getattr(self, "_memory", None)
         if mem is None or getattr(self, "_demo_mode", False):
             raise QuestionError("unavailable")
+        if isinstance(question_id, str) and question_id.startswith(QUESTION_PREFIX):
+            return await self._answer_refund(mem, question_id, choice, expenses, user_id)
         if not isinstance(question_id, str) or not question_id or len(question_id) > _MAX_ID:
             raise QuestionError("invalid_id")
         if not isinstance(category, str) or not _SLUG.match(category) or category == CATEGORY_OTHER:
@@ -235,10 +242,59 @@ class QuestionsMixin:
             for lid in lids:
                 mem.learn_booking(lid, category, owner)
 
+        return await self._finish_answer(mem, user_id, derive=True)
+
+    def get_refund_questions(self) -> list[dict[str, Any]]:
+        """Question cards for the unsure refund matches (#119); cache only."""
+        analysis = getattr(self, "get_refund_analysis", None)  # a host without refunds asks none
+        if getattr(self, "_demo_mode", False) or analysis is None:
+            return []
+        return refund_questions(self._transactions, analysis()["proposals"])
+
+    async def _answer_refund(
+        self,
+        mem: Any,
+        question_id: str,
+        choice: str | None,
+        expenses: list[str] | None,
+        user_id: str | None,
+    ) -> dict[str, Any]:
+        """``confirm`` the proposal, ``no`` (pays nothing back) or ``other`` expenses."""
+        from ..labels import async_get_label_store
+        from ..refund_store import RefundError, async_get_refund_store
+
+        if len(question_id) > _MAX_ID * 2:
+            raise QuestionError("invalid_id")
+        await async_get_label_store(self._hass)
+        store = await async_get_refund_store(self._hass)
+        refund_id = question_id[len(QUESTION_PREFIX):]
+        card = next((q for q in self.get_refund_questions() if q["id"] == question_id), None)
+        if card is None:
+            raise QuestionError("unknown_question")
+        if choice == "confirm":
+            picked = [p["id"] for p in card["proposed"]]
+        elif choice == "no":
+            picked = []
+        elif choice == "other":
+            allowed = {o["id"] for o in card["others"]} | {p["id"] for p in card["proposed"]}
+            if not isinstance(expenses, list) or not expenses or not set(expenses) <= allowed:
+                raise QuestionError("invalid_expenses")
+            picked = expenses
+        else:
+            raise QuestionError("invalid_choice")
+        try:
+            store.set(refund_id, picked)
+        except RefundError as err:
+            raise QuestionError(err.code, err.detail) from err
+        await store.async_save()
+        return await self._finish_answer(mem, user_id, derive=False)
+
+    async def _finish_answer(self, mem: Any, user_id: str | None, *, derive: bool) -> dict[str, Any]:
         today = dt_util.now().date()
         point = mem.record_answer(today)
         await mem.async_save()
-        self._derive_from_ledger(self._transfer_overrides)
+        if derive:
+            self._derive_from_ledger(self._transfer_overrides)
         if point:
             from ..setup_wizard import async_load_state
 

@@ -85,6 +85,15 @@ const FB = {
     "questions.hist_src_ai": "KI",
     "questions.hist_empty": "Noch keine Kategorisierungen. Jede Antwort und jeder KI-Vorschlag landet hier.",
     "questions.hist_more": "Ältere ($n)",
+    "questions.rf_prompt": "Gehört diese Erstattung zu dieser Ausgabe?",
+    "questions.rf_paid": "Erstattet: $sum",
+    "questions.rf_confirm": "Ja, passt",
+    "questions.rf_other": "Andere Ausgabe",
+    "questions.rf_no": "Nein, keine Erstattung",
+    "questions.rf_pick": "Welche Ausgaben hat sie erstattet?",
+    "questions.rf_send": "Zuordnen",
+    "questions.rf_none": "Keine passenden Ausgaben gefunden.",
+    "questions.rf_back": "Zurück",
   },
   en: {
     "questions.title": "Questions",
@@ -139,6 +148,15 @@ const FB = {
     "questions.hist_src_ai": "AI",
     "questions.hist_empty": "No categorisations yet. Every answer and every AI suggestion shows up here.",
     "questions.hist_more": "Older ($n)",
+    "questions.rf_prompt": "Does this refund belong to this expense?",
+    "questions.rf_paid": "Refunded: $sum",
+    "questions.rf_confirm": "Yes, that fits",
+    "questions.rf_other": "Another expense",
+    "questions.rf_no": "No, not a refund",
+    "questions.rf_pick": "Which expenses did it pay back?",
+    "questions.rf_send": "Assign",
+    "questions.rf_none": "No matching expenses found.",
+    "questions.rf_back": "Back",
   },
 };
 
@@ -203,6 +221,8 @@ button:focus-visible { outline: 2px solid var(--fd-a500); outline-offset: 2px; }
 .sub { margin: 16px 0 6px; font-size: 12.5px; color: var(--fd-t2); }
 .seg { display: flex; flex-wrap: wrap; gap: 6px; }
 .seg button { min-height: var(--fd-touch); padding: 0 14px; border: 1px solid var(--fd-line); border-radius: var(--fd-r-pill); background: var(--fd-card); }
+.bk .cat { width: 100%; height: auto; padding: 8px 10px; text-align: left; display: block; }
+.bk .cat[aria-pressed=true] { background: var(--fd-a100); border-color: var(--fd-a500); }
 .seg button[aria-pressed=true] { background: var(--fd-a100); border-color: var(--fd-a500); font-weight: 500; }
 .seg .pd { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; }
 .foot { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; gap: 8px; color: var(--fd-t3); font-size: 12px; }
@@ -248,6 +268,8 @@ class FdQuestions extends HTMLElement {
     super();
     this.attachShadow({ mode: "open" });
     this._q = [];
+    this._rfOther = false;
+    this._rfPick = new Set();
     this._meta = { answered_total: 0, week_answered: 0, points: 0, points_every: 7 };
     this._state = "loading"; // loading | ready | error | denied
     this._i = 0;
@@ -318,7 +340,39 @@ class FdQuestions extends HTMLElement {
     this._render();
   }
 
-  _resetCard() { this._reach = "merchant"; this._owner = ""; this._more = false; this._msg = ""; }
+  _resetCard() { this._reach = "merchant"; this._owner = ""; this._more = false; this._msg = ""; this._rfOther = false; this._rfPick = new Set(); }
+
+  /** Refund card (#119): "does this refund belong to <expense>?" with confirm / other / no. */
+  _refundCardHtml() {
+    const { eur, escHtml } = window._fd;
+    const c = this._card;
+    const day = (d) => escHtml(this._fmtDay(d));
+    const line = (b) => `<div class="l1"><span class="flow">${day(b.date)} · ${escHtml(b.party || b.description || "")}</span><b>${escHtml(eur(Math.abs(b.amount)))}</b></div>`;
+    const dis = this._busy ? "disabled" : "";
+    let body;
+    if (this._rfOther) {
+      const rows = [...c.proposed, ...c.others];
+      body = `<div class="prompt">${tr("questions.rf_pick")}</div>
+  ${rows.length ? `<ul class="bk" role="group" aria-label="${tr("questions.rf_pick")}">${rows.map((b) => `<li><button class="cat" data-rfpick="${escHtml(b.id)}" aria-pressed="${this._rfPick.has(b.id)}" ${dis}>${line(b)}</button></li>`).join("")}</ul>` : `<p class="muted">${tr("questions.rf_none")}</p>`}
+  <div class="cats"><button class="cat" data-rf="send" ${dis || !this._rfPick.size ? "disabled" : ""}>${tr("questions.rf_send")}</button>
+  <button class="cat" data-rf="back" ${dis}>${tr("questions.rf_back")}</button></div>`;
+    } else {
+      body = `<ul class="bk">${c.proposed.map((b) => `<li>${line(b)}${b.refunded != null ? `<div class="l2">${escHtml(tr("questions.rf_paid", { sum: eur(b.refunded) }))}</div>` : ""}</li>`).join("")}</ul>
+  <div class="prompt">${tr("questions.rf_prompt")}</div>
+  <div class="cats"><button class="cat" data-rf="confirm" ${dis}>${tr("questions.rf_confirm")}</button>
+  <button class="cat" data-rf="other" ${dis}>${tr("questions.rf_other")}</button>
+  <button class="cat" data-rf="no" ${dis}>${tr("questions.rf_no")}</button></div>`;
+    }
+    return `<div class="card enter" id="card">
+  <div class="cnt">${tr("questions.card_of", { n: this._i + 1, m: this._q.length })}</div>
+  <h3 class="merchant">${escHtml(c.merchant)}</h3>
+  <div class="facts"><b>${escHtml(eur(c.refund.amount))}</b> · ${day(c.refund.date)}</div>
+  ${c.refund.description ? `<div class="hist">${escHtml(c.refund.description)}</div>` : ""}
+  ${body}
+  ${this._msg ? `<div class="msg" role="alert">${escHtml(this._msg)}</div>` : ""}
+  <div class="foot"><span>${tr("questions.skip_hint")}</span><button class="ghost" data-act="skip" ${this._q.length < 2 ? "hidden" : ""}>${tr("questions.skip")}</button></div>
+</div>`;
+  }
 
   get _card() { return this._q[this._i]; }
 
@@ -381,6 +435,7 @@ class FdQuestions extends HTMLElement {
   _cardHtml() {
     const { eur, escHtml, CAT_LABELS } = window._fd;
     const c = this._card;
+    if (c.kind === "refund") return this._refundCardHtml();
     const cats = this._cats(c);
     const people = this._persons;
     const credit = Number(c.total) > 0;
@@ -491,6 +546,20 @@ class FdQuestions extends HTMLElement {
       const t = e.target.closest("button");
       if (!t || t.disabled) return;
       if (t.dataset.cat) return this._answer(t.dataset.cat);
+      if (t.dataset.rfpick) {
+        if (this._rfPick.has(t.dataset.rfpick)) this._rfPick.delete(t.dataset.rfpick); else this._rfPick.add(t.dataset.rfpick);
+        return this._keepRender();
+      }
+      if (t.dataset.rf) {
+        switch (t.dataset.rf) {
+          case "confirm": return this._answer(null, { choice: "confirm" });
+          case "no": return this._answer(null, { choice: "no" });
+          case "other": this._rfOther = true; return this._keepRender();
+          case "back": this._rfOther = false; return this._keepRender();
+          case "send": return this._answer(null, { choice: "other", expenses: [...this._rfPick] });
+        }
+        return undefined;
+      }
       if (t.dataset.reach) { this._reach = t.dataset.reach; return this._keepRender(); }
       if (t.dataset.owner !== undefined) { this._owner = t.dataset.owner; return this._keepRender(); }
       if (t.dataset.tab) {
@@ -570,14 +639,14 @@ class FdQuestions extends HTMLElement {
     return tr(map[code] || "questions.err");
   }
 
-  async _answer(category) {
+  async _answer(category, refundAnswer) {
     const c = this._card;
     if (!c || this._busy) return;
     this._busy = true;
     this._msg = "";
     this._keepRender();
-    const body = { id: c.id, category, reach: this._reach };
-    if (this._owner) body.owner = this._owner;
+    const body = refundAnswer ? { id: c.id, ...refundAnswer } : { id: c.id, category, reach: this._reach };
+    if (this._owner && !refundAnswer) body.owner = this._owner;
     try {
       const r = await this._hass.callApi("POST", `${DOMAIN}/questions/answer`, body);
       this._meta.answered_total = r.answered_total ?? this._meta.answered_total + 1;

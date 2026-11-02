@@ -204,6 +204,37 @@ async def _resolve_page(request: web.Request, manager, page: list[dict]) -> dict
         return {}
 
 
+async def _refund_states(request: web.Request, manager) -> dict[str, dict]:
+    """Per booking key: its refund match state (#119); never fails the list."""
+    from .refunds import load_refund_inputs  # noqa: PLC0415
+
+    try:
+        await load_refund_inputs(request.app["hass"])
+        result = manager.get_refund_analysis()
+        out: dict[str, dict] = {}
+        for rid, alloc in result["allocations"].items():
+            out[rid] = {"role": "refund", "state": "matched", "amount": sum(alloc.values())}
+            for eid, amount in alloc.items():
+                cur = out.setdefault(eid, {"role": "expense", "state": "refunded", "amount": 0.0})
+                cur["amount"] = round(cur["amount"] + amount, 2)
+        for prop in result["proposals"]:
+            out.setdefault(prop["refund"], {"role": "refund", "state": "proposal"})
+        from ..labels import async_get_label_store  # noqa: PLC0415
+        from ..refund_matcher import open_claims  # noqa: PLC0415
+        from homeassistant.util import dt as dt_util  # noqa: PLC0415
+
+        labels = (await async_get_label_store(request.app["hass"])).bookings
+        for claim in open_claims(
+            manager._transactions, result["allocations"], labels,  # noqa: SLF001
+            today=dt_util.now().date(),
+        ):
+            out.setdefault(claim["id"], {"role": "expense", "state": "open_claim", "amount": claim["open"]})
+        return out
+    except Exception:  # noqa: BLE001 - refund hints are an addition
+        _LOGGER.warning("Refund state failed", exc_info=True)
+        return {}
+
+
 class FinanceDashboardTransactionsView(HomeAssistantView):
     """API endpoint for transactions (cache read).
 
@@ -267,6 +298,7 @@ class FinanceDashboardTransactionsView(HomeAssistantView):
 
         page = filtered[offset : offset + limit]
         resolved = await _resolve_page(request, manager, page)
+        refund_state = await _refund_states(request, manager)
         sanitized = []
         for txn in page:
             entry = {
@@ -288,6 +320,11 @@ class FinanceDashboardTransactionsView(HomeAssistantView):
                 entry["ledger_id"] = key
                 entry["own_category"] = entry["category"]
                 entry.update(info)
+
+            state = refund_state.get(key)
+            if state:
+                entry["refund_state"] = state
+                entry.setdefault("ledger_id", key)
 
             # Transfer chain metadata
             chain_id = txn.get("_transfer_chain_id")

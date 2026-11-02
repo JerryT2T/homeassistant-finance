@@ -8,6 +8,7 @@ from homeassistant.components.http import HomeAssistantView
 from ..const import DOMAIN
 from ..manager._questions import QuestionError
 from ._helpers import _get_manager
+from .refunds import load_refund_inputs
 
 
 class _AdminView(HomeAssistantView):
@@ -31,6 +32,7 @@ class FinanceDashboardQuestionsView(_AdminView):
         manager = _get_manager(request.app["hass"])
         if not manager:
             return self.json({"error": "Not configured"}, status_code=404)
+        await load_refund_inputs(request.app["hass"])  # manual allocations survive a restart
         return self.json(manager.get_questions())
 
 
@@ -73,6 +75,8 @@ class FinanceDashboardQuestionAnswerView(_AdminView):
                 category=body.get("category"),
                 reach=body.get("reach"),
                 owner=body.get("owner") or None,
+                choice=body.get("choice"),
+                expenses=body.get("expenses"),
                 user_id=request["hass_user"].id,
             )
         except QuestionError as err:

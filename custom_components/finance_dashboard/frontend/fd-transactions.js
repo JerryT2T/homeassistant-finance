@@ -279,7 +279,8 @@ class FdTransactions extends HTMLElement {
       const party = x.creditor || x.debtor || "";
       const pend = x.status && x.status !== "booked" ? ` <span class="chip">${e(tr("tx.pending"))}</span>` : "";
       const cat = x.category ? `<div class="cat">${e(catLabel(x.category))}${x.category_source === "contract" ? ` <i>· ${e(tr("tx.from_contract"))}</i>` : ""}</div>` : "";
-      const chips = labelChips(x.labels_inherited, this._labels, "inherited") + labelChips(x.labels_own, this._labels, "own") + labelChips(x.labels_auto, this._labels, "auto");
+      const rs = x.refund_state ? `<span class="chip">${e(tr(`rf.state.${x.refund_state.state}`))}</span>` : "";
+      const chips = labelChips(x.labels_inherited, this._labels, "inherited") + labelChips(x.labels_own, this._labels, "own") + labelChips(x.labels_auto, this._labels, "auto") + rs;
       const open = this._isAdmin && x.ledger_id
         ? ` data-i="${idx}" role="button" tabindex="0" aria-label="${e(tr("tx.open_booking") + ": " + (party || x.description || ""))}"` : "";
       return `<div class="row"${open}>
@@ -312,12 +313,72 @@ class FdTransactions extends HTMLElement {
   async _openDialog(i, opener) {
     const x = this._tx.items[i];
     if (!x || !x.ledger_id) return;
-    this._dlg = { x, opener, sel: new Set(x.labels_own || []), error: "", saving: false, newName: "" };
+    this._dlg = { x, opener, sel: new Set(x.labels_own || []), error: "", saving: false, newName: "", rf: null, rfSel: new Set(), rfError: "" };
     this._paintDialog();
     this._focusDialog();
+    this._loadRefund(this._dlg);
     if (!this._labels.length) {
       this._labels = await window._fd.getLabels(this._hass);
       if (this._dlg && this._dlg.x === x) { this._paintDialog(); this._focusDialog(); }
+    }
+  }
+
+  // Refund allocation (#119): an incoming booking picks the expenses it paid back.
+  async _loadRefund(d) {
+    if (parseFloat(d.x.amount) <= 0 && !d.x.refund_state) return;
+    try {
+      const r = await this._hass.callApi("GET", `${DOMAIN}/refunds/${encodeURIComponent(d.x.ledger_id)}`);
+      if (this._dlg !== d) return;
+      d.rf = r;
+      const chosen = r.kind === "refund" ? (r.allocated || []).map((a) => a.id) : [];
+      // Merge, do not overwrite: ticks made while the GET was in flight stay.
+      for (const id of (chosen.length ? chosen : (r.proposal && r.proposal.expenses) || [])) d.rfSel.add(id);
+      this._paintDialog();
+    } catch (_) { /* the labels part of the dialog stays usable */ }
+  }
+
+  _refundHtml(d) {
+    const r = d.rf;
+    if (!r) return "";
+    const { escHtml: e, fmtDate } = window._fd;
+    const money = (n) => { try { return new Intl.NumberFormat(undefined, { style: "currency", currency: d.x.currency || "EUR" }).format(n); } catch (_) { return String(n); } };
+    const line = (c) => `${fmtDate(c.date)} · ${c.party || c.description} · ${money(Math.abs(c.amount))}`;
+    if (r.kind === "expense") {
+      if (!(r.refunded || []).length) return "";
+      return `<div class="sec">${e(tr("rf.refunded_by"))}</div><ul class="muted">${r.refunded.map((c) => `<li>${e(fmtDate(c.date))} · ${e(c.party || "")} · ${e(money(c.refunded))}</li>`).join("")}</ul>`;
+    }
+    const status = r.source === "manual" ? tr("rf.source_manual") : r.source === "auto" ? tr("rf.source_auto") : r.proposal ? tr("rf.proposal") : "";
+    const pick = (r.candidates || []).length
+      ? r.candidates.map((c) => `<label><input type="checkbox" data-rf="${e(c.id)}"${d.rfSel.has(c.id) ? " checked" : ""}>${e(line(c))}</label>`).join("")
+      : `<span class="muted">${e(tr("rf.none"))}</span>`;
+    return `<div class="sec" id="rfh">${e(tr("rf.title"))}</div>
+  <div class="muted">${e(tr("rf.hint"))}${status ? " " + e(status) : ""}</div>
+  <div class="pick" role="group" aria-labelledby="rfh">${pick}</div>
+  <div class="err" role="alert">${e(d.rfError)}</div>
+  <div class="acts"><button type="button" class="btn ghost" data-act="rf-reset"${r.source === "manual" ? "" : " disabled"}>${e(tr("rf.reset"))}</button>
+    <button type="button" class="btn" data-act="rf-save"${d.saving ? " disabled" : ""}>${e(tr("rf.save"))}</button></div>`;
+  }
+
+  async _saveRefund(reset) {
+    const d = this._dlg;
+    if (!d || d.saving) return;
+    d.saving = true;
+    d.rfError = "";
+    this._paintDialog();
+    const url = `${DOMAIN}/refunds/${encodeURIComponent(d.x.ledger_id)}`;
+    try {
+      const r = reset ? await this._hass.callApi("DELETE", url) : await this._hass.callApi("PUT", url, { expenses: [...d.rfSel] });
+      d.rf = r;
+      const got = (r.allocated || []).map((a) => a.id);
+      d.rfSel = new Set(got.length ? got : (r.proposal && r.proposal.expenses) || []);
+      d.saving = false;
+      if (this._dlg === d) this._paintDialog();
+      this._load(this._tx.offset);
+    } catch (_) {
+      d.saving = false;
+      if (this._dlg !== d) return;
+      d.rfError = tr("rf.err");
+      this._paintDialog();
     }
   }
 
@@ -347,6 +408,8 @@ class FdTransactions extends HTMLElement {
       host.addEventListener("change", (ev) => {
         const id = ev.target.dataset && ev.target.dataset.lb;
         if (id && this._dlg) { if (ev.target.checked) this._dlg.sel.add(id); else this._dlg.sel.delete(id); }
+        const rf = ev.target.dataset && ev.target.dataset.rf;
+        if (rf && this._dlg) { if (ev.target.checked) this._dlg.rfSel.add(rf); else this._dlg.rfSel.delete(rf); }
       });
     }
     if (!d) { host.innerHTML = ""; return; }
@@ -371,6 +434,7 @@ class FdTransactions extends HTMLElement {
   ${auto.length ? `<div class="sec">${e(tr("lb.auto"))}</div><div class="lcs">${labelChips(auto, this._labels, "auto")}</div>` : ""}
   <div class="sec" id="ownh">${e(tr("lb.own"))}</div>
   <div class="pick" role="group" aria-labelledby="ownh">${pickable.length ? pickable.map((l) => `<label><input type="checkbox" data-lb="${e(l.id)}"${d.sel.has(l.id) ? " checked" : ""}>${e(labelName(l.id, this._labels))}</label>`).join("") : `<span class="muted">${e(tr("lb.none"))}</span>`}</div>
+  ${this._refundHtml(d)}
   <div class="sec"><label for="newlb">${e(tr("lb.new"))}</label></div>
   <div class="newrow"><input id="newlb" type="text" maxlength="40" autocomplete="off" placeholder="${e(tr("lb.new_ph"))}" value="${e(d.newName)}">
     <button type="button" class="btn ghost" data-act="add">${e(tr("lb.add"))}</button></div>
@@ -400,6 +464,8 @@ class FdTransactions extends HTMLElement {
       case "cancel": this._closeDialog(); break;
       case "add": this._createLabel(); break;
       case "save": this._saveLabels(); break;
+      case "rf-save": this._saveRefund(false); break;
+      case "rf-reset": this._saveRefund(true); break;
       default: break;
     }
   }

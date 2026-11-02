@@ -180,9 +180,7 @@ def test_detected_contracts_carry_their_life_area():
     assert wrong == []
 
 
-@pytest.mark.xfail(strict=True, reason="#119: refund matching across cycles")
 def test_health_refunds_are_allocated_to_their_expenses():
-    # #119 owns the matcher's API; adapt this call when it lands.
     from custom_components.finance_dashboard.refund_matcher import match_refunds  # noqa: PLC0415
 
     _accounts, txns = build("health_refunds")
