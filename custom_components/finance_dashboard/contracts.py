@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import calendar
 import logging
+import re
 from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Any
@@ -88,6 +89,11 @@ _ADD_ONS = ("labels", "settlements", "usage_based")
 REVIEW_CONTRACT = "contract"
 REVIEW_NOT_CONTRACT = "not_contract"
 REVIEW_ANSWERS = (REVIEW_CONTRACT, REVIEW_NOT_CONTRACT)
+
+SOURCE_DETECTED = "detected"
+SOURCE_MANUAL = "manual"
+MAX_NAME = 80
+_SLUG_RE = re.compile(r"[^a-z0-9]+")
 
 
 class ContractError(Exception):
@@ -308,6 +314,8 @@ class ContractStore:
         self.notified: set[str] = set()
         # canonical payee name -> series id; keeps ids stable across spellings
         self.aliases: dict[str, str] = {}
+        # contracts added by hand (#117 D): id -> {name, interval, created}
+        self.manual: dict[str, dict[str, str]] = {}
         self._aliases_changed = False
         self._loaded = False
 
@@ -325,6 +333,13 @@ class ContractStore:
             self.aliases = {
                 str(k): str(v) for k, v in (raw.get("aliases") or {}).items() if k and v
             }
+            for mid, rec in (raw.get("manual") or {}).items():
+                if isinstance(rec, dict) and rec.get("name"):
+                    self.manual[str(mid)] = {
+                        "name": str(rec["name"])[:MAX_NAME],
+                        "interval": rec.get("interval") if rec.get("interval") in INTERVALS else "yearly",
+                        "created": str(rec.get("created") or ""),
+                    }
         self._loaded = True
 
     async def async_save(self) -> None:
@@ -333,6 +348,7 @@ class ContractStore:
                 "contracts": {sid: c.to_dict() for sid, c in self.contracts.items()},
                 "notified": sorted(self.notified),
                 "aliases": dict(sorted(self.aliases.items())),
+                "manual": dict(sorted(self.manual.items())),
             }
         )
         self._aliases_changed = False
@@ -350,6 +366,56 @@ class ContractStore:
 
     def get(self, sid: str) -> Contract:
         return self.contracts.get(sid) or Contract(series_id=sid)
+
+    def add_manual(self, data: dict[str, Any], today: date) -> str:
+        """Create a contract without booking evidence (#117 D); returns its id.
+
+        The amount, kind, category, owner and start go into the contract
+        fields the sheet edits (amount = fixed plan amount), so a manual
+        contract is edited like any other. Raises ``ContractError``.
+        """
+        if not isinstance(data, dict):
+            raise ContractError("invalid_body", "Body must be a JSON object")
+        name = data.get("name")
+        if not isinstance(name, str) or not name.strip() or len(name.strip()) > MAX_NAME:
+            raise ContractError("invalid_name", "name must be 1-80 characters")
+        name = " ".join(name.split())
+        interval = data.get("interval") or "yearly"
+        if interval not in INTERVALS:
+            raise ContractError("invalid_interval", "Unknown interval")
+        amount = data.get("amount")
+        if isinstance(amount, bool) or not isinstance(amount, int | float) or not 0 < amount <= 1_000_000:
+            raise ContractError("invalid_amount", "amount must be a positive number")
+        contract = Contract(series_id="")
+        contract.apply(
+            {
+                "kind": data.get("kind") or KIND_CONTRACT,
+                "category": data.get("category") or "other",
+                "owner": data.get("owner") or "shared",
+                "start": data.get("start") or None,
+                "labels": data.get("labels") or None,
+                "plan_mode": PLAN_MODE_FIXED,
+                "plan_fixed_amount": amount,
+                "review": REVIEW_CONTRACT,
+            }
+        )
+        base = "m_" + (_SLUG_RE.sub("_", name.lower()).strip("_")[:30] or "contract")
+        mid, n = base, 1
+        while mid in self.manual or mid in self.contracts:
+            n += 1
+            mid = f"{base}_{n}"
+        contract.series_id = mid
+        self.manual[mid] = {"name": name, "interval": interval, "created": today.isoformat()}
+        self.contracts[mid] = contract
+        return mid
+
+    def remove_manual(self, mid: str) -> bool:
+        """Delete a manual contract with its fields; False for a detected one."""
+        if mid not in self.manual:
+            return False
+        del self.manual[mid]
+        self.contracts.pop(mid, None)
+        return True
 
     def overrides(self) -> dict[str, dict[str, Any]]:
         return {
@@ -483,9 +549,70 @@ def build_contracts(
         if s.get("candidate") and stored is not None:
             # confirmed, or edited by the user: a contract, whatever the score says
             s = {**s, "candidate": False}
-        out.append(_contract_view(s, store.get(s["id"]), today))
+        out.append(_contract_view({**s, "source": SOURCE_DETECTED}, store.get(s["id"]), today))
+    for mid, rec in getattr(store, "manual", {}).items():
+        out.append(_contract_view(_manual_series(mid, rec, store.get(mid), today), store.get(mid), today))
     out.sort(key=lambda c: (c["next_deadline"] is None, c["next_deadline"] or ""))
     return out
+
+
+def _manual_series(mid: str, rec: dict[str, str], c: Contract, today: date) -> dict[str, Any]:
+    """A series-shaped record for a contract added by hand (#117 D): no
+    payments, the user's amount every interval from the start date on."""
+    created = rec.get("interval") or "yearly"
+    interval = c.interval or created  # the sheet's override is the rhythm itself here
+    nominal, per_year, _ = INTERVALS[interval]
+    amount = abs(c.plan_fixed_amount or 0.0)
+    start = date.fromisoformat(c.start or rec.get("created") or today.isoformat())
+    due = start
+    for _ in range(2000):  # the next due date on or after today
+        if due >= today:
+            break
+        due = add_period(due, interval)
+    return {
+        "id": mid,
+        "source": SOURCE_MANUAL,
+        "creditor": rec["name"],
+        "display_name": rec["name"],
+        "direction": "out",
+        "interval": interval,
+        "interval_detected": created,
+        "period_days": nominal,
+        "occurrences": 0,
+        "first_seen": start.isoformat(),
+        "last_seen": start.isoformat(),
+        "pending_since": None,
+        "expected_day": start.day,
+        "last_amount": -amount,
+        "previous_amount": None,
+        "amounts": [],
+        "dates": [],
+        "next_expected": due.isoformat(),
+        "expected_amount": -amount,
+        "plan_mode": PLAN_MODE_FIXED,
+        "plan_fixed_amount": amount,
+        "plan_amount": -amount,
+        "annual_cost": round(amount * per_year, 2),
+        "pauses": 0,
+        "pauses_recent": 0,
+        "pause_pattern": False,
+        "status": STATUS_ACTIVE,
+        "price_change": None,
+        "category": "other",
+        "ledger_ids": [],
+        "account_key": "",
+        "account_type": "shared",
+        "account_person": "",
+        "alias_key": "",
+        "alias_keys": [],
+        "confidence": None,
+        "candidate": False,
+        "kind_suggested": KIND_CONTRACT,
+        "kind_trait": "",
+        "settlements": [],
+        "settlement_candidates": [],
+        "advance_at_settlement": None,
+    }
 
 
 def _with_interval(s: dict[str, Any], interval: str | None, today: date) -> dict[str, Any]:
@@ -656,6 +783,7 @@ def aggregate_view(item: dict[str, Any]) -> dict[str, Any]:
         "labels",
     )
     return {
+        "source": item.get("source", SOURCE_DETECTED),
         **{k: item[k] for k in keep},
         "candidate": bool(item.get("candidate")),
         "confidence": item.get("confidence"),

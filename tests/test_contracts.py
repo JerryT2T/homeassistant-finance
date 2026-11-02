@@ -47,7 +47,7 @@ TODAY = date(2026, 6, 15)
 def blank_store() -> ContractStore:
     """A store without Home Assistant storage behind it."""
     store = ContractStore.__new__(ContractStore)
-    store.contracts, store.notified, store.aliases = {}, set(), {}
+    store.contracts, store.notified, store.aliases, store.manual = {}, set(), {}, {}
     store._aliases_changed = False  # noqa: SLF001
     return store
 

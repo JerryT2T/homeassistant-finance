@@ -21,6 +21,29 @@ const DOMAIN = "finance_dashboard";
 // Fallback texts: used until locales/*.json carry the ct.* / rs.* keys.
 const FB = {
   "de": {
+    "ct.manual": "von Hand",
+    "ct.f.amount": "Betrag pro Zahlung",
+    "ct.delete": "Löschen",
+    "ct.delete_confirm": "„$name“ löschen?",
+    "ct.deleted": "Vertrag gelöscht",
+    "ct.add.open": "+ Vertrag hinzufügen",
+    "ct.add.title": "Vertrag hinzufügen",
+    "ct.add.say": "Manche Verträge zahlst du nur einmal im Jahr oder über Dritte. Wähle, was fehlt – ✓ heißt: schon in der Liste.",
+    "ct.add.found": "vorhanden",
+    "ct.add.other": "Etwas anderes",
+    "ct.add.back": "Zurück",
+    "ct.add.save": "Hinzufügen",
+    "ct.add.done": "Vertrag hinzugefügt",
+    "ct.add.need_name": "Bitte einen Namen eingeben.",
+    "ct.add.need_amount": "Bitte einen Betrag größer 0 eingeben.",
+    "ct.add.private": "Der Betrag bleibt in Home Assistant. Er geht weder an die Bank noch an eine KI.",
+    "ct.add.t.car": "Kfz-Versicherung",
+    "ct.add.t.liability": "Haftpflichtversicherung",
+    "ct.add.t.contents": "Hausratversicherung",
+    "ct.add.t.broadcast": "Rundfunkbeitrag",
+    "ct.add.t.auto_club": "Automobilclub",
+    "ct.add.t.membership": "Mitgliedschaft",
+    "ct.add.t.software": "Domain oder Software",
     "ct.f.name": "Name",
     "ct.f.category": "Kategorie",
     "ct.f.interval": "Rhythmus",
@@ -117,6 +140,29 @@ const FB = {
     "rs.savings_failed": "Konnte nicht gespeichert werden"
   },
   "en": {
+    "ct.manual": "added by hand",
+    "ct.f.amount": "Amount per payment",
+    "ct.delete": "Delete",
+    "ct.delete_confirm": "Delete “$name”?",
+    "ct.deleted": "Contract deleted",
+    "ct.add.open": "+ Add contract",
+    "ct.add.title": "Add contract",
+    "ct.add.say": "Some contracts are paid once a year or through a third party. Pick what is missing – ✓ means it is already listed.",
+    "ct.add.found": "listed",
+    "ct.add.other": "Something else",
+    "ct.add.back": "Back",
+    "ct.add.save": "Add",
+    "ct.add.done": "Contract added",
+    "ct.add.need_name": "Please enter a name.",
+    "ct.add.need_amount": "Please enter an amount above 0.",
+    "ct.add.private": "The amount stays in Home Assistant. It never goes to the bank or an AI.",
+    "ct.add.t.car": "Car insurance",
+    "ct.add.t.liability": "Liability insurance",
+    "ct.add.t.contents": "Contents insurance",
+    "ct.add.t.broadcast": "Broadcasting fee",
+    "ct.add.t.auto_club": "Automobile club",
+    "ct.add.t.membership": "Membership",
+    "ct.add.t.software": "Domain or software",
     "ct.f.name": "Name",
     "ct.f.category": "Category",
     "ct.f.interval": "Rhythm",
@@ -250,6 +296,18 @@ function planAmount(amounts, mode, fixed) {
   }
   return r2(median(m));
 }
+
+// Typical yearly contracts a bank rarely shows as a series (#117 D). `words`
+// mark an entry as already found when a contract name contains one of them.
+const CHECKLIST = [
+  { id: "car", interval: "yearly", kind: "contract", category: "mobility", words: ["kfz", "autoversicherung"] },
+  { id: "liability", interval: "yearly", kind: "contract", category: "finance", words: ["haftpflicht", "liability"] },
+  { id: "contents", interval: "yearly", kind: "contract", category: "finance", words: ["hausrat", "contents"] },
+  { id: "broadcast", interval: "quarterly", kind: "contract", category: "media", words: ["rundfunk", "beitragsservice"] },
+  { id: "auto_club", interval: "yearly", kind: "contract", category: "mobility", words: ["adac", "automobil", "acv", "avd"] },
+  { id: "membership", interval: "yearly", kind: "contract", category: "leisure", words: ["verein", "mitglied", "membership"] },
+  { id: "software", interval: "yearly", kind: "subscription", category: "media", words: ["domain", "software", "lizenz", "license"] },
+];
 
 const TERM_FIELDS = ["min_term_months", "renewal_months", "notice_value", "notice_unit", "notice_reference"];
 
@@ -441,7 +499,7 @@ class FdContracts extends HTMLElement {
     else body = this._main();
     const head = this.hasAttribute("embedded") ? "" : `<fd-subpage-header title="${e(tr("ct.title"))}"></fd-subpage-header>`;
     sh.innerHTML = `<style>${window._fd.SHARED_CSS}${CSS}</style><div class="root">${head}<div class="cols">${body}</div><div id="sheet"></div></div>`;
-    if (this._sheet) this._paintSheet();
+    if (this._sheet || this._add) this._paintSheet();
     if (!this._wired) { this._wired = true; this._wire(); }
   }
 
@@ -472,7 +530,8 @@ class FdContracts extends HTMLElement {
     ${live.length ? this._totalsHtml(live) : ""}
     ${this._isAdmin ? "" : `<p class="muted" style="margin:8px 0 0">${e(tr("ct.member_note"))}</p>`}
   </section>` : ""}
-  <section class="card" aria-label="${e(tr("ct.title"))}">${this._kindFilterHtml()}${list}</section>
+  <section class="card" aria-label="${e(tr("ct.title"))}">${this._kindFilterHtml()}${list}
+    ${this._isAdmin ? `<div class="acts" style="margin-top:8px"><button type="button" class="btn ghost" data-act="add">${e(tr("ct.add.open"))}</button></div>` : ""}</section>
   ${this._reviewHtml()}
 </div>
 <div>${this._reservesHtml()}</div>`;
@@ -551,6 +610,7 @@ class FdContracts extends HTMLElement {
     const e = window._fd.escHtml;
     const ended = c.status === "ended";
     const badges = [`<span class="badge">${e(tr(`ct.kind.${this._kindOf(c)}`))}</span>`];
+    if (c.source === "manual") badges.push(`<span class="badge info">${e(tr("ct.manual"))}</span>`);
     if (ended) badges.push(`<span class="badge">${e(tr("ct.ended"))}</span>`);
     else if (c.status === "missing") badges.push(`<span class="badge due">${e(tr("ct.missing"))}</span>`);
     const notice = !ended && !NO_NOTICE.has(this._kindOf(c));
@@ -639,6 +699,7 @@ class FdContracts extends HTMLElement {
     const c = (this._items || []).find((x) => x.id === id);
     if (!c || !c.contract) return;
     const k = c.contract;
+    this._add = null;
     this._sheet = {
       id, c, error: "", saving: false, touched: new Set(),
       d: {
@@ -662,7 +723,11 @@ class FdContracts extends HTMLElement {
   }
 
   _closeSheet() {
+    const back = this._sheet ? this._sheet.id : null;
     this._sheet = null;
+    this._add = null;
+    // keyboard users land back on the row they opened
+    if (back) setTimeout(() => [...this.shadowRoot.querySelectorAll("[data-edit]")].find((b) => b.dataset.edit === back)?.focus(), 0);
     const el = this.shadowRoot.getElementById("sheet");
     if (el) el.innerHTML = "";
   }
@@ -681,7 +746,128 @@ class FdContracts extends HTMLElement {
     return [...set];
   }
 
+  // ---- manual contracts (#117 D) -------------------------------------------
+  _openAdd() {
+    this._sheet = null;
+    this._add = { step: "pick", error: "", saving: false, d: null };
+    this._paintSheet();
+    this.shadowRoot.querySelector("#sheet button")?.focus();
+  }
+
+  _pickTemplate(i) {
+    const t = CHECKLIST[i];
+    const today = new Date().toISOString().slice(0, 10);
+    this._add.d = t
+      ? { name: tr(`ct.add.t.${t.id}`), amount: "", interval: t.interval, kind: t.kind, category: t.category, start: today, owner: "shared" }
+      : { name: "", amount: "", interval: "yearly", kind: "contract", category: "other", start: today, owner: "shared" };
+    this._add.step = "form";
+    this._paintSheet();
+    this.shadowRoot.querySelector("#sheet input")?.focus();
+  }
+
+  /** A checklist entry whose word already shows up in a contract name counts as "found". */
+  _found(t) {
+    const names = (this._items || []).map((c) => String(c.display_name || c.creditor || "").toLowerCase());
+    return t.words.some((w) => names.some((n) => n.includes(w)));
+  }
+
+  _paintAdd(el) {
+    const a = this._add;
+    const e = window._fd.escHtml;
+    let inner;
+    if (a.step === "pick") {
+      inner = `<h3 id="addh">${e(tr("ct.add.title"))}</h3><p class="muted" style="margin:0 0 8px">${e(tr("ct.add.say"))}</p>
+  <div class="opts" role="group" aria-labelledby="addh">${CHECKLIST.map((t, i) => {
+        const found = this._found(t);
+        return `<button type="button" data-pick="${i}"${found ? ` aria-describedby="found${i}"` : ""}>${e(tr(`ct.add.t.${t.id}`))}${found ? ` <span id="found${i}" class="muted">✓ ${e(tr("ct.add.found"))}</span>` : ""}</button>`;
+      }).join("")}
+    <button type="button" data-pick="-1">${e(tr("ct.add.other"))}</button></div>
+  <div class="acts"><button type="button" class="btn ghost" data-act="cancel">${e(tr("ct.cancel"))}</button></div>`;
+    } else {
+      const d = a.d;
+      const opt = (grp, val, label) => `<button type="button" role="radio" aria-checked="${d[grp] === val}" data-agrp="${grp}" data-val="${e(val)}">${e(label)}</button>`;
+      inner = `<h3 id="addh">${e(tr("ct.add.title"))}</h3>
+  <label for="a-name">${e(tr("ct.f.name"))}</label><input id="a-name" type="text" maxlength="80" autocomplete="off" data-af="name" value="${e(d.name)}">
+  <label for="a-amt">${e(tr("ct.f.amount"))}</label><input id="a-amt" type="number" min="0" step="0.01" inputmode="decimal" data-af="amount" value="${e(String(d.amount))}">
+  <div class="lbl" id="a-ivh">${e(tr("ct.f.interval"))}</div>
+  <div class="opts" role="radiogroup" aria-labelledby="a-ivh">${Object.keys(PER_YEAR).map((iv) => opt("interval", iv, tr(`ct.interval.${iv}`))).join("")}</div>
+  <div class="lbl" id="a-kh">${e(tr("ct.f.kind"))}</div>
+  <div class="opts" role="radiogroup" aria-labelledby="a-kh">${KINDS.map((k) => opt("kind", k, tr(`ct.kind.${k}`))).join("")}</div>
+  <label for="a-cat">${e(tr("ct.f.category"))}</label><select id="a-cat" data-af="category">${this._categoryOptions(d.category).map((k) => `<option value="${e(k)}"${k === d.category ? " selected" : ""}>${e(this._catLabel(k))}</option>`).join("")}</select>
+  <label for="a-start">${e(tr("ct.f.start"))}</label><input id="a-start" type="date" data-af="start" value="${e(d.start)}">
+  <div class="lbl" id="a-oh">${e(tr("ct.f.owner"))}</div>
+  <div class="opts" role="radiogroup" aria-labelledby="a-oh">${this._owners({ d }).map((o) => opt("owner", o, this._ownerLabel(o))).join("")}</div>
+  <div class="hint">${e(tr("ct.add.private"))}</div>
+  <div class="err" role="alert">${e(a.error)}</div>
+  <div class="acts"><button type="button" class="btn ghost" data-act="add-back">${e(tr("ct.add.back"))}</button>
+    <button type="button" class="btn" data-act="add-save" ${a.saving ? "disabled" : ""}>${e(tr(a.saving ? "ct.saving" : "ct.add.save"))}</button></div>`;
+    }
+    el.innerHTML = `<div class="scrim" data-act="scrim"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="addh">${inner}</div></div>`;
+  }
+
+  async _saveAdd() {
+    const a = this._add;
+    if (!a || a.saving || !a.d) return;
+    const d = a.d;
+    const amount = Number(d.amount);
+    if (!String(d.name).trim()) { a.error = tr("ct.add.need_name"); return this._paintSheet(); }
+    if (!(amount > 0)) { a.error = tr("ct.add.need_amount"); return this._paintSheet(); }
+    a.saving = true;
+    a.error = "";
+    this._paintSheet();
+    try {
+      const body = { name: String(d.name).trim(), amount, interval: d.interval, kind: d.kind, category: d.category, owner: d.owner };
+      if (d.start) body.start = d.start;
+      const item = await this._hass.callApi("POST", `${DOMAIN}/contracts`, body);
+      this._items = [...(this._items || []), item];
+      this._closeSheet();
+      this._render();
+      this._toast(tr("ct.add.done"), "success");
+      this._reloadReserves();
+    } catch (err) {
+      a.saving = false;
+      const detail = (err && err.body && (err.body.detail || err.body.error)) || "";
+      a.error = detail ? `${tr("ct.save_failed")}: ${detail}` : tr("ct.save_failed");
+      this._paintSheet();
+    }
+  }
+
+  async _deleteManual() {
+    const s = this._sheet;
+    if (!s || s.saving) return;
+    if (!window.confirm(tr("ct.delete_confirm", { name: s.c.display_name || s.c.creditor }))) return;
+    s.saving = true;
+    this._paintSheet();
+    try {
+      await this._hass.callApi("DELETE", `${DOMAIN}/contracts/${encodeURIComponent(s.id)}`);
+      this._items = this._items.filter((c) => c.id !== s.id);
+      this._sheet = null;
+      this._closeSheet();
+      this._render();
+      this._toast(tr("ct.deleted"), "success");
+      this._reloadReserves();
+    } catch (err) {
+      s.saving = false;
+      s.error = tr("ct.save_failed");
+      this._paintSheet();
+    }
+  }
+
+  async _reloadReserves() {
+    try {
+      const r = await this._hass.callApi("GET", `${DOMAIN}/reserves`);
+      this._reserves = (r && r.reserves) || null;
+      this._coverage = (r && r.coverage) || null;
+      this._render();
+    } catch (e) { /* reserves stay as they were */ }
+  }
+
   _paintSheet() {
+    if (this._add) {
+      const host = this.shadowRoot.getElementById("sheet");
+      if (host) this._paintAdd(host);
+      return;
+    }
     const s = this._sheet;
     const el = this.shadowRoot.getElementById("sheet");
     if (!s || !el) return;
@@ -689,10 +875,11 @@ class FdContracts extends HTMLElement {
     const d = s.d;
     const def = this._defaultsFor(s.c, d.kind);
     const notice = !NO_NOTICE.has(d.kind);
-    const opt = (grp, val, label, cur) => `<button type="button" role="radio" aria-checked="${cur === val}" data-grp="${grp}" data-val="${e(val)}">${e(label)}</button>`;
+    const manual = s.c.source === "manual";
+    const opt =(grp, val, label, cur) => `<button type="button" role="radio" aria-checked="${cur === val}" data-grp="${grp}" data-val="${e(val)}">${e(label)}</button>`;
     el.innerHTML = `<div class="scrim" data-act="scrim"><div class="sheet" role="dialog" aria-modal="true" aria-label="${e(tr("ct.edit"))}">
   <h3>${e(s.c.display_name || s.c.creditor)}</h3>
-  <p class="muted" style="margin:0">${e(this._catLabel(s.c.category))} · ${e(tr(`ct.interval.${s.c.interval}`))}</p>
+  <p class="muted" style="margin:0">${e(this._catLabel(s.c.category))} · ${e(tr(`ct.interval.${s.c.interval}`))}${manual ? ` · ${e(tr("ct.manual"))}` : ""}</p>
   <label for="f-name">${e(tr("ct.f.name"))}</label><input id="f-name" type="text" maxlength="80" autocomplete="off" data-f="display_name" value="${e(d.display_name)}" placeholder="${e(s.c.display_name_detected || s.c.creditor || "")}">
   <label for="f-cat">${e(tr("ct.f.category"))}</label><select id="f-cat" data-f="category">${this._categoryOptions(d.category).map((k) => `<option value="${e(k)}"${k === d.category ? " selected" : ""}>${e(this._catLabel(k))}</option>`).join("")}</select>
   <div class="lbl" id="ivh">${e(tr("ct.f.interval"))}</div>
@@ -700,9 +887,9 @@ class FdContracts extends HTMLElement {
   ${s.c.interval_detected && d.interval !== s.c.interval_detected ? `<div class="hint">${e(tr("ct.interval_detected", { interval: tr(`ct.interval.${s.c.interval_detected}`) }))}</div>` : ""}
   <div class="lbl">${e(tr("ct.f.kind"))}</div>
   <div class="opts" role="radiogroup" aria-label="${e(tr("ct.f.kind"))}">${KINDS.map((k) => opt("kind", k, tr(`ct.kind.${k}`), d.kind)).join("")}</div>
-  <div class="lbl">${e(tr("ct.f.plan_mode"))}</div>
-  <div class="opts" role="radiogroup" aria-label="${e(tr("ct.f.plan_mode"))}">${PLAN_MODES.map((m) => opt("plan_mode", m, tr(`ct.mode.${m}`), d.plan_mode)).join("")}</div>
-  ${d.plan_mode === "fixed" ? `<label for="f-fixed">${e(tr("ct.f.fixed"))}</label><input id="f-fixed" type="number" min="0" step="0.01" data-f="plan_fixed_amount" value="${e(String(d.plan_fixed_amount ?? ""))}">` : ""}
+  ${manual ? "" : `<div class="lbl">${e(tr("ct.f.plan_mode"))}</div>
+  <div class="opts" role="radiogroup" aria-label="${e(tr("ct.f.plan_mode"))}">${PLAN_MODES.map((m) => opt("plan_mode", m, tr(`ct.mode.${m}`), d.plan_mode)).join("")}</div>`}
+  ${d.plan_mode === "fixed" ? `<label for="f-fixed">${e(tr(manual ? "ct.f.amount" : "ct.f.fixed"))}</label><input id="f-fixed" type="number" min="0" step="0.01" data-f="plan_fixed_amount" value="${e(String(d.plan_fixed_amount ?? ""))}">` : ""}
   <div class="hint" id="planprev">${e(this._previewText(s))}</div>
   ${notice ? `<label for="f-start">${e(tr("ct.f.start"))}</label><input id="f-start" type="date" data-f="start" value="${e(d.start)}">
   <label for="f-term">${e(tr("ct.f.min_term"))}</label><input id="f-term" type="number" min="0" max="240" data-f="min_term_months" value="${d.min_term_months ?? ""}">
@@ -721,7 +908,7 @@ class FdContracts extends HTMLElement {
   <div class="lbl" id="lbh">${e(tr("lb.title"))}</div>
   <div class="opts" role="group" aria-labelledby="lbh">${(this._labels || []).filter((l) => l.kind !== "auto").map((l) => `<button type="button" role="checkbox" aria-checked="${d.labels.includes(l.id)}" data-lbl="${e(l.id)}">${e(window._fd.labelName(l.id, this._labels))}</button>`).join("") || `<span class="muted">${e(tr("lb.none"))}</span>`}</div>
   <div class="err" id="sheeterr" role="alert">${e(s.error)}</div>
-  <div class="acts"><button type="button" class="btn ghost" data-act="reset">${e(tr("ct.reset"))}</button>
+  <div class="acts">${manual ? `<button type="button" class="btn ghost" data-act="delete" ${s.saving ? "disabled" : ""}>${e(tr("ct.delete"))}</button>` : ""}<button type="button" class="btn ghost" data-act="reset">${e(tr("ct.reset"))}</button>
     <button type="button" class="btn ghost" data-act="cancel">${e(tr("ct.cancel"))}</button>
     <button type="button" class="btn" data-act="save" ${s.saving ? "disabled" : ""}>${e(tr(s.saving ? "ct.saving" : "ct.save"))}</button></div>
 </div></div>`;
@@ -833,6 +1020,7 @@ class FdContracts extends HTMLElement {
       this._closeSheet();
       this._render();
       this._toast(tr("ct.saved"), "success");
+      this._reloadReserves();
     } catch (err) {
       s.saving = false;
       const detail = (err && err.body && (err.body.detail || err.body.error)) || "";
@@ -883,6 +1071,13 @@ class FdContracts extends HTMLElement {
         this._paintSheet();
         return [...this.shadowRoot.querySelectorAll("[data-lbl]")].find((b) => b.dataset.lbl === t.dataset.lbl)?.focus();
       }
+      if (t.dataset.pick !== undefined && this._add) return this._pickTemplate(Number(t.dataset.pick));
+      if (t.dataset.agrp && this._add && this._add.d) {
+        const { agrp, val } = t.dataset;
+        this._add.d[agrp] = val;
+        this._paintSheet();
+        return [...this.shadowRoot.querySelectorAll("[data-agrp]")].find((b) => b.dataset.agrp === agrp && b.dataset.val === val)?.focus();
+      }
       if (t.dataset.grp && s) {
         const grp = t.dataset.grp;
         if (grp === "special") s.d.special_termination = !s.d.special_termination;
@@ -902,6 +1097,10 @@ class FdContracts extends HTMLElement {
         case "cancel": this._closeSheet(); break;
         case "scrim": if (ev.target === t) this._closeSheet(); break;
         case "save": this._save(); break;
+        case "add": this._openAdd(); break;
+        case "add-save": this._saveAdd(); break;
+        case "add-back": if (this._add) { this._add.step = "pick"; this._add.error = ""; this._paintSheet(); this.shadowRoot.querySelector("#sheet button")?.focus(); } break;
+        case "delete": this._deleteManual(); break;
         case "reset": {
           if (!s) break;
           // null = back to the kind's default; the sheet shows those values right away.
@@ -915,6 +1114,8 @@ class FdContracts extends HTMLElement {
       }
     });
     sh.addEventListener("input", (ev) => {
+      const af = ev.target.dataset && ev.target.dataset.af;
+      if (af && this._add && this._add.d) { this._add.d[af] = ev.target.value; return; }
       const f = ev.target.dataset && ev.target.dataset.f;
       if (f && this._sheet) {
         this._sheet.d[f] = ev.target.value;
@@ -924,7 +1125,7 @@ class FdContracts extends HTMLElement {
       }
     });
     sh.addEventListener("keydown", (ev) => {
-      if (ev.key === "Escape" && this._sheet) { ev.stopPropagation(); this._closeSheet(); }
+      if (ev.key === "Escape" && (this._sheet || this._add)) { ev.stopPropagation(); this._closeSheet(); }
     });
   }
 }

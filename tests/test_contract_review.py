@@ -128,3 +128,51 @@ def test_old_price_jump_is_not_asked():
     rows = monthly([-10, -10, -15], name="Streamly", start=date(2026, 1, 10))
     (c,) = build_contracts(rows, blank_store(), today=date(2026, 3, 20))
     assert contract_questions([c], today=date(2026, 6, 1))[1] == 0
+
+
+# --- D: manual contracts -------------------------------------------------------
+
+
+def _manual(store, **kw):
+    data = {"name": "Kfz-Versicherung", "amount": 480, "interval": "yearly", "category": "mobility",
+            "start": "2025-11-01", **kw}
+    return store.add_manual(data, TODAY)
+
+
+def test_manual_contract_shows_in_list_totals_and_reserves_without_bookings():
+    store = blank_store()
+    mid = _manual(store)
+    assert mid == "m_kfz_versicherung"
+    (c,) = build_contracts([], store, today=TODAY)
+    assert c["source"] == "manual" and c["id"] == mid
+    assert (c["annual_cost"], c["monthly_equivalent"], c["category"]) == (480.0, 40.0, "mobility")
+    assert c["next_expected"] == "2026-11-01" and c["status"] == "active"
+    assert c["kind"] == "contract" and c["owner"] == "shared" and not c["candidate"]
+    assert c["next_deadline"]  # a contract keeps a notice deadline
+    assert contract_totals([c])["fixed"] == {"monthly": 40.0, "yearly": 480.0, "count": 1}
+    (item,) = build_reserves([c])["items"]
+    assert item["monthly_reserve"] == 40.0 and item["next_due"] == "2026-11-01"
+
+
+def test_manual_contract_is_edited_like_any_other_and_can_be_deleted():
+    store = blank_store()
+    mid = _manual(store)
+    _manual(store)  # same name twice -> a second id
+    assert set(store.manual) == {mid, f"{mid}_2"}
+    store.contracts[mid].apply({"display_name": "Auto", "interval": "quarterly", "plan_fixed_amount": 130})
+    c = next(c for c in build_contracts([], store, today=TODAY) if c["id"] == mid)
+    assert (c["display_name"], c["interval"], c["annual_cost"]) == ("Auto", "quarterly", 520.0)
+    assert store.remove_manual(mid) and not store.remove_manual(mid)
+    assert [c["id"] for c in build_contracts([], store, today=TODAY)] == [f"{mid}_2"]
+    assert mid not in store.contracts
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [{"name": ""}, {"amount": 0}, {"amount": "12"}, {"interval": "daily"}, {"kind": "loan"}, {"start": "x"}],
+)
+def test_manual_contract_input_is_validated(bad):
+    store = blank_store()
+    with pytest.raises(ContractError):
+        _manual(store, **bad)
+    assert store.manual == {} and store.contracts == {}
