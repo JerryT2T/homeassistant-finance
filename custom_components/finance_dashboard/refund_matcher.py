@@ -39,6 +39,7 @@ from .tx_dates import effective_day
 
 WINDOW_DAYS = 56  # up to 8 weeks between the bill and the refund
 CONFIDENT = 0.7  # at or above: applied without asking
+NAME_ONLY_CAP = 0.6  # payer looks like an insurer but the text does not say "bills"
 PROPOSAL_MIN = 0.35  # below: not even worth a question
 MAX_POOL = 12  # subset-sum search is bounded: C(12, k) stays small
 MAX_SUBSET = 4
@@ -51,6 +52,14 @@ _HEALTH_TEXT = re.compile(
     r"|heilbehandl|behandlungskosten|erstattung\w*\s+(?:ihrer\s+)?(?:rechnung|arzt|kosten)",
     re.IGNORECASE,
 )
+# Money from an insurer that is no refund of a bill: benefits and pay.
+_NOT_A_REFUND = re.compile(
+    r"krankengeld|kinderkrankengeld|mutterschaft\w*|gehalt|lohn\b|rente\b|pension|elterngeld"
+    r"|kindergeld|tagegeld|beitragsr(?:ü|ue)ckerstattung|dividende|provision",
+    re.IGNORECASE,
+)
+# Wording that makes a payment a settlement of bills rather than just an insurer's name.
+_EVIDENCE = re.compile(r"leistung|erstattung|kostenerstattung|abrechnung", re.IGNORECASE)
 _INSURER_NAME = re.compile(r"kranken|versicher|assekuranz|beihilfe", re.IGNORECASE)
 _MEDICAL = re.compile(
     r"(?<![a-zäöüß])(dr\.?|prof\.?|arzt|ärzt\w*|praxis|apotheke|klinik\w*|krankenhaus|physio\w*"
@@ -80,6 +89,56 @@ def _text(txn: dict[str, Any]) -> str:
     return str(txn.get("remittanceInformationUnstructured") or "")
 
 
+amount_of = _amount
+
+
+def _currency(txn: dict[str, Any]) -> str:
+    return str((txn.get("transactionAmount") or {}).get("currency") or "EUR").upper()
+
+
+def view_row(txn: dict[str, Any]) -> dict[str, Any]:
+    """The few fields a refund question or dialog shows about a booking."""
+    day = effective_day(txn)
+    return {
+        "id": ref_id(txn),
+        "date": day.isoformat() if day else "",
+        "amount": _amount(txn),
+        "party": txn.get("creditorName") or txn.get("debtorName") or "",
+        "description": txn.get("remittanceInformationUnstructured") or "",
+    }
+
+
+def candidates_for(refund: dict[str, Any], txns: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Expenses a refund may pay back: booked, same currency, not after it, within the window."""
+    rday = effective_day(refund)
+    out = []
+    for t in txns:
+        day = effective_day(t)
+        if (
+            _amount(t) >= 0
+            or t.get("_status", "booked") != "booked"
+            or day is None
+            or rday is None
+            or not ref_id(t)
+            or _currency(t) != _currency(refund)
+            or not 0 <= (rday - day).days <= WINDOW_DAYS
+        ):
+            continue
+        out.append(t)
+    return sorted(out, key=lambda t: effective_day(t) or date.min, reverse=True)
+
+
+def has_evidence(txn: dict[str, Any]) -> bool:
+    """The text itself says this settles bills: health wording, a service date or Leistung/Erstattung."""
+    text = _text(txn)
+    day = effective_day(txn)
+    return bool(
+        _HEALTH_TEXT.search(text)
+        or _EVIDENCE.search(text)
+        or (day is not None and cited_dates(text, day))
+    )
+
+
 def _cents(value: float) -> int:
     return round(value * 100)
 
@@ -100,6 +159,8 @@ def is_refund_source(txn: dict[str, Any]) -> bool:
     if _amount(txn) <= 0:
         return False
     name, text = _payee(txn), _text(txn)
+    if _NOT_A_REFUND.search(f"{name} {text}"):
+        return False
     return bool(
         INSURER.search(name) or _INSURER_NAME.search(name) or _HEALTH_TEXT.search(text)
     )
@@ -181,8 +242,9 @@ def _match_one(
     near = [
         t for t in pool
         if open_c.get(ref_id(t), 0) > 0
+        and _currency(t) == _currency(refund)
         and (d := effective_day(t)) is not None
-        and lo <= d <= rday + timedelta(days=3)
+        and lo <= d <= rday  # a bill dated after the refund cannot be what it repaid
     ]
     if not near:
         return {}, 0.0, ""
@@ -274,6 +336,10 @@ def analyse(
         if not alloc_c or score < PROPOSAL_MIN:
             continue
         alloc = {k: v / 100 for k, v in alloc_c.items()}
+        if not has_evidence(refund):
+            score = min(score, NAME_ONLY_CAP)  # an insurer's name alone only proposes
+        if score < PROPOSAL_MIN:
+            continue
         if score >= CONFIDENT:
             allocations[rid] = alloc
             confidence[rid] = score

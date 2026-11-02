@@ -7,7 +7,6 @@ booking (the refund side decides: a PUT names the expenses it pays back).
 
 from __future__ import annotations
 
-from datetime import date
 from typing import Any
 
 from aiohttp import web
@@ -16,9 +15,9 @@ from homeassistant.core import HomeAssistant
 
 from ..const import DOMAIN
 from ..labels import async_get_label_store, booking_key
-from ..refund_matcher import WINDOW_DAYS, open_claims, ref_id
+from ..refund_matcher import amount_of as _amount
+from ..refund_matcher import candidates_for, open_claims, ref_id, view_row as _row
 from ..refund_store import RefundError, async_get_refund_store
-from ..tx_dates import effective_day
 from ._helpers import _get_manager, admin_denied
 
 
@@ -27,42 +26,6 @@ async def load_refund_inputs(hass: HomeAssistant) -> None:
     await async_get_refund_store(hass)
     await async_get_label_store(hass)
 
-
-def _amount(txn: dict[str, Any]) -> float:
-    try:
-        return float((txn.get("transactionAmount") or {}).get("amount", 0) or 0)
-    except (TypeError, ValueError):
-        return 0.0
-
-
-def _row(txn: dict[str, Any]) -> dict[str, Any]:
-    day = effective_day(txn)
-    return {
-        "id": ref_id(txn),
-        "date": day.isoformat() if day else "",
-        "amount": _amount(txn),
-        "party": txn.get("creditorName") or txn.get("debtorName") or "",
-        "description": txn.get("remittanceInformationUnstructured") or "",
-    }
-
-
-def candidates_for(refund: dict[str, Any], txns: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Expenses a refund may pay back: booked, before it, at most the window earlier."""
-    rday = effective_day(refund)
-    out = []
-    for t in txns:
-        day = effective_day(t)
-        if (
-            _amount(t) >= 0
-            or t.get("_status", "booked") != "booked"
-            or day is None
-            or rday is None
-            or not ref_id(t)
-            or not 0 <= (rday - day).days <= WINDOW_DAYS
-        ):
-            continue
-        out.append(t)
-    return sorted(out, key=lambda t: effective_day(t) or date.min, reverse=True)
 
 
 def describe(manager, ledger_id: str, manual: dict[str, list[str]]) -> dict[str, Any] | None:

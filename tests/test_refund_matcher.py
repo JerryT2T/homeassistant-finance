@@ -63,7 +63,7 @@ def test_expense_refunded_in_parts_by_two_refunds():
 def test_amount_without_date_is_matched_when_unique():
     bill = row(date(2026, 5, 3), -64.20, "Praxis Dr. Muster")
     other = row(date(2026, 5, 4), -15, "Apotheke am Markt")
-    refund = row(date(2026, 5, 30), 64.20, "AOK Krankenkasse")
+    refund = row(date(2026, 5, 30), 64.20, "AOK Krankenkasse", "Leistung")
     assert match_refunds([bill, other, refund]) == {
         refund["transactionId"]: {bill["transactionId"]: 64.2}
     }
@@ -73,7 +73,7 @@ def test_subset_sum_without_dates():
     a = row(date(2026, 5, 3), -30, "Apotheke A")
     b = row(date(2026, 5, 5), -12.50, "Apotheke B")
     c = row(date(2026, 5, 6), -99, "Praxis C")
-    refund = row(date(2026, 5, 30), 42.50, "Barmer Krankenkasse")
+    refund = row(date(2026, 5, 30), 42.50, "Barmer Krankenkasse", "Erstattung")
     assert match_refunds([a, b, c, refund]) == {
         refund["transactionId"]: {a["transactionId"]: 30.0, b["transactionId"]: 12.5}
     }
@@ -106,7 +106,7 @@ def test_outside_window_and_foreign_payee_do_not_match():
 
 def test_label_makes_any_payee_a_claim_candidate():
     bill = row(date(2026, 5, 3), -64.20, "Schuhhaus Müller", _ledger_id="L1", _account_key="k")
-    refund = row(date(2026, 5, 30), 64.20, "Kranken AG")
+    refund = row(date(2026, 5, 30), 64.20, "Kranken AG", "Erstattung")
     assert match_refunds([bill, refund]) == {}
     out = match_refunds([bill, refund], labels={"k|L1": ["refundable"]})
     assert out == {refund["transactionId"]: {"k|L1": 64.2}}
