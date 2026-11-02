@@ -453,7 +453,7 @@ def _contract_view(s: dict[str, Any], c: Contract, today: date) -> dict[str, Any
     history = s.get("settlements") or []
     exp = (
         expected_settlement(
-            history, s.get("dates") or [], s.get("amounts") or [],
+            history, s.get("advance_at_settlement"), s["last_amount"],
             INTERVALS[s["interval"]][1], today,
         )
         if usage_based

@@ -135,7 +135,7 @@ class FinanceDashboardReservesView(HomeAssistantView):
         shown = [c for c in contracts if visible_to(c, person)]
         reserves = build_reserves(shown)
         reserves["items"] = [
-            {k: i[k] for k in ("creditor", "owner", "interval", "next_due", "monthly_reserve")}
+            {k: i.get(k) for k in ("creditor", "owner", "interval", "type", "next_due", "monthly_reserve")}
             for i in reserves["items"]
         ]
         return self.json({"reserves": reserves, "coverage": None})

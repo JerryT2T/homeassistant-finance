@@ -86,8 +86,8 @@ and contract. Category totals still use the booking's own category (inheritance 
   `labels_inherited`, `labels_own`, `labels_auto`; `PUT /contracts/{id}` accepts `labels`.
 
 ## Advance payments and settlements (#116, `settlement.py`)
-Usage-based payees (advance, energy, water, heating or service-charge words, never an insurer) are split before the
-series are cut: bookings with Abrechnung / Nachzahlung / Erstattung / Guthaben / Schlussrechnung leave the advance series
+Usage-based payees (advance, energy, water, heating or service-charge words in most bookings, never an insurer) are split before the
+series are cut: bookings with Abrechnung / Nachzahlung / Erstattung / Guthaben / Schlussrechnung (but no Abschlag / Vorauszahlung) leave the advance series
 when they are the minority and the rest still forms a series (a monthly "Kreditkartenabrechnung" stays a series);
 incoming keyword bookings of the same payee join them. Each series carries `settlements` (`{date, amount, key, source:
 keyword|manual}`, bank sign) and `settlement_candidates` (the payee's other loose bookings, 24 months, max 10); a keyword
@@ -97,7 +97,9 @@ for a usage payee or a series with settlements.
 payee only - arbitrary assignment is #117 F) are stored; `ContractStore.overrides()` passes the keys to the detector.
 The view's `settlement` block: `usage_based`, `usage_based_detected`, `history`, `candidates`, `expected` =
 last settlement within 18 months (bookings within 45 days summed) minus the yearly effect of an advance change made
-after it -> `{amount (plan sign, + back-payment), last_amount, advance_step, next_due (+1 year), monthly_reserve}`.
+after it (measured on the full payment history: `advance_at_settlement` vs. the last advance) -> `{amount (plan sign,
++ back-payment), last_amount, advance_step, next_due (+1 year, today when overdue), monthly_reserve}`. A payee split by
+spelling (`_keep_known_apart`) keeps each spelling's settlements. Members' reserve items carry `type` too.
 `annual_total` = `annual_cost` + expected amount (a refund lowers it) and feeds `contract_totals`; `annual_cost` stays
 the advance plan. History and candidates are admin-only (not in `aggregate_view`).
 `price_change` also reports a step the last payments kept (85, 85, 95, 95) within a year, after a steady previous price;

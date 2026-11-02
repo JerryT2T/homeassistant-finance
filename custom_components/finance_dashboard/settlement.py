@@ -35,6 +35,8 @@ MAX_MANUAL = 50
 _SETTLEMENT = re.compile(
     r"(abrechnung|nachzahlung|erstattung|guthaben|schlussrechnung)", re.IGNORECASE
 )
+# an advance row may cite the last bill ("Abschlag lt. Abrechnung 2025"): still an advance (QA #116)
+_ADVANCE = re.compile(r"(abschlag|vorauszahlung)", re.IGNORECASE)
 _USAGE = re.compile(
     r"\b(abschlag\w*|\w*vorauszahlung\w*|stadtwerke\w*|\w*strom\w*|gas|erdgas\w*"
     r"|\w*energie\w*|\w*wasser\w*|fernw(?:ä|ae)rme\w*|heiz\w*|nebenkosten\w*"
@@ -57,7 +59,8 @@ def booking_key(txn: dict[str, Any]) -> str | None:
 
 
 def is_settlement(txn: dict[str, Any]) -> bool:
-    return bool(_SETTLEMENT.search(_remittance(txn)))
+    text = _remittance(txn)
+    return bool(_SETTLEMENT.search(text)) and not _ADVANCE.search(text)
 
 
 def is_usage_payee(rows: list[tuple[date, float, dict[str, Any]]]) -> bool:
@@ -67,9 +70,10 @@ def is_usage_payee(rows: list[tuple[date, float, dict[str, Any]]]) -> bool:
         f"{_remittance(t)} {t.get('creditorName') or t.get('debtorName') or ''}"
         for _day, _amount, t in rows
     ]
-    if any(INSURER.search(t) for t in texts):
+    if not texts or any(INSURER.search(t) for t in texts):
         return False
-    return any(_USAGE.search(t) for t in texts)
+    # most bookings, not one: a PayPal stream with one "Energie Drink" is no utility (QA #116)
+    return sum(1 for t in texts if _USAGE.search(t)) * 2 > len(texts)
 
 
 def split_settlements(rows):
@@ -132,16 +136,27 @@ def attach(
     return out, candidates[:MAX_CANDIDATES]
 
 
+def advance_basis(rows, settlements: list[dict[str, Any]]) -> float | None:
+    """The advance (absolute) paid up to the last settlement, from the full
+    payment history of the series - not the last 12 shown (QA #116)."""
+    if not settlements:
+        return None
+    last_day = date.fromisoformat(settlements[-1]["date"])
+    before = [abs(r[1]) for r in rows if r[0] <= last_day]
+    return round(before[-1], 2) if before else None
+
+
 def expected(
     settlements: list[dict[str, Any]],
-    dates: list[str],
-    amounts: list[float],
+    basis: float | None,
+    current: float,
     per_year: int,
     today: date,
 ) -> dict[str, Any] | None:
     """The next settlement, in plan sign (positive = back-payment), or None.
 
-    ``dates`` / ``amounts`` are the advance payments (bank sign).
+    ``basis`` is the advance before the last settlement, ``current`` today's
+    advance (both absolute).
     """
     cutoff = (today - timedelta(days=RECENT_DAYS)).isoformat()
     recent = [s for s in settlements if s["date"] >= cutoff]
@@ -151,15 +166,14 @@ def expected(
     # a settlement may come as several bookings within a few weeks (bill + correction)
     window = (date.fromisoformat(last_day) - timedelta(days=45)).isoformat()
     back = -sum(s["amount"] for s in recent if s["date"] >= window)
-    before = [abs(a) for d, a in zip(dates, amounts, strict=False) if d <= last_day]
-    after = [abs(a) for d, a in zip(dates, amounts, strict=False) if d > last_day]
-    step = (after[-1] - before[-1]) if before and after else 0.0
+    step = (abs(current) - basis) if basis is not None else 0.0
     amount = round(back - step * per_year, 2)
+    due = max(date.fromisoformat(last_day) + timedelta(days=365), today)  # overdue: due now
     return {
         "last_date": last_day,
         "last_amount": round(back, 2),
         "advance_step": round(step, 2),
         "amount": amount,
-        "next_due": (date.fromisoformat(last_day) + timedelta(days=365)).isoformat(),
+        "next_due": due.isoformat(),
         "monthly_reserve": round(max(amount, 0.0) / 12, 2),
     }

@@ -163,3 +163,55 @@ def test_settlement_goes_to_the_meter_it_names():
     series = {s["plan_amount"]: s for s in detect_series(rows, today=TODAY)}
     assert series[-60.0]["settlements"] == []
     assert [x["amount"] for x in series[-40.0]["settlements"]] == [-80.0]
+
+
+def test_advance_citing_the_last_bill_stays_an_advance():
+    # QA #116: "Abschlag lt. Abrechnung" is no settlement
+    rows = [txn(add_months(date(2025, 11, 10), i).isoformat(), -95.0, "Stadtwerke Muster",
+                remittanceInformationUnstructured="Abschlag Strom" + (" lt. Abrechnung 2025" if i >= 8 else ""))
+            for i in range(12)]
+    (s,) = detect_series(rows, today=TODAY)
+    assert s["occurrences"] == 12 and s["settlements"] == []
+
+
+def test_one_energy_word_makes_no_utility():
+    # QA #116: a PayPal stream keeps its refunds out of the subscription
+    rows = [txn(add_months(date(2025, 11, 3), i).isoformat(), -9.99, "PayPal Europe",
+                remittanceInformationUnstructured="Spotify") for i in range(12)]
+    rows.append(txn("2026-05-20", -30.0, "PayPal Europe",
+                    remittanceInformationUnstructured="Energie Drink shop"))
+    refund = txn("2026-06-02", 45.0, "", remittanceInformationUnstructured="Erstattung Bestellung 123")
+    refund["debtorName"] = "PayPal Europe"
+    rows.append(refund)
+    s = next(x for x in detect_series(rows, today=TODAY) if x["direction"] == "out")
+    assert s["settlements"] == [] and s["kind_trait"] != TRAIT_USAGE_BASED
+
+
+def test_payee_split_by_spelling_keeps_its_settlement():
+    # QA #116: _keep_known_apart yields the spelling, the pool is keyed canonically
+    from custom_components.finance_dashboard.recurring import series_id
+
+    rows = []
+    for i in range(10):
+        day = add_months(date(2025, 12, 5), i).isoformat()
+        rows.append(txn(day, -70.0, "Stadtwerke Z AG", remittanceInformationUnstructured="Abschlag Strom"))
+        rows.append(txn(day, -50.0, "Stadtwerke Z GmbH", remittanceInformationUnstructured="Abschlag Gas"))
+    rows.append(txn("2026-09-20", -300.0, "Stadtwerke Z AG",
+                    remittanceInformationUnstructured="Jahresabrechnung Nachzahlung"))
+    known = {series_id("stadtwerke z ag", True), series_id("stadtwerke z gmbh", True)}
+    found = {s["plan_amount"]: s for s in detect_series(rows, today=TODAY, known_ids=known)}
+    assert [x["amount"] for x in found[-70.0]["settlements"]] == [-300.0]
+    assert found[-50.0]["settlements"] == []
+
+
+def test_step_is_measured_on_the_full_history():
+    # QA #116: the settlement lies outside the last 12 payments shown
+    rows = [txn(add_months(date(2025, 3, 10), i).isoformat(), -80.0 if i < 4 else -95.0,
+                "Stadtwerke Muster", remittanceInformationUnstructured="Abschlag Strom")
+            for i in range(20)]
+    rows.append(txn("2025-06-20", -300.0, "Stadtwerke Muster",
+                    remittanceInformationUnstructured="Jahresabrechnung Nachzahlung"))
+    (c,) = build_contracts(rows, blank_store(), today=TODAY)
+    exp = c["settlement"]["expected"]
+    assert exp["advance_step"] == 15.0 and exp["amount"] == 120.0
+    assert exp["next_due"] == TODAY.isoformat()  # overdue: due now

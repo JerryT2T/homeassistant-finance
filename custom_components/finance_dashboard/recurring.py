@@ -21,7 +21,14 @@ from typing import Any
 
 from .contract_kind import series_trait, suggest_kind
 from .series_confidence import is_candidate, score_series
-from .settlement import TRAIT_USAGE_BASED, attach, is_settlement, is_usage_payee, split_settlements
+from .settlement import (
+    TRAIT_USAGE_BASED,
+    advance_basis,
+    attach,
+    is_settlement,
+    is_usage_payee,
+    split_settlements,
+)
 from .text_norm import canonical_name
 from .tx_dates import effective_day
 
@@ -248,7 +255,7 @@ def _keep_known_apart(
     groups: dict[tuple[str, bool], list[tuple[date, float, dict[str, Any]]]],
     known: set[str],
 ):
-    """Yield ``(key, negative, date-sorted rows)`` per payee group.
+    """Yield ``(canonical key, key, negative, date-sorted rows)`` per payee group.
 
     A group whose spellings already own two or more stored ids ("Acme GmbH"
     and "Acme AG" with user data each) were separate payees before name
@@ -258,11 +265,11 @@ def _keep_known_apart(
         rows.sort(key=lambda r: r[0])
         names = _names_first_seen(rows)
         if len({series_id(n, negative) for n in names} & known) < 2:
-            yield key, negative, rows
+            yield key, key, negative, rows
             continue
         for name in names:
             part = [r for r in rows if _row_name(r) == name]
-            yield name, negative, part
+            yield key, name, negative, part
 
 
 def _row_name(row: tuple[date, float, dict[str, Any]]) -> str:
@@ -478,7 +485,8 @@ def detect_series(
     known = set(known_ids) | set(overrides) | set((aliases or {}).values())
     aliases = aliases or {}
     out: list[dict[str, Any]] = []
-    for key, negative, rows in _keep_known_apart(groups, known):
+    claimed_by: dict[str, set[int]] = defaultdict(set)
+    for canon, key, negative, rows in _keep_known_apart(groups, known):
         names = _names_first_seen(rows)
         name = names[-1]
         parts = _series_parts(rows, date_tolerance_days, amount_tolerance)
@@ -486,10 +494,13 @@ def detect_series(
             continue
         in_parts = {id(r) for p in parts for r in p.rows}
         loose = [r for r in rows if id(r) not in in_parts]
+        # a payee split by spelling: each spelling keeps its own settlements (QA #116)
+        mine = (lambda r: True) if key == canon else (lambda r: _row_name(r) == key)
         if negative:
-            loose += groups.get((key, False), [])
-        settle_rows = _settlements_per_part(parts, pool.get(key, []) if negative else [])
-        claimed: set[int] = set()
+            loose += [r for r in groups.get((canon, False), []) if mine(r)]
+        own_pool = [r for r in pool.get(canon, []) if mine(r)] if negative else []
+        settle_rows = _settlements_per_part(parts, own_pool)
+        claimed = claimed_by[canon]
         # earliest payment keeps the payee id; same day -> the tag decides, not input order
         base = min(range(len(parts)), key=lambda i: (parts[i].rows[0][0], parts[i].tag))
         used: set[str] = set()
@@ -542,7 +553,8 @@ def detect_series(
             )
             series["settlements"] = settlements
             series["settlement_candidates"] = candidates
-            if negative and not series["kind_trait"] and (settlements or key in usage):
+            series["advance_at_settlement"] = advance_basis(part.rows, settlements)
+            if negative and not series["kind_trait"] and (settlements or canon in usage):
                 series["kind_trait"] = TRAIT_USAGE_BASED
             out.append(series)
     out.sort(key=lambda s: s["annual_cost"], reverse=True)
