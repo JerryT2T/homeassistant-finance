@@ -7,8 +7,13 @@
  *        history:{count,first,last,months}|null}],
  *      questions_open, questions_total, answered_total, week_answered,
  *      points, points_every}
+ *     Contract cards (#117) come first and carry `type`:
+ *       "contract" {series_id, merchant, interval, count, monthly, dates, reasons, suggested_kind}
+ *       "price"    {series_id, merchant, interval, previous, last, change_pct, date}
  *   POST finance_dashboard/questions/answer
  *     {id, category, reach:"merchant"|"booking", owner?}
+ *     {id, type:"contract", answer:"contract"|"subscription"|"regular"|"coincidence"}
+ *     {id, type:"price", answer:"new_price"|"one_off"}
  *     -> {answered_total, week_answered, point_awarded}
  *   GET  finance_dashboard/assignments  -> persons[].name (optional owner chips)
  *   GET  finance_dashboard/questions/history
@@ -33,6 +38,25 @@ const PERSON_COLORS = ["var(--fd-person-a)", "var(--fd-person-b)", "#ef6c00", "#
 
 const FB = {
   de: {
+    "questions.c_irregular": "Unregelmäßige Ausgabe",
+    "questions.c_kind": "Wiederkehrende Zahlung",
+    "questions.c_prompt": "Vertrag, Abo, regelmäßige Ausgabe oder Zufall?",
+    "questions.c_payments": "$n Zahlungen",
+    "questions.c_monthly": "etwa $sum pro Monat",
+    "questions.c_contract": "Vertrag",
+    "questions.c_subscription": "Abo",
+    "questions.c_regular": "Regelmäßige Ausgabe",
+    "questions.c_coincidence": "Zufall",
+    "questions.price_kind": "Preisänderung",
+    "questions.price_step": "Von $previous auf $last",
+    "questions.price_prompt": "Neuer Preis oder einmaliger Betrag?",
+    "questions.price_new": "Neuer Preis",
+    "questions.price_once": "Einmaliger Betrag",
+    "questions.iv_weekly": "wöchentlich",
+    "questions.iv_monthly": "monatlich",
+    "questions.iv_quarterly": "vierteljährlich",
+    "questions.iv_half_yearly": "halbjährlich",
+    "questions.iv_yearly": "jährlich",
     "questions.title": "Fragen",
     "questions.back": "Zurück zum Start",
     "questions.card_of": "Karte $n von $m",
@@ -96,6 +120,25 @@ const FB = {
     "questions.rf_back": "Zurück",
   },
   en: {
+    "questions.c_irregular": "Irregular spending",
+    "questions.c_kind": "Recurring payment",
+    "questions.c_prompt": "Contract, subscription, regular spending or coincidence?",
+    "questions.c_payments": "$n payments",
+    "questions.c_monthly": "about $sum per month",
+    "questions.c_contract": "Contract",
+    "questions.c_subscription": "Subscription",
+    "questions.c_regular": "Regular spending",
+    "questions.c_coincidence": "Coincidence",
+    "questions.price_kind": "Price change",
+    "questions.price_step": "From $previous to $last",
+    "questions.price_prompt": "New price or a one-off amount?",
+    "questions.price_new": "New price",
+    "questions.price_once": "One-off amount",
+    "questions.iv_weekly": "weekly",
+    "questions.iv_monthly": "monthly",
+    "questions.iv_quarterly": "quarterly",
+    "questions.iv_half_yearly": "half-yearly",
+    "questions.iv_yearly": "yearly",
     "questions.title": "Questions",
     "questions.back": "Back to Start",
     "questions.card_of": "Card $n of $m",
@@ -432,10 +475,44 @@ class FdQuestions extends HTMLElement {
 </div>`;
   }
 
+  /** Answer buttons of a contract card (#117 B, G): [value, label key, icon]. */
+  _contractOptions(c) {
+    if (c.type === "price") return [["new_price", "questions.price_new", "↗"], ["one_off", "questions.price_once", "①"]];
+    return [["contract", "questions.c_contract", "📄"], ["subscription", "questions.c_subscription", "🔁"],
+      ["regular", "questions.c_regular", "🛒"], ["irregular", "questions.c_irregular", "〰"],
+      ["coincidence", "questions.c_coincidence", "🎲"]];
+  }
+
+  _contractCardHtml(c) {
+    const { eur, escHtml } = window._fd;
+    const iv = tr(`questions.iv_${c.interval}`);
+    let facts, prompt;
+    if (c.type === "price") {
+      const pct = c.change_pct != null ? ` (${c.change_pct > 0 ? "+" : ""}${String(c.change_pct).replace(".", ",")} %)` : "";
+      facts = `${escHtml(tr("questions.price_step", { previous: eur(Math.abs(c.previous)), last: eur(Math.abs(c.last)) }))}${escHtml(pct)} · ${escHtml(this._fmtDates([c.date]))}`;
+      prompt = tr("questions.price_prompt");
+    } else {
+      facts = `<b>${escHtml(tr("questions.c_payments", { n: c.count }))}</b> · ${escHtml(iv)} · ${escHtml(tr("questions.c_monthly", { sum: eur(c.monthly) }))}${c.dates && c.dates.length ? ` · ${tr("questions.dates", { dates: escHtml(this._fmtDates(c.dates)) })}` : ""}`;
+      prompt = tr("questions.c_prompt");
+    }
+    const btns = this._contractOptions(c).map(([v, key, ic], n) =>
+      `<button class="cat" data-ans="${v}" ${this._busy ? "disabled" : ""}><span class="ic" aria-hidden="true">${ic}</span><span>${escHtml(tr(key))}</span><kbd aria-hidden="true">${n + 1}</kbd></button>`).join("");
+    return `<div class="card enter" id="card">
+  <div class="cnt">${tr("questions.card_of", { n: this._i + 1, m: this._q.length })} · ${escHtml(tr(c.type === "price" ? "questions.price_kind" : "questions.c_kind"))}</div>
+  <h3 class="merchant">${escHtml(c.merchant)}</h3>
+  <div class="facts">${facts}</div>
+  <div class="prompt">${escHtml(prompt)}</div>
+  <div class="cats">${btns}</div>
+  ${this._msg ? `<div class="msg" role="alert">${escHtml(this._msg)}</div>` : ""}
+  <div class="foot"><span>${tr("questions.skip_hint")}</span><button class="ghost" data-act="skip" ${this._q.length < 2 ? "hidden" : ""}>${tr("questions.skip")}</button></div>
+</div>`;
+  }
+
   _cardHtml() {
     const { eur, escHtml, CAT_LABELS } = window._fd;
     const c = this._card;
     if (c.kind === "refund") return this._refundCardHtml();
+    if (c.type === "contract" || c.type === "price") return this._contractCardHtml(c);
     const cats = this._cats(c);
     const people = this._persons;
     const credit = Number(c.total) > 0;
@@ -560,6 +637,7 @@ class FdQuestions extends HTMLElement {
         }
         return undefined;
       }
+      if (t.dataset.ans) return this._answer(t.dataset.ans);
       if (t.dataset.reach) { this._reach = t.dataset.reach; return this._keepRender(); }
       if (t.dataset.owner !== undefined) { this._owner = t.dataset.owner; return this._keepRender(); }
       if (t.dataset.tab) {
@@ -613,7 +691,9 @@ class FdQuestions extends HTMLElement {
     if (this._state !== "ready" || this._tab !== "open" || !this._card || this._celebrate || this._busy) return;
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     const n = parseInt(e.key, 10);
-    const cats = this._cats(this._card);
+    const c = this._card;
+    if (c.kind === "refund") return; // refund cards answer by their own buttons
+    const cats = c.type === "contract" || c.type === "price" ? this._contractOptions(c).map((o) => o[0]) : this._cats(c);
     if (n >= 1 && n <= cats.length) { e.preventDefault(); this._answer(cats[n - 1]); }
   }
 
@@ -645,8 +725,13 @@ class FdQuestions extends HTMLElement {
     this._busy = true;
     this._msg = "";
     this._keepRender();
-    const body = refundAnswer ? { id: c.id, ...refundAnswer } : { id: c.id, category, reach: this._reach };
-    if (this._owner && !refundAnswer) body.owner = this._owner;
+    let body;
+    if (refundAnswer) body = { id: c.id, ...refundAnswer };
+    else if (c.type === "contract" || c.type === "price") body = { id: c.id, type: c.type, answer: category };
+    else {
+      body = { id: c.id, category, reach: this._reach };
+      if (this._owner) body.owner = this._owner;
+    }
     try {
       const r = await this._hass.callApi("POST", `${DOMAIN}/questions/answer`, body);
       this._meta.answered_total = r.answered_total ?? this._meta.answered_total + 1;

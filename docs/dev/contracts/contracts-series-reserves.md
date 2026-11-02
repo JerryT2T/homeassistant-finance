@@ -48,7 +48,44 @@ events and the contracts page list/totals; non-admin views carry `candidate` too
 ## Contract model (`contracts.Contract`, stored in `.storage/finance_dashboard_contracts`)
 Fields (all optional, `null` = prefilled default): `start`, `min_term_months`, `renewal_months`, `notice_value`,
 `notice_unit` (days/weeks/months), `notice_reference` (`end_of_term`/`end_of_month`), `owner`, `category`,
-`plan_position_id`, `special_termination` (null = derive), `plan_mode`, `plan_fixed_amount`, `review` (#130), `kind` (#111).
+`plan_position_id`, `special_termination` (null = derive), `plan_mode`, `plan_fixed_amount`, `review` (#130), `kind` (#111),
+`display_name` and `interval` (#117 A: the user's name and rhythm; yearly cost, next date, status and reserves follow the
+interval, the view keeps `display_name_detected` / `interval_detected`), `price_reviewed` (#117 G: date of the answered price step).
+
+## Review flow (#117)
+- **Full edit**: the sheet edits name, kind, category, labels, interval, plan mode / fixed amount, owner and terms; the
+  detected name/interval are sent as `null` so a better detection still applies.
+- **Questions** (`questions.contract_questions`, `api/questions.py`): every non-ended candidate becomes a card
+  `{type: "contract", id: "contract:<sid>"}` ("Vertrag, Abo, regelmäßige Ausgabe oder Zufall?"), every series whose last
+  payment jumped after a steady price (<= 60 days ago, not yet answered) a card `{type: "price", id: "price:<sid>"}`
+  ("neuer Preis oder einmaliger Betrag?"). At most 5 per week, in front of the merchant cards, same weekly quota and points
+  (`manager.async_count_contract_answer`). `contracts.answer_fields` maps answers onto the sheet's fields: a kind ->
+  `review: contract` + `kind` (null when it is the suggestion), `coincidence` -> `review: not_contract`; `new_price` ->
+  `plan_mode: last`, `one_off` -> `plan_mode: median`, both set `price_reviewed`.
+- **Manual contracts** (#117 D): `ContractStore.manual {id: {name, interval, created}}` in the contracts store, id
+  `m_<slug>`. Amount (= `plan_mode: fixed` + `plan_fixed_amount`), kind, category, owner, start live in the normal
+  contract fields, so the same sheet edits them (PUT rejects another plan mode with `manual_needs_amount`). The view is a
+  synthetic series (`source: "manual"`, no payments, next due rolled from the start) and counts in list, totals,
+  reserves, notice events and plan prefill. Detected items carry `source: "detected"`. The amounts never leave HA.
+  Validation: owner a person or `shared` (`invalid_owner`), start between 2000-01-01 and a year ahead (`invalid_start`),
+  a name already used by a manual contract is rejected (`manual_duplicate`). Without a start the next due date is
+  `null` (no notice deadline, reserve sorted last); with one it is computed arithmetically (`contracts.next_due`).
+  The frontend offers a checklist (car, liability, contents insurance, broadcasting fee, automobile club, membership,
+  domain/software) that prefills name, interval, kind and category.
+- **Merge / split / assign** (#117 E/F, decision d-overrides): `contracts.ContractStructure`, own store
+  `.storage/finance_dashboard_contract_overrides` = `{merges: {target: [sources]}, splits: {payee_key: reference|amount},
+  assignments: {booking_key: series id}}` - ids and keys only, no names or amounts, never in the ledger.
+  `detect_series(merges=, splits=, assignments=, external_ids=)` applies them on every pass: a split forces
+  `_series_parts` (by contract reference or amount band; fewer than two parts = no split); an assigned booking leaves its
+  payee group and joins the target (same sign = payment, opposite sign = hand-assigned settlement; to a manual contract
+  it is only linked via `ledger_ids`); merge sources' payments move into the target (`merged_from: [{id, name}]`).
+  A booking assigned to an id that is neither detected nor manual returns to its payee. Merges stay flat (a merge into
+  a merged series goes to its final target; cycles are rejected), need one direction and interval
+  (`merge_sign_mismatch` / `merge_interval_mismatch`) and carry the source's settlements over. "Kein Vertrag" on a
+  merge target releases its sources. A contract or price answer only counts (and earns a point) while that question is
+  open; "neuer Preis" keeps a fixed amount the user set (no price question is asked then). Ids stay the detector's, so
+  every undo restores the old series under their old ids. Series carry `payee_key`, `split_by`, `merged_from`,
+  `assigned: [{key, date, amount, name}]` (admin only).
 
 ### Kinds (#111, `contract_kind.py`)
 `kind` is how binding a payment is, separate from its category: `contract` (term, renewal, notice), `subscription`
@@ -94,7 +131,7 @@ keyword|manual}`, bank sign) and `settlement_candidates` (the payee's other loos
 settlement goes to the part with its contract reference, else to the payee's earliest part. Trait `usage_based` is set
 for a usage payee or a series with settlements.
 `Contract.usage_based` (null = detected trait) and `Contract.settlements` (booking keys assigned by hand, max 50; same
-payee only - arbitrary assignment is #117 F) are stored; `ContractStore.overrides()` passes the keys to the detector.
+payee only - any booking can be assigned via `contract_overrides`, #117 F) are stored; `ContractStore.overrides()` passes the keys to the detector.
 The view's `settlement` block: `usage_based`, `usage_based_detected`, `history`, `candidates`, `expected` =
 last settlement within 18 months (bookings within 45 days summed) minus the yearly effect of an advance change made
 after it (measured on the full payment history: `advance_at_settlement` vs. the last advance) -> `{amount (plan sign,
@@ -150,6 +187,11 @@ Where netting applies: the household summary, the plan wizard's history averages
   `{fixed, regular}` each `{monthly, yearly, count}` - fixed = contracts + subscriptions, regular = regular + irregular;
   candidates and ended series excluded; members get the totals of what they see.
 - `PUT /api/finance_dashboard/contracts/{series_id}` (admin) partial edit; 400 `{error,detail}` on invalid, 404 `unknown_series`. Returns the updated contract.
+- `POST /api/finance_dashboard/contracts` (admin) `{name, amount, interval?, kind?, category?, owner?, start?, labels?}` -> 201 the new manual contract.
+- `DELETE /api/finance_dashboard/contracts/{id}` (admin) - manual contracts only (404 `not_manual`); its booking assignments are dropped.
+- `POST /api/finance_dashboard/contract_overrides` (admin) `{action: merge|unmerge, target, source}`, `{action: split, series_id, by}`,
+  `{action: unsplit, series_id}`, `{action: assign, booking, series_id}`, `{action: unassign, booking}` -> `{contracts, totals}`;
+  400 `nothing_to_split` / `invalid_*`, 404 `unknown_series` / `unknown_booking` / `unknown_merge` / `unknown_assignment`.
 - `GET /api/finance_dashboard/reserves` - `{reserves:{items,by_owner,total_monthly}, coverage}`; coverage is admin-only (`null` for others).
 - `PUT /api/finance_dashboard/accounts/{key}/savings` `{savings: bool}` (admin) - sets `savings` on the account record via `async_set_accounts`; kept across `async_refresh_accounts`.
 

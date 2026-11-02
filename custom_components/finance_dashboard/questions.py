@@ -13,6 +13,7 @@ no I/O.
 
 from __future__ import annotations
 
+from datetime import date
 from typing import Any
 
 WEEKLY_QUESTIONS = 10
@@ -92,3 +93,87 @@ def select_questions(
         g["suggested"] = suggest(g["id"]) if suggest else []
         visible.append(g)
     return visible, len(ordered)
+
+
+# ---------------------------------------------------------------------------
+# Contract questions (#117 B, G)
+# ---------------------------------------------------------------------------
+
+QUESTION_CONTRACT = "contract"
+QUESTION_PRICE = "price"
+MAX_CONTRACT_QUESTIONS = 5  # per week, before the merchant questions
+PRICE_QUESTION_DAYS = 60  # a price jump older than this is no longer news
+CANDIDATE_ANSWERS = ("contract", "subscription", "regular", "irregular", "coincidence")
+PRICE_ANSWERS = ("new_price", "one_off")
+STEADY_PRICE_SPREAD = 1.01  # as recurring.STEADY_PRICE_SPREAD
+
+
+def _price_open(c: dict[str, Any], today: date) -> bool:
+    """The last payment differs from the one before and nobody answered it yet."""
+    pc = c.get("price_change")
+    dates = c.get("dates") or []
+    if not pc or not dates or pc.get("date") != dates[-1] or c.get("status") == "ended":
+        return False
+    stored = (c.get("contract") or {}).get("stored") or {}
+    if stored.get("price_reviewed") == pc["date"] or stored.get("plan_mode") == "fixed":
+        return False  # answered, or the user fixed the amount himself
+    # only a jump after a steady price: amounts that always vary have no "price"
+    before = [abs(a) for a in (c.get("amounts") or [])[:-1]]
+    if len(before) < 2 or max(before) > min(before) * STEADY_PRICE_SPREAD:
+        return False
+    return (today - date.fromisoformat(pc["date"])).days <= PRICE_QUESTION_DAYS
+
+
+def open_contract_questions(contracts: list[dict[str, Any]], today: date) -> list[dict[str, Any]]:
+    """Every contract and price question open right now, unlimited - what an
+    answer is checked against, so replaying an answered card earns nothing."""
+    return contract_questions(contracts, today=today, limit=len(contracts) * 2)[0]
+
+
+def contract_questions(
+    contracts: list[dict[str, Any]], *, today: date, limit: int = MAX_CONTRACT_QUESTIONS
+) -> tuple[list[dict[str, Any]], int]:
+    """Candidates ("Vertrag, Abo, regelmäßige Ausgabe oder Zufall?") and
+    price jumps ("neuer Preis oder einmaliger Betrag?") as question cards;
+    returns ``(visible, total)``. ``contracts`` are admin views of
+    :func:`contracts.build_contracts`; the question id is ``<type>:<series id>``.
+    """
+    cands = sorted(
+        (c for c in contracts if c.get("candidate") and c.get("status") != "ended"),
+        key=lambda c: (-float(c.get("annual_cost") or 0), c["id"]),
+    )
+    prices = sorted(
+        (c for c in contracts if not c.get("candidate") and _price_open(c, today)),
+        key=lambda c: (-abs(float(c["price_change"].get("change_pct") or 0)), c["id"]),
+    )
+    out: list[dict[str, Any]] = [
+        {
+            "type": QUESTION_CONTRACT,
+            "id": f"{QUESTION_CONTRACT}:{c['id']}",
+            "series_id": c["id"],
+            "merchant": c.get("display_name") or c.get("creditor"),
+            "interval": c.get("interval"),
+            "count": c.get("occurrences", 0),
+            "monthly": c.get("monthly_equivalent"),
+            "last_amount": c.get("last_amount"),
+            "dates": list(reversed(c.get("dates") or []))[:SAMPLE_DATES],
+            "reasons": list((c.get("confidence") or {}).get("reasons") or []),
+            "suggested_kind": c.get("kind_suggested"),
+        }
+        for c in cands
+    ]
+    out += [
+        {
+            "type": QUESTION_PRICE,
+            "id": f"{QUESTION_PRICE}:{c['id']}",
+            "series_id": c["id"],
+            "merchant": c.get("display_name") or c.get("creditor"),
+            "interval": c.get("interval"),
+            "previous": c["price_change"]["previous"],
+            "last": c["price_change"]["last"],
+            "change_pct": c["price_change"].get("change_pct"),
+            "date": c["price_change"]["date"],
+        }
+        for c in prices
+    ]
+    return out[: max(0, limit)], len(out)

@@ -23,6 +23,7 @@ from .refunds import VIEWS as REFUND_VIEWS
 from .assignments import FinanceDashboardAssignmentsView
 from .contracts import (
     FinanceDashboardAccountSavingsView,
+    FinanceDashboardContractOverridesView,
     FinanceDashboardContractsView,
     FinanceDashboardContractView,
     FinanceDashboardReservesView,
@@ -117,6 +118,7 @@ __all__ = [  # noqa: RUF022  # grouped by category, not alphabetical
     "FinanceDashboardHouseholdSummaryView",
     "FinanceDashboardContractsView",
     "FinanceDashboardContractView",
+    "FinanceDashboardContractOverridesView",
     "FinanceDashboardReservesView",
     "FinanceDashboardAccountSavingsView",
     "FinanceDashboardQuestionAnswerView",
@@ -174,6 +176,7 @@ async def async_register_api(hass: HomeAssistant) -> None:
     hass.http.register_view(FinanceDashboardHouseholdSummaryView())
     hass.http.register_view(FinanceDashboardContractsView())
     hass.http.register_view(FinanceDashboardContractView())
+    hass.http.register_view(FinanceDashboardContractOverridesView())
     hass.http.register_view(FinanceDashboardReservesView())
     hass.http.register_view(FinanceDashboardAccountSavingsView())
     hass.http.register_view(FinanceDashboardQuestionsView())

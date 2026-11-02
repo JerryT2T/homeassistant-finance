@@ -289,6 +289,14 @@ class QuestionsMixin:
         await store.async_save()
         return await self._finish_answer(mem, user_id, derive=False)
 
+    async def async_count_contract_answer(self, user_id: str | None = None) -> dict[str, Any]:
+        """A contract question was answered (#117 B, G): it counts towards
+        the week and the points like a merchant answer. Raises :class:`QuestionError`."""
+        mem = getattr(self, "_memory", None)
+        if mem is None or getattr(self, "_demo_mode", False):
+            raise QuestionError("unavailable")
+        return await self._finish_answer(mem, user_id, derive=False)
+
     async def _finish_answer(self, mem: Any, user_id: str | None, *, derive: bool) -> dict[str, Any]:
         today = dt_util.now().date()
         point = mem.record_answer(today)

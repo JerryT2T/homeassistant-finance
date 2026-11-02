@@ -25,6 +25,7 @@ from .settlement import (
     TRAIT_USAGE_BASED,
     advance_basis,
     attach,
+    booking_key,
     is_settlement,
     is_usage_payee,
     split_settlements,
@@ -418,8 +419,21 @@ def detect_series(
     overrides: dict[str, dict[str, Any]] | None = None,
     aliases: dict[str, str] | None = None,
     known_ids: set[str] | frozenset[str] = frozenset(),
+    merges: dict[str, list[str]] | None = None,
+    splits: dict[str, str] | None = None,
+    assignments: dict[str, str] | None = None,
+    external_ids: set[str] | frozenset[str] = frozenset(),
+    _retry: bool = False,
 ) -> list[dict[str, Any]]:
     """Detect recurring series of any interval in booked transactions.
+
+    The user's structure (#117 E, F): ``merges`` maps a target series id to
+    the ids merged into it, ``splits`` a ``payee_key`` to a split mode
+    (``reference`` / ``amount``), ``assignments`` a booking key to the series
+    id the booking belongs to. ``external_ids`` are ids the caller resolves
+    itself (manual contracts): bookings assigned to them never form a series.
+    A booking assigned to an id that is neither detected nor external goes
+    back to its own payee.
 
     Pending debits in ``transactions`` never form or price a series; one that
     lands about a period after the last booked payment proves the series is
@@ -438,6 +452,8 @@ def detect_series(
     """
     today = today or date.today()
     overrides = overrides or {}
+    assignments = assignments or {}
+    assigned: dict[str, list[tuple[date, float, dict[str, Any]]]] = defaultdict(list)
     groups: dict[tuple[str, bool], list[tuple[date, float, dict[str, Any]]]] = defaultdict(list)
     pending: dict[tuple[str, bool], list[tuple[date, float, dict[str, Any]]]] = defaultdict(list)
     for txn in transactions:
@@ -453,6 +469,10 @@ def detect_series(
         except (TypeError, ValueError):
             continue
         if amount == 0:
+            continue
+        target = assignments.get(booking_key(txn) or "") if status == "booked" else None
+        if target:  # assigned by hand: leaves its payee group (#117 F)
+            assigned[target].append((day, amount, txn))
             continue
         bucket = groups if status == "booked" else pending
         bucket[(canonical_name(raw), amount < 0)].append((day, amount, txn))
@@ -484,12 +504,15 @@ def detect_series(
 
     known = set(known_ids) | set(overrides) | set((aliases or {}).values())
     aliases = aliases or {}
+    splits = splits or {}
     out: list[dict[str, Any]] = []
+    staged: list[dict[str, Any]] = []
     claimed_by: dict[str, set[int]] = defaultdict(set)
     for canon, key, negative, rows in _keep_known_apart(groups, known):
         names = _names_first_seen(rows)
         name = names[-1]
-        parts = _series_parts(rows, date_tolerance_days, amount_tolerance)
+        payee = alias_key(key, negative)
+        parts = _series_parts(rows, date_tolerance_days, amount_tolerance, splits.get(payee))
         if not parts:
             continue
         in_parts = {id(r) for p in parts for r in p.rows}
@@ -517,48 +540,191 @@ def detect_series(
                 used=used,
             )
             used.add(sid)
-            series = _build_series(
-                sid,
-                name,
-                negative,
-                part.rows,
-                part.interval,
-                today,
-                date_tolerance_days,
-                overrides,
-                part_pending[i],
-                amount_tolerance,
-            )
             keys = [alias_key(key, negative)] if i == base else []
             if part.tag:
                 keys.append(alias_key(key + part.tag, negative))
             if part.ref:
                 keys.append(_ref_alias_key(part.ref, negative))
-            series["alias_key"] = keys[0]
-            series["alias_keys"] = keys
-            series["confidence"] = score_series(
-                part.rows, part.interval, series["category"], part.ref, series["pauses"]
+            staged.append(
+                {
+                    "sid": sid,
+                    "name": name,
+                    "negative": negative,
+                    "part": part,
+                    "pending": list(part_pending[i]),
+                    "keys": keys,
+                    "payee": payee,
+                    "settle": settle_rows[i],
+                    "loose": list(loose) if negative else [],
+                    "claimed": claimed,
+                    "usage": canon in usage,
+                    "merged_from": [],
+                    "assigned": [],
+                    "extra_manual": [],
+                }
             )
-            series["candidate"] = is_candidate(series["confidence"])
-            series["kind_suggested"] = suggest_kind(
-                part.rows, part.interval, series["category"], series["confidence"]["reasons"]
-            )
-            series["kind_trait"] = series_trait(part.rows)
-            settlements, candidates = attach(
-                settle_rows[i],
-                loose if negative else [],
-                overrides.get(sid, {}).get("settlements") or (),
-                today,
-                claimed,
-            )
-            series["settlements"] = settlements
-            series["settlement_candidates"] = candidates
-            series["advance_at_settlement"] = advance_basis(part.rows, settlements)
-            if negative and not series["kind_trait"] and (settlements or canon in usage):
-                series["kind_trait"] = TRAIT_USAGE_BASED
-            out.append(series)
+    live = {st["sid"] for st in staged} | set(external_ids)
+    missing = {t for t in assigned if t not in live}
+    if missing and not _retry:
+        # a booking assigned to a series that is gone goes back to its payee
+        return detect_series(
+            transactions,
+            today=today,
+            amount_tolerance=amount_tolerance,
+            date_tolerance_days=date_tolerance_days,
+            overrides=overrides,
+            aliases=aliases,
+            known_ids=known_ids,
+            merges=merges,
+            splits=splits,
+            assignments={k: v for k, v in assignments.items() if v not in missing},
+            external_ids=external_ids,
+            _retry=True,
+        )
+    staged = _apply_merges(
+        _apply_assignments(staged, assigned),
+        merges or {},
+        date_tolerance_days,
+        amount_tolerance,
+        overrides,
+    )
+    for st in staged:
+        sid, part, negative = st["sid"], st["part"], st["negative"]
+        series = _build_series(
+            sid,
+            st["name"],
+            negative,
+            part.rows,
+            part.interval,
+            today,
+            date_tolerance_days,
+            overrides,
+            st["pending"],
+            amount_tolerance,
+        )
+        keys = st["keys"]
+        series["alias_key"] = keys[0]
+        series["alias_keys"] = keys
+        series["payee_key"] = st["payee"]
+        series["split_by"] = splits.get(st["payee"])
+        series["merged_from"] = st["merged_from"]
+        series["assigned"] = sorted(
+            (_assigned_entry(r) for r in st["assigned"]), key=lambda e: e["date"]
+        )
+        # an assigned refund is no payment, but the booking still belongs here
+        series["ledger_ids"] += [
+            a["key"] for a in series["assigned"] if a["key"] and a["key"] not in series["ledger_ids"]
+        ]
+        series["confidence"] = score_series(
+            part.rows, part.interval, series["category"], part.ref, series["pauses"]
+        )
+        series["candidate"] = is_candidate(series["confidence"])
+        series["kind_suggested"] = suggest_kind(
+            part.rows, part.interval, series["category"], series["confidence"]["reasons"]
+        )
+        series["kind_trait"] = series_trait(part.rows)
+        settlements, candidates = attach(
+            st["settle"],
+            st["loose"],
+            [*(overrides.get(sid, {}).get("settlements") or ()), *st["extra_manual"]],
+            today,
+            st["claimed"],
+        )
+        series["settlements"] = settlements
+        series["settlement_candidates"] = candidates
+        series["advance_at_settlement"] = advance_basis(part.rows, settlements)
+        if negative and not series["kind_trait"] and (settlements or st["usage"]):
+            series["kind_trait"] = TRAIT_USAGE_BASED
+        out.append(series)
     out.sort(key=lambda s: s["annual_cost"], reverse=True)
     return out
+
+
+# ---------------------------------------------------------------------------
+# The user's structure: merges, splits, booking assignments (#117 E, F)
+# ---------------------------------------------------------------------------
+#
+# Applied on every detection, never stored in the ledger: a split forces
+# ``_series_parts`` (above), an assigned booking leaves its own payee group
+# and joins the chosen series, a merge moves the payments of its sources into
+# the target. Ids stay those the detector derives, so undoing any of it
+# brings the original series back under their old ids.
+
+
+def _assigned_entry(row) -> dict[str, Any]:
+    txn = row[2]
+    return {
+        "key": booking_key(txn),
+        "date": row[0].isoformat(),
+        "amount": round(row[1], 2),
+        "name": " ".join(str(txn.get("creditorName") or txn.get("debtorName") or "").split()),
+    }
+
+
+def _apply_assignments(staged, assigned):
+    """Bookings the user assigned to a series join it: a payment in the
+    series' direction as a payment, the opposite sign (refund, credit) as a
+    hand-assigned settlement."""
+    if not assigned:
+        return staged
+    for st in staged:
+        rows = assigned.get(st["sid"])
+        if not rows:
+            continue
+        pay = [r for r in rows if (r[1] < 0) == st["negative"]]
+        back = [r for r in rows if (r[1] < 0) != st["negative"]]
+        part = st["part"]
+        if pay:
+            st["part"] = _Part(
+                sorted([*part.rows, *pay], key=lambda r: r[0]), part.interval, part.tag, part.ref
+            )
+        st["loose"] = [*st["loose"], *back]
+        st["extra_manual"] = [booking_key(r[2]) for r in back]
+        st["assigned"] = list(rows)
+    return staged
+
+
+def _apply_merges(
+    staged, merges: dict[str, list[str]], date_tol: int, amount_tol: float, overrides=None
+):
+    """Move the payments of every merge source into its target, with its
+    settlements: keyword ones, its loose bookings and the keys assigned by
+    hand (stored on the source or via an assignment). A merge whose target is
+    not detected right now changes nothing."""
+    overrides = overrides or {}
+    if not merges:
+        return staged
+    by_id = {st["sid"]: st for st in staged}
+    gone: set[str] = set()
+    for target, sources in merges.items():
+        tgt = by_id.get(target)
+        if tgt is None or target in gone:
+            continue
+        for sid in sources:
+            src = by_id.get(sid)
+            if src is None or sid in gone or sid == target:
+                continue
+            if src["negative"] != tgt["negative"]:  # the API refuses this (merge_sign_mismatch)
+                _LOGGER.warning("Skipping a stored merge of an expense and an income series")
+                continue
+            rows = sorted([*tgt["part"].rows, *src["part"].rows], key=lambda r: r[0])
+            found = _as_series(rows, date_tol, amount_tol)
+            interval = found[1] if found else tgt["part"].interval
+            tgt["part"] = _Part(rows, interval, tgt["part"].tag, tgt["part"].ref)
+            tgt["pending"] += src["pending"]
+            tgt["assigned"] += src["assigned"]
+            tgt["settle"] = sorted([*tgt["settle"], *src["settle"]], key=lambda r: r[0])
+            seen = {id(r) for r in tgt["loose"]}
+            tgt["loose"] = [*tgt["loose"], *(r for r in src["loose"] if id(r) not in seen)]
+            tgt["extra_manual"] = [
+                *tgt["extra_manual"],
+                *src["extra_manual"],
+                *(overrides.get(sid, {}).get("settlements") or ()),
+            ]
+            tgt["usage"] = tgt["usage"] or src["usage"]
+            tgt["merged_from"].append({"id": sid, "name": src["name"]})
+            gone.add(sid)
+    return [st for st in staged if st["sid"] not in gone]
 
 
 # ---------------------------------------------------------------------------
@@ -712,11 +878,46 @@ def _join_successors(streams, date_tol: int, amount_tol: float):
     return joined
 
 
-def _series_parts(rows, date_tol: int, amount_tol: float) -> list[_Part]:
-    """The series inside one payee group (date-sorted ``rows``)."""
+SPLIT_REFERENCE = "reference"
+SPLIT_AMOUNT = "amount"
+SPLIT_MODES = (SPLIT_REFERENCE, SPLIT_AMOUNT)
+
+
+def _forced_parts(rows, by_ref, date_tol: int, amount_tol: float, force: str) -> list[_Part]:
+    """A split the user asked for (#117 E): by contract reference or by amount
+    band, even where the detector saw one series. Fewer than two parts -> []."""
+    if force == SPLIT_REFERENCE:
+        parts: list[_Part] = []
+        rest: list[tuple[date, float, dict[str, Any]]] = []
+        for ref, rs in by_ref.items():
+            found = _as_series(rs, date_tol, amount_tol) if ref else None
+            if found:
+                parts.append(_Part(found[0], found[1], "#" + _digest(ref), ref))
+            else:
+                rest += rs
+        if rest:
+            parts += _whole_or_bands(sorted(rest, key=lambda r: r[0]), date_tol, amount_tol, "#-")
+        return parts if len(parts) >= 2 else []
+    plain = [r for r in rows if not _FINITE_INSTALMENT.search(_remittance(r[2]))]
+    parts = []
+    for band in _amount_bands(plain, BAND_TOLERANCE):
+        found = _as_series(band, date_tol, amount_tol)
+        if found:
+            mid = statistics.median(abs(r[1]) for r in found[0][:MIN_BAND_OCCURRENCES])
+            parts.append(_Part(found[0], found[1], f"~{_digest(f'{mid:.2f}')}"))
+    return parts if len(parts) >= 2 else []
+
+
+def _series_parts(rows, date_tol: int, amount_tol: float, force: str | None = None) -> list[_Part]:
+    """The series inside one payee group (date-sorted ``rows``); ``force`` is
+    a split mode the user chose for this payee."""
     by_ref: dict[str, list[tuple[date, float, dict[str, Any]]]] = defaultdict(list)
     for row in rows:
         by_ref[contract_reference(_remittance(row[2]))].append(row)
+    if force in SPLIT_MODES:
+        forced = _forced_parts(rows, by_ref, date_tol, amount_tol, force)
+        if forced:
+            return forced
     # only a reference whose payments are a series of their own is a contract
     recurring = {
         ref: rs for ref, rs in by_ref.items() if ref and _as_series(rs, date_tol, amount_tol)
@@ -969,6 +1170,11 @@ def add_months(day: date, months: int) -> date:
     month = month0 + 1
     first_next = date(year + (month == 12), month % 12 + 1, 1)
     return date(year, month, min(day.day, (first_next - timedelta(days=1)).day))
+
+
+def add_period(start: date, interval: str) -> date:
+    """Next occurrence after ``start`` (public, see :func:`_add_period`)."""
+    return _add_period(start, interval)
 
 
 def _add_period(start: date, interval: str) -> date:

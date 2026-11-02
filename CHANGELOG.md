@@ -2,6 +2,14 @@
 
 All notable changes to the Finance will be documented in this file.
 
+## [0.36.0] — 2026-11-02
+
+### Added
+- Every contract can be fully edited in one sheet - name, category, rhythm, type, plan amount, owner, notice terms and labels - and reset to the detected defaults
+- Merge series that belong together, split one payee by contract number or amount, and assign single bookings (settlements, refunds, PayPal payments) to a contract; merges with a different rhythm or direction are refused, every step can be undone
+- Add yearly contracts by hand that the bank has not shown yet; "Kein Vertrag" hides a series for good and releases anything merged into it
+- Unsure contract candidates and price changes become questions in the weekly question flow (Vertrag, Abo, regelmäßige oder unregelmäßige Ausgabe, kein Vertrag), each answered question counts once
+
 ## [0.35.0] — 2026-11-02
 
 ### Added
