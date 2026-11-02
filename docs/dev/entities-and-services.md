@@ -68,6 +68,14 @@ Home screen (`api/home.py`, `home.py`, `pots.py`, `cycle.py`):
 - Demo mode (`manager.demo_mode`, or `demo=1`) serves the same payload from invented data
   (`demo.generate_demo_home`).
 
+Contracts (`api/contracts.py`, details in `docs/dev/contracts/contracts-series-reserves.md`):
+`GET /contracts`, `POST /contracts` (admin, add by hand, #117 D), `PUT|DELETE /contracts/{id}`
+(admin; DELETE only for manual contracts), `POST /contract_overrides` (admin; merge / split /
+booking assignment, #117 E/F), `GET /reserves`, `PUT /accounts/{key}/savings`.
+Questions (`api/questions.py`): `GET /questions` puts contract and price-change cards (#117 B/G)
+in front of the merchant cards (shared weekly quota); `POST /questions/answer` takes
+`{id, type: "contract"|"price", answer}` besides the merchant answer.
+
 ## AI consent and spreadsheet ideas
 
 AI consent is per purpose (`ai_consent.py`, own store `finance_dashboard.ai_consent`; first load

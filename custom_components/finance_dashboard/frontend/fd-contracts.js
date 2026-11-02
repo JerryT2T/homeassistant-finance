@@ -5,6 +5,11 @@
  *   GET  finance_dashboard/contracts            {contracts:[series + contract block + deadlines]}
  *        (non-admins get aggregates only: no `amounts`/`contract`, so no edit and no chart)
  *   PUT  finance_dashboard/contracts/{id}       partial edit (admin) -> the updated series
+ *   POST finance_dashboard/contracts            add by hand (admin, #117 D) -> the new contract (source "manual")
+ *   DELETE finance_dashboard/contracts/{id}     delete a manual contract (admin)
+ *   POST finance_dashboard/contract_overrides   {action: merge|unmerge|split|unsplit|assign|unassign, ...}
+ *        (admin, #117 E/F) -> {contracts, totals}
+ *   GET  finance_dashboard/transactions?q=      booking search for "assign" in the sheet (admin)
  *   GET  finance_dashboard/reserves             {reserves:{items,by_owner,total_monthly}, coverage|null}
  *   PUT  finance_dashboard/accounts/{key}/savings {savings:bool} (admin)
  *   GET  finance_dashboard/balances             account list for the savings toggles (admin)
