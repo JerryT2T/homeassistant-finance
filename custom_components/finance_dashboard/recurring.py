@@ -971,6 +971,11 @@ def add_months(day: date, months: int) -> date:
     return date(year, month, min(day.day, (first_next - timedelta(days=1)).day))
 
 
+def add_period(start: date, interval: str) -> date:
+    """Next occurrence after ``start`` (public, see :func:`_add_period`)."""
+    return _add_period(start, interval)
+
+
 def _add_period(start: date, interval: str) -> date:
     """Next occurrence: calendar months for month-based intervals, 7 days weekly."""
     months = {"monthly": 1, "quarterly": 3, "half_yearly": 6, "yearly": 12}.get(interval)

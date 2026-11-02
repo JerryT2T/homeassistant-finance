@@ -49,7 +49,12 @@ from .recurring import (
     IRREGULAR_INTERVALS,
     PLAN_MODE_FIXED,
     PLAN_MODES,
+    SERIES_DATE_TOLERANCE_DAYS,
+    STATUS_ACTIVE,
+    STATUS_ENDED,
+    STATUS_MISSING,
     add_months,
+    add_period,
     detect_series,
 )
 from .series_confidence import REASON_OWN_NAME, own_name_contract
@@ -127,6 +132,9 @@ class Contract:
     labels: list[str] | None = None  # passed on to every booking of the series (#113)
     usage_based: bool | None = None  # None = follow the detected trait (#116)
     settlements: list[str] | None = None  # booking keys assigned by hand as settlements
+    display_name: str | None = None  # the user's name for it (#117 A)
+    interval: str | None = None  # None = the detected rhythm (#117 A)
+    price_reviewed: str | None = None  # date of the price step the user answered (#117 G)
 
     _FIELDS = (
         "start",
@@ -146,6 +154,9 @@ class Contract:
         "labels",
         "usage_based",
         "settlements",
+        "display_name",
+        "interval",
+        "price_reviewed",
     )
 
     def to_dict(self) -> dict[str, Any]:
@@ -205,7 +216,7 @@ def _validate(d: dict[str, Any]) -> None:
         raise ContractError("invalid_notice_unit", "Unknown notice unit")
     if d["notice_reference"] is not None and d["notice_reference"] not in NOTICE_REFERENCES:
         raise ContractError("invalid_notice_reference", "Unknown notice reference")
-    for name in ("owner", "category", "plan_position_id"):
+    for name in ("owner", "category", "plan_position_id", "display_name"):
         v = d[name]
         if v is not None:
             if not isinstance(v, str) or len(v) > 80:
@@ -241,6 +252,14 @@ def _validate(d: dict[str, Any]) -> None:
         ):
             raise ContractError("invalid_settlements", "Must be a list of booking keys")
         d["settlements"] = list(dict.fromkeys(keys)) or None
+    if d["interval"] is not None and d["interval"] not in INTERVALS:
+        raise ContractError("invalid_interval", "Unknown interval")
+    if d["price_reviewed"] is not None:
+        try:
+            date.fromisoformat(str(d["price_reviewed"]))
+        except ValueError as err:
+            raise ContractError("invalid_price_reviewed", "Must be YYYY-MM-DD") from err
+        d["price_reviewed"] = str(d["price_reviewed"])
     if d["plan_mode"] == PLAN_MODE_FIXED and d["plan_fixed_amount"] is None:
         raise ContractError("invalid_plan_fixed_amount", "Fixed mode needs an amount")
 
@@ -434,7 +453,34 @@ def build_contracts(
     return out
 
 
+def _with_interval(s: dict[str, Any], interval: str | None, today: date) -> dict[str, Any]:
+    """The series re-read with the rhythm the user set (#117 A): yearly cost,
+    next date and status follow it; the detected one stays as ``interval_detected``."""
+    out = {**s, "interval_detected": s.get("interval_detected") or s["interval"]}
+    if not interval or interval == s["interval"]:
+        return out
+    nominal, per_year, _ = INTERVALS[interval]
+    plan = abs(s["plan_amount"])
+    nxt = add_period(date.fromisoformat(s["last_seen"]), interval)
+    overdue = (today - nxt).days
+    if overdue > 2 * nominal:
+        status = STATUS_ENDED
+    elif overdue > SERIES_DATE_TOLERANCE_DAYS:
+        status = STATUS_MISSING
+    else:
+        status = STATUS_ACTIVE
+    out.update(
+        interval=interval,
+        period_days=nominal,
+        next_expected=nxt.isoformat(),
+        annual_cost=round(plan * per_year, 2),
+        status=status,
+    )
+    return out
+
+
 def _contract_view(s: dict[str, Any], c: Contract, today: date) -> dict[str, Any]:
+    s = _with_interval(s, c.interval, today)
     category = c.category or s["category"]
     suggested = s.get("kind_suggested") or KIND_CONTRACT
     kind = c.kind or suggested
@@ -479,6 +525,8 @@ def _contract_view(s: dict[str, Any], c: Contract, today: date) -> dict[str, Any
         days_left = (deadline - today).days
     return {
         **s,
+        "display_name": c.display_name or s.get("display_name") or s["creditor"],
+        "display_name_detected": s.get("display_name") or s["creditor"],
         "category": category,
         "kind": kind,
         "kind_suggested": suggested,

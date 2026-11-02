@@ -906,5 +906,9 @@
   "hist.err.nothing_to_import": "Nothing new to import.",
   "hist.err.unknown_batch": "This import no longer exists.",
   "hist.err.xlsx_unavailable": "XLSX cannot be read on this system. Export as CSV.",
-  "hist.err.too_many_columns": "The file has too many columns."
+  "hist.err.too_many_columns": "The file has too many columns.",
+  "ct.f.name": "Name",
+  "ct.f.category": "Category",
+  "ct.f.interval": "Rhythm",
+  "ct.interval_detected": "Detected: $interval. Yearly cost and next payment follow your choice."
 }

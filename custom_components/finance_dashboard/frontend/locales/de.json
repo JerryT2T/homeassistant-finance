@@ -906,5 +906,9 @@
   "hist.err.nothing_to_import": "Es gibt nichts Neues zu importieren.",
   "hist.err.unknown_batch": "Dieser Import ist nicht mehr vorhanden.",
   "hist.err.xlsx_unavailable": "XLSX kann auf diesem System nicht gelesen werden. Exportiere als CSV.",
-  "hist.err.too_many_columns": "Die Datei hat zu viele Spalten."
+  "hist.err.too_many_columns": "Die Datei hat zu viele Spalten.",
+  "ct.f.name": "Name",
+  "ct.f.category": "Kategorie",
+  "ct.f.interval": "Rhythmus",
+  "ct.interval_detected": "Erkannt war: $interval. Jahreskosten und nächste Zahlung folgen deiner Wahl."
 }

@@ -21,6 +21,10 @@ const DOMAIN = "finance_dashboard";
 // Fallback texts: used until locales/*.json carry the ct.* / rs.* keys.
 const FB = {
   "de": {
+    "ct.f.name": "Name",
+    "ct.f.category": "Kategorie",
+    "ct.f.interval": "Rhythmus",
+    "ct.interval_detected": "Erkannt war: $interval. Jahreskosten und nächste Zahlung folgen deiner Wahl.",
     "ct.title": "Verträge und Abos",
     "ct.back": "Zurück",
     "ct.loading": "Lade Verträge…",
@@ -113,6 +117,10 @@ const FB = {
     "rs.savings_failed": "Konnte nicht gespeichert werden"
   },
   "en": {
+    "ct.f.name": "Name",
+    "ct.f.category": "Category",
+    "ct.f.interval": "Rhythm",
+    "ct.interval_detected": "Detected: $interval. Yearly cost and next payment follow your choice.",
     "ct.title": "Contracts and subscriptions",
     "ct.back": "Back",
     "ct.loading": "Loading contracts…",
@@ -319,7 +327,7 @@ button.ct { min-height: var(--fd-touch); }
 .scrim { position: fixed; inset: 0; z-index: 50; display: flex; align-items: flex-end; justify-content: center; background: rgba(0,0,0,.4); }
 .sheet { width: min(480px, 100%); max-height: 90dvh; overflow: auto; padding: 16px; border-radius: 18px 18px 0 0; background: var(--fd-card); box-shadow: var(--fd-sh2); }
 .sheet label, .sheet .lbl { display: block; margin: 12px 0 4px; font-size: 12px; color: var(--fd-t2); }
-.sheet input[type=number], .sheet input[type=date] { box-sizing: border-box; width: 100%; min-height: var(--fd-touch); padding: 0 12px; border: 1px solid var(--fd-line); border-radius: 10px; background: var(--fd-page); color: var(--fd-t1); font: inherit; }
+.sheet input[type=number], .sheet input[type=date], .sheet input[type=text], .sheet input[type=search], .sheet select { box-sizing: border-box; width: 100%; min-height: var(--fd-touch); padding: 0 12px; border: 1px solid var(--fd-line); border-radius: 10px; background: var(--fd-page); color: var(--fd-t1); font: inherit; }
 .nrow { display: grid; grid-template-columns: 90px 1fr; gap: 8px; align-items: center; }
 .opts { display: flex; flex-wrap: wrap; gap: 6px; }
 .opts button { min-height: 40px; padding: 0 14px; border: 1px solid var(--fd-line); border-radius: var(--fd-r-pill); background: transparent; }
@@ -327,7 +335,7 @@ button.ct { min-height: var(--fd-touch); }
 .hint { margin-top: 10px; padding: 8px 10px; border-radius: 10px; background: var(--fd-sunk); color: var(--fd-t2); font-size: 11.5px; }
 .acts { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 16px; }
 .err { margin-top: 8px; color: var(--fd-over); font-size: 12px; }
-button:focus-visible, input:focus-visible { outline: 2px solid var(--fd-a500); outline-offset: 2px; }
+button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--fd-a500); outline-offset: 2px; }
 @container contracts (min-width: 760px) {
   .cols { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(280px, 1fr); gap: 16px; align-items: start; }
   .scrim { align-items: center; }
@@ -644,6 +652,9 @@ class FdContracts extends HTMLElement {
         labels: [...(c.labels || [])],
         usage_based: !!(c.settlement && c.settlement.usage_based),
         settlements: [...((k.stored || {}).settlements || [])],
+        display_name: (k.stored || {}).display_name || "",
+        category: c.category || "other",
+        interval: c.interval,
       },
     };
     this._paintSheet();
@@ -654,6 +665,13 @@ class FdContracts extends HTMLElement {
     this._sheet = null;
     const el = this.shadowRoot.getElementById("sheet");
     if (el) el.innerHTML = "";
+  }
+
+  /** Expense areas a contract can sit in (no income, no transfers), the current one always included. */
+  _categoryOptions(cur) {
+    const keys = Object.keys(window._fd.CAT_LABELS || {}).filter((k) => !k.startsWith("income") && k !== "transfers");
+    if (cur && !keys.includes(cur)) keys.push(cur);
+    return keys;
   }
 
   _owners(s) {
@@ -675,6 +693,11 @@ class FdContracts extends HTMLElement {
     el.innerHTML = `<div class="scrim" data-act="scrim"><div class="sheet" role="dialog" aria-modal="true" aria-label="${e(tr("ct.edit"))}">
   <h3>${e(s.c.display_name || s.c.creditor)}</h3>
   <p class="muted" style="margin:0">${e(this._catLabel(s.c.category))} · ${e(tr(`ct.interval.${s.c.interval}`))}</p>
+  <label for="f-name">${e(tr("ct.f.name"))}</label><input id="f-name" type="text" maxlength="80" autocomplete="off" data-f="display_name" value="${e(d.display_name)}" placeholder="${e(s.c.display_name_detected || s.c.creditor || "")}">
+  <label for="f-cat">${e(tr("ct.f.category"))}</label><select id="f-cat" data-f="category">${this._categoryOptions(d.category).map((k) => `<option value="${e(k)}"${k === d.category ? " selected" : ""}>${e(this._catLabel(k))}</option>`).join("")}</select>
+  <div class="lbl" id="ivh">${e(tr("ct.f.interval"))}</div>
+  <div class="opts" role="radiogroup" aria-labelledby="ivh">${Object.keys(PER_YEAR).map((iv) => opt("interval", iv, tr(`ct.interval.${iv}`), d.interval)).join("")}</div>
+  ${s.c.interval_detected && d.interval !== s.c.interval_detected ? `<div class="hint">${e(tr("ct.interval_detected", { interval: tr(`ct.interval.${s.c.interval_detected}`) }))}</div>` : ""}
   <div class="lbl">${e(tr("ct.f.kind"))}</div>
   <div class="opts" role="radiogroup" aria-label="${e(tr("ct.f.kind"))}">${KINDS.map((k) => opt("kind", k, tr(`ct.kind.${k}`), d.kind)).join("")}</div>
   <div class="lbl">${e(tr("ct.f.plan_mode"))}</div>
@@ -745,7 +768,7 @@ class FdContracts extends HTMLElement {
 
   _previewText(s) {
     const plan = planAmount(s.c.amounts, s.d.plan_mode, s.d.plan_fixed_amount);
-    const year = plan * (PER_YEAR[s.c.interval] || 12);
+    const year = plan * (PER_YEAR[s.d.interval || s.c.interval] || 12);
     return tr(s.d.plan_mode === "auto" ? "ct.plan_preview_auto" : "ct.plan_preview",
       { month: this._m(year / 12, 2), year: this._m(year, 2) });
   }
@@ -769,6 +792,11 @@ class FdContracts extends HTMLElement {
       const before = f === "start" ? (k.start || s.c.first_seen || null) : k[f];
       if (s.touched.has(f) && !same(next[f], before)) body[f] = next[f];
     }
+    const name = String(d.display_name || "").trim();
+    if (name !== ((k.stored || {}).display_name || "")) body.display_name = name || null;
+    if (d.category !== (s.c.category || "other")) body.category = d.category;
+    // The detected rhythm is stored as null, so a later better detection still applies.
+    if (d.interval !== s.c.interval) body.interval = d.interval === s.c.interval_detected ? null : d.interval;
     const prevLabels = s.c.labels || [];
     if (d.labels.length !== prevLabels.length || d.labels.some((id) => !prevLabels.includes(id))) body.labels = d.labels.length ? d.labels : null;
     if (d.owner !== (s.c.owner || "shared")) body.owner = d.owner;
