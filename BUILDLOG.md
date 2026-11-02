@@ -1,5 +1,13 @@
 # Build Log
 
+## 0.34.0 — 2026-11-02
+Version: 0.34.0
+Branch: feat/119-refund-matching
+Changes:
+- feat(refunds): health insurance refunds are matched to the doctor, pharmacy or therapy bills they pay back - in full, in part, or one refund for several bills, up to eight weeks later - and netted in the cycle of the bill, so health costs show what the household really pays and the refund no longer counts as income
+- feat(refunds): unsure matches become a question in the question flow ("Gehört diese Erstattung zu dieser Ausgabe?"); in the booking dialog a refund can be assigned to several expenses by hand and reset to automatic
+- feat(refunds): bookings labelled "Erstattungsfähig" without a refund yet show as open claims ("Erstattung offen")
+
 ## 0.33.0 — 2026-11-02
 Version: 0.33.0
 Branch: feat/116-advance-settlement
