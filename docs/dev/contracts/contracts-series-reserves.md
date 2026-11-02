@@ -67,6 +67,9 @@ interval, the view keeps `display_name_detected` / `interval_detected`), `price_
   contract fields, so the same sheet edits them (PUT rejects another plan mode with `manual_needs_amount`). The view is a
   synthetic series (`source: "manual"`, no payments, next due rolled from the start) and counts in list, totals,
   reserves, notice events and plan prefill. Detected items carry `source: "detected"`. The amounts never leave HA.
+  Validation: owner a person or `shared` (`invalid_owner`), start between 2000-01-01 and a year ahead (`invalid_start`),
+  a name already used by a manual contract is rejected (`manual_duplicate`). Without a start the next due date is
+  `null` (no notice deadline, reserve sorted last); with one it is computed arithmetically (`contracts.next_due`).
   The frontend offers a checklist (car, liability, contents insurance, broadcasting fee, automobile club, membership,
   domain/software) that prefills name, interval, kind and category.
 - **Merge / split / assign** (#117 E/F, decision d-overrides): `contracts.ContractStructure`, own store
@@ -76,7 +79,11 @@ interval, the view keeps `display_name_detected` / `interval_detected`), `price_
   `_series_parts` (by contract reference or amount band; fewer than two parts = no split); an assigned booking leaves its
   payee group and joins the target (same sign = payment, opposite sign = hand-assigned settlement; to a manual contract
   it is only linked via `ledger_ids`); merge sources' payments move into the target (`merged_from: [{id, name}]`).
-  A booking assigned to an id that is neither detected nor manual returns to its payee. Ids stay the detector's, so
+  A booking assigned to an id that is neither detected nor manual returns to its payee. Merges stay flat (a merge into
+  a merged series goes to its final target; cycles are rejected), need one direction and interval
+  (`merge_sign_mismatch` / `merge_interval_mismatch`) and carry the source's settlements over. "Kein Vertrag" on a
+  merge target releases its sources. A contract or price answer only counts (and earns a point) while that question is
+  open; "neuer Preis" keeps a fixed amount the user set (no price question is asked then). Ids stay the detector's, so
   every undo restores the old series under their old ids. Series carry `payee_key`, `split_by`, `merged_from`,
   `assigned: [{key, date, amount, name}]` (admin only).
 
