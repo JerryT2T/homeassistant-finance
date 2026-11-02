@@ -391,6 +391,48 @@ def open_claims(
     return sorted(out, key=lambda r: r["date"])
 
 
+QUESTION_PREFIX = "refund:"
+
+
+def refund_questions(
+    txns: list[dict[str, Any]], proposals: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Cards for the question flow: "does this refund belong to that expense?" (admin only).
+
+    One card per unsure match, shaped like a merchant question (``count``,
+    ``total``, ``dates``) plus ``kind = "refund"``, the refund, the proposed
+    expenses and the other candidates to pick from instead.
+    """
+    by_id = {ref_id(t): t for t in txns}
+    out = []
+    for prop in sorted(proposals, key=lambda p: -p["confidence"]):
+        refund = by_id.get(prop["refund"])
+        if refund is None:
+            continue
+        proposed = [view_row(by_id[e]) | {"refunded": prop["allocation"][e]}
+                    for e in prop["allocation"] if e in by_id]
+        others = [view_row(t) for t in candidates_for(refund, txns)
+                  if ref_id(t) not in prop["allocation"]][:8]
+        row = view_row(refund)
+        out.append({
+            "kind": "refund",
+            "id": QUESTION_PREFIX + prop["refund"],
+            "merchant": row["party"],
+            "count": 1,
+            "total": abs(row["amount"]),
+            "dates": [row["date"]],
+            "booking_ids": [prop["refund"]],
+            "bookings": [],
+            "suggested": [],
+            "history": None,
+            "refund": row,
+            "proposed": proposed,
+            "others": others,
+            "confidence": round(prop["confidence"], 2),
+        })
+    return out
+
+
 def net_refunds(
     counted: list[dict[str, Any]], allocations: dict[str, dict[str, float]]
 ) -> list[dict[str, Any]]:

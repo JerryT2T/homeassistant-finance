@@ -44,6 +44,7 @@ async def _build_result(hass, manager) -> dict:
         today,
     )
     txns = counted_transactions(manager._transactions, manager._accounts)  # noqa: SLF001
+    txns = await manager._net_matched_refunds(txns)  # noqa: SLF001 - matched refunds are no income (#119)
     return pw.build_result(
         manager.budget_plan,
         # The auto Taschengeld pots ARE the remainder; counting them would shrink it.

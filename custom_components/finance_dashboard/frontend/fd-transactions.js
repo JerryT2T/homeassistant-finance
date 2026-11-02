@@ -331,7 +331,8 @@ class FdTransactions extends HTMLElement {
       if (this._dlg !== d) return;
       d.rf = r;
       const chosen = r.kind === "refund" ? (r.allocated || []).map((a) => a.id) : [];
-      d.rfSel = new Set(chosen.length ? chosen : (r.proposal && r.proposal.expenses) || []);
+      // Merge, do not overwrite: ticks made while the GET was in flight stay.
+      for (const id of (chosen.length ? chosen : (r.proposal && r.proposal.expenses) || [])) d.rfSel.add(id);
       this._paintDialog();
     } catch (_) { /* the labels part of the dialog stays usable */ }
   }

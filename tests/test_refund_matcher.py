@@ -3,10 +3,15 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import date
+from datetime import date, datetime
+from types import SimpleNamespace
+from unittest.mock import patch
 
 import pytest
 
+from custom_components.finance_dashboard.const import DOMAIN
+from custom_components.finance_dashboard.labels import LabelStore
+from custom_components.finance_dashboard.manager._questions import QuestionError, QuestionsMixin
 from custom_components.finance_dashboard.household_summary import build_household_summary
 from custom_components.finance_dashboard.refund_matcher import (
     analyse,
@@ -198,3 +203,128 @@ def test_store_set_clear_and_validation():
         store.set("a|1", ["a|1"])
     with pytest.raises(RefundError):
         store.set("", [])
+
+
+# --- QA regressions ---------------------------------------------------------
+
+
+def test_insurer_name_alone_never_auto_applies():
+    bill = row(date(2026, 8, 3), -3200, "Dr. med. Beispiel Privatklinik")
+    pay = row(date(2026, 8, 28), 3200, "Allianz Versicherungs AG", "Gehalt August")
+    assert analyse([bill, pay]) == {"allocations": {}, "proposals": [], "confidence": {}}
+    # name-only with no excluded word: a proposal at most, never applied
+    quiet = row(date(2026, 8, 28), 3200, "Allianz Versicherungs AG", "Zahlung")
+    result = analyse([bill, quiet])
+    assert result["allocations"] == {}
+    assert result["proposals"] and result["proposals"][0]["confidence"] < 0.7
+
+
+def test_krankengeld_is_no_refund():
+    bill = row(date(2026, 8, 3), -450, "Praxis Dr. Muster")
+    pay = row(date(2026, 8, 28), 450, "Techniker Krankenkasse", "Krankengeld 08/2026")
+    assert analyse([bill, pay]) == {"allocations": {}, "proposals": [], "confidence": {}}
+
+
+def test_refund_never_matches_a_later_expense():
+    refund = row(date(2026, 8, 28), 50, "Kranken AG", "Erstattung")
+    later = row(date(2026, 8, 30), -50, "Apotheke A")
+    assert analyse([later, refund]) == {"allocations": {}, "proposals": [], "confidence": {}}
+
+
+def test_only_same_currency_matches():
+    bill = row(date(2026, 8, 3), -50, "Apotheke A")
+    bill["transactionAmount"]["currency"] = "CHF"
+    refund = row(date(2026, 8, 28), 50, "Kranken AG", "Erstattung")
+    assert analyse([bill, refund])["allocations"] == {}
+    bill["transactionAmount"]["currency"] = "EUR"
+    assert analyse([bill, refund])["allocations"]
+
+
+# --- refund questions in the star flow --------------------------------------
+
+
+class _Memory:
+    answered = 0
+
+    def record_answer(self, _today):
+        self.answered += 1
+        return False
+
+    def week_answered(self, _today):
+        return self.answered
+
+    async def async_save(self):
+        return None
+
+
+class _Mgr(QuestionsMixin):
+    def __init__(self, txns):
+        self._transactions = txns
+        self._demo_mode = False
+        self.persons: list = []
+        self._accounts: list = []
+        self._memory = _Memory()
+        self.refunds = RefundStore(None, store=FakeStore())
+        self._hass = SimpleNamespace(
+            data={DOMAIN: {"_refund_store": self.refunds, "_label_store": LabelStore(None, FakeStore())}}
+        )
+
+    def get_refund_analysis(self):
+        return analyse(self._transactions, manual=self.refunds.manual)
+
+
+def _unsure():
+    bill = row(date(2026, 5, 3), -100, "Praxis Dr. Muster")
+    other = row(date(2026, 5, 10), -60, "Apotheke A")
+    refund = row(date(2026, 5, 30), 60, "AOK Krankenkasse")
+    return _Mgr([bill, other, refund]), bill, other, refund
+
+
+def _answer(m, **kw):
+    with patch("custom_components.finance_dashboard.manager._questions.dt_util") as du:
+        du.now.return_value = datetime(2026, 6, 1, 12)
+        return asyncio.run(m.async_answer_question(category=None, reach=None, **kw))
+
+
+def test_unsure_match_becomes_a_refund_question():
+    m, bill, other, refund = _unsure()
+    (q,) = m.get_refund_questions()
+    assert q["kind"] == "refund" and q["id"] == "refund:" + refund["transactionId"]
+    assert q["refund"]["amount"] == 60.0
+    assert q["proposed"]
+    assert {o["id"] for o in q["others"]} | {p["id"] for p in q["proposed"]} == {
+        bill["transactionId"], other["transactionId"]
+    }
+
+
+def test_answer_confirm_no_and_other():
+    m, bill, other, refund = _unsure()
+    qid = "refund:" + refund["transactionId"]
+    proposed = [p["id"] for p in m.get_refund_questions()[0]["proposed"]]
+    out = _answer(m, question_id=qid, choice="confirm")
+    assert out["answered_total"] == 1
+    assert m.refunds.manual == {refund["transactionId"]: proposed}
+    assert m.get_refund_questions() == []
+    assert m.get_refund_analysis()["allocations"][refund["transactionId"]]
+    # a question that is gone cannot be answered twice
+    with pytest.raises(QuestionError) as err:
+        _answer(m, question_id=qid, choice="confirm")
+    assert err.value.code == "unknown_question"
+
+    m, bill, other, refund = _unsure()
+    _answer(m, question_id="refund:" + refund["transactionId"], choice="no")
+    assert m.refunds.manual == {refund["transactionId"]: []}
+    assert m.get_refund_analysis()["allocations"][refund["transactionId"]] == {}
+
+    m, bill, other, refund = _unsure()
+    qid = "refund:" + refund["transactionId"]
+    with pytest.raises(QuestionError) as err:
+        _answer(m, question_id=qid, choice="other", expenses=["not-a-booking"])
+    assert err.value.code == "invalid_expenses"
+    with pytest.raises(QuestionError) as err:
+        _answer(m, question_id=qid, choice="maybe")
+    assert err.value.code == "invalid_choice"
+    _answer(m, question_id=qid, choice="other", expenses=[other["transactionId"]])
+    assert m.get_refund_analysis()["allocations"][refund["transactionId"]] == {
+        other["transactionId"]: 60.0
+    }

@@ -473,7 +473,7 @@ class FinanceDashboardManager(RefreshMixin, BankMixin, PersistenceMixin, Questio
         target_year = year or now.year
 
         # Use effective transactions (intermediate chain legs excluded)
-        effective = get_effective_transactions(self._transactions)
+        effective = await self._net_matched_refunds(get_effective_transactions(self._transactions))
 
         # Filter for target month
         monthly_txns = [
@@ -995,6 +995,20 @@ class FinanceDashboardManager(RefreshMixin, BankMixin, PersistenceMixin, Questio
             refund_allocations=self.get_refund_analysis()["allocations"],
             as_of=self._last_refresh,
         )
+
+    async def _net_matched_refunds(self, txns: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """``txns`` with matched insurance refunds netted into their expenses (#119)."""
+        from ..labels import async_get_label_store
+        from ..refund_matcher import net_refunds
+        from ..refund_store import async_get_refund_store
+
+        try:
+            await async_get_refund_store(self._hass)
+            await async_get_label_store(self._hass)
+            return net_refunds(txns, self.get_refund_analysis()["allocations"])
+        except Exception:  # noqa: BLE001 - the summary must not depend on the refund hint
+            _LOGGER.debug("Refund netting skipped", exc_info=True)
+            return txns
 
     def get_refund_analysis(self) -> dict[str, Any]:
         """Refund matches (#119) from cache and the stores the API views loaded.

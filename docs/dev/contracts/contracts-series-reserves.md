@@ -128,8 +128,20 @@ capped at the expense's open amount; `[]` = "pays nothing back") replaces the au
 - `PUT /refunds/{ledger_id} {expenses: [keys]}` (admin) assigns; 400 `not_a_refund | unknown_expense | invalid_expenses`.
   `DELETE` restores the automatic match.
 - `GET /transactions` rows gain `refund_state {role, state: matched|proposal|refunded|open_claim, amount}`.
-- `GET /questions` gains `refund_proposals` (the unsure matches). They are confirmed in the booking dialog of
-  `fd-transactions.js` ("Erstattung zuordnen", multi-select); the ★ category flow itself is unchanged.
+- Unsure matches are questions in the ★ flow: `GET /questions` puts cards with `kind: "refund"` first
+  (`id` `refund:<refund key>`, `refund`, `proposed` (expenses + refunded amount), `others` (candidates), `confidence`).
+  `POST /questions/answer {id, choice: confirm|no|other, expenses?}` stores the manual choice (`other` needs ids from
+  `proposed`/`others`), counts as an answer and earns points like a category answer; a settled card is `unknown_question`.
+  The endpoint loads the refund and label stores first, so manual choices survive a restart.
+  The booking dialog of `fd-transactions.js` ("Erstattung zuordnen", multi-select) edits any refund at any time.
+
+Evidence rules: a payer that only *looks* like an insurer (name) never reaches the applied tiers - the text must say it
+settles bills (health wording, "Leistung/Erstattung/Abrechnung" or a cited service date), else the match is capped below
+0.7 and stays a proposal. Pay and benefits (Gehalt, Krankengeld, Rente, Elterngeld, Beitragsrückerstattung ...) are
+never refunds. An expense dated after the refund, or in another currency, never matches (another account is fine).
+
+Where netting applies: the household summary, the plan wizard's history averages and the calendar-month summary
+(`async_get_monthly_summary`, hence its `total_income`). Not netted: the home screen, notifications and per-account views.
 
 ## Endpoints
 - `GET /api/finance_dashboard/contracts` - expense series + `contract` block + `next_deadline`, `effective_end`, `days_until_deadline`,
