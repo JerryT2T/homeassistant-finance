@@ -105,6 +105,32 @@ the advance plan. History and candidates are admin-only (not in `aggregate_view`
 `price_change` also reports a step the last payments kept (85, 85, 95, 95) within a year, after a steady previous price;
 a single outlier in between (doubled instalment) is no step.
 
+## Insurance refunds (#119, `refund_matcher.py`, `refund_store.py`, `api/refunds.py`)
+Health insurers repay a doctor's or pharmacy bill days to weeks later, often in another cycle. `refund_matcher.analyse`
+(pure, no AI, no external call) allocates each incoming booking from an insurer / health fund (insurer name or
+"KV-LSTG./Beihilfe/Leistungsabrechnung" text) to expenses: result `{refund_id: {expense_id: amount}}`; ids are booking
+keys (`labels.booking_key`, `transactionId` for a row without ledger id). Signals: service dates in the remittance
+("KV-LSTG. 12.08.2026", several allowed) > exact amount (one expense) > subset sum (<= 4 of the 12 newest candidates) >
+partial refund of one bigger bill; window 56 days before the refund. Candidate expenses: medical payee, category
+`health` or the label `refundable`. One refund may cover several expenses, one expense may be refunded by several
+refunds (the open amount is tracked). Confidence >= 0.7 is applied; 0.35-0.7 is a *proposal* (shown, not applied).
+
+Netting (`net_refunds`, called by `build_household_summary` via `refund_allocations`): the expense shrinks by the refunded
+amount and keeps its date, category and owner, so it is netted in the expense's cycle (retroactive); the refund leaves
+income. A refund part whose expense is not counted (e.g. a transfer) stays as it was.
+
+Manual choice (`.storage/finance_dashboard_refunds`, `manual {refund_key: [expense_keys]}`; amounts derived oldest first,
+capped at the expense's open amount; `[]` = "pays nothing back") replaces the automatic match of that refund.
+- `GET /refunds` (admin) -> `{open_claims: [{id, date, open, age_days}], proposals: [{refund, allocation, confidence, reason}], matched}`.
+  Open claims = bookings labelled `refundable` not yet fully covered.
+- `GET /refunds/{ledger_id}` (admin) -> refund: `{kind: "refund", allocated, source: auto|manual|null, proposal, candidates}`;
+  expense: `{kind: "expense", refunded}`; 404 `unknown_booking`.
+- `PUT /refunds/{ledger_id} {expenses: [keys]}` (admin) assigns; 400 `not_a_refund | unknown_expense | invalid_expenses`.
+  `DELETE` restores the automatic match.
+- `GET /transactions` rows gain `refund_state {role, state: matched|proposal|refunded|open_claim, amount}`.
+- `GET /questions` gains `refund_proposals` (the unsure matches). They are confirmed in the booking dialog of
+  `fd-transactions.js` ("Erstattung zuordnen", multi-select); the ★ category flow itself is unchanged.
+
 ## Endpoints
 - `GET /api/finance_dashboard/contracts` - expense series + `contract` block + `next_deadline`, `effective_end`, `days_until_deadline`,
   `notice_due_soon`, `special_termination_available`, `monthly_equivalent`; sorted by next deadline. Admin full; non-admin only

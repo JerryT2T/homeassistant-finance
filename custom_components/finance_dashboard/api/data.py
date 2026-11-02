@@ -219,6 +219,16 @@ async def _refund_states(request: web.Request, manager) -> dict[str, dict]:
                 cur["amount"] = round(cur["amount"] + amount, 2)
         for prop in result["proposals"]:
             out.setdefault(prop["refund"], {"role": "refund", "state": "proposal"})
+        from ..labels import async_get_label_store  # noqa: PLC0415
+        from ..refund_matcher import open_claims  # noqa: PLC0415
+        from homeassistant.util import dt as dt_util  # noqa: PLC0415
+
+        labels = (await async_get_label_store(request.app["hass"])).bookings
+        for claim in open_claims(
+            manager._transactions, result["allocations"], labels,  # noqa: SLF001
+            today=dt_util.now().date(),
+        ):
+            out.setdefault(claim["id"], {"role": "expense", "state": "open_claim", "amount": claim["open"]})
         return out
     except Exception:  # noqa: BLE001 - refund hints are an addition
         _LOGGER.warning("Refund state failed", exc_info=True)

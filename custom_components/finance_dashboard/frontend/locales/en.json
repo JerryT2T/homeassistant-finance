@@ -816,5 +816,19 @@
   "st.candidates": "Other bookings of this payee",
   "st.assign": "As settlement",
   "st.recalc": "Recalculated after saving.",
-  "rs.settlement": "Expected annual settlement"
+  "rs.settlement": "Expected annual settlement",
+  "rf.title": "Assign refund",
+  "rf.hint": "Which expenses did this payment pay back? You can pick several.",
+  "rf.none": "No matching expenses in the last 8 weeks.",
+  "rf.source_auto": "Assigned automatically.",
+  "rf.source_manual": "Assigned by you.",
+  "rf.proposal": "Uncertain suggestion, please check.",
+  "rf.save": "Save assignment",
+  "rf.reset": "Restore automatic",
+  "rf.err": "Could not save the assignment.",
+  "rf.refunded_by": "Refunded by",
+  "rf.state.matched": "Refund assigned",
+  "rf.state.proposal": "Check refund",
+  "rf.state.open_claim": "Refund pending",
+  "rf.state.refunded": "Refunded"
 }
