@@ -2,6 +2,12 @@
 
 All notable changes to the Finance will be documented in this file.
 
+## [0.38.0] — 2026-11-02
+
+### Added
+- The booking-history import now also reads PDF bank statements - the text is extracted on your Home Assistant (no external call), every booking line with date and amount becomes a row, and you get the same preview (new, duplicates, overlap with the bank's own period, invalid rows) and the same per-import undo as with CSV or XLSX
+- A PDF whose amounts carry no debit marker is not guessed - it is offered to your own AI provider only after the separate consent, with IBANs masked; password-protected and scanned PDFs get a clear message instead
+
 ## [0.37.0] — 2026-11-02
 
 ### Added

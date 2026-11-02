@@ -7,7 +7,7 @@
  *   POST history_import/undo                              {batch_id}
  *   GET/PUT setup/ai/consents                             purpose "history_import" (one-time)
  *
- * CSV / XLSX are read on the server without any AI. Only a file the local reader cannot map
+ * CSV / XLSX / PDF statements are read on the server without any AI. Only a file the local reader cannot map
  * is offered to the AI, after the user agreed to this purpose. Rows are shown before saving;
  * every imported batch can be removed again as a whole.
  *
@@ -19,10 +19,10 @@ const DOMAIN = "finance_dashboard";
 
 const FB = {
   de: {
-    "hist.intro": "Die Bank liefert nur etwa 90 Tage. Mit einer Exportdatei (CSV oder XLSX) aus deinem Online-Banking kannst du 13 bis 24 Monate nachladen, damit auch Jahresverträge erkannt werden. Optional, du siehst vorher, was importiert wird, und kannst es als Ganzes rückgängig machen.",
+    "hist.intro": "Die Bank liefert nur etwa 90 Tage. Mit einer Exportdatei (CSV oder XLSX) oder Kontoauszügen als PDF aus deinem Online-Banking kannst du 13 bis 24 Monate nachladen, damit auch Jahresverträge erkannt werden. Optional, du siehst vorher, was importiert wird, und kannst es als Ganzes rückgängig machen.",
     "hist.account": "Konto",
     "hist.pick": "Datei wählen",
-    "hist.file_hint": "CSV oder XLSX, höchstens 5 MB. Die Datei wird lokal gelesen.",
+    "hist.file_hint": "CSV, XLSX oder PDF-Kontoauszug, höchstens 5 MB. Die Datei wird lokal gelesen.",
     "hist.busy": "Lese Datei …",
     "hist.unavailable": "Im Demo-Modus oder ohne beschreibbaren Speicher nicht verfügbar.",
     "hist.no_accounts": "Verbinde zuerst ein Konto.",
@@ -69,7 +69,9 @@ const FB = {
     "hist.undo_confirm": "Wirklich alle $n Buchungen entfernen?",
     "hist.undone": "Import rückgängig gemacht",
     "hist.err.generic": "Import fehlgeschlagen",
-    "hist.err.pdf_unsupported": "PDF-Auszüge können nicht gelesen werden. Exportiere die Buchungen als CSV oder XLSX.",
+    "hist.err.pdf_encrypted": "Die PDF ist passwortgeschützt. Speichere den Auszug ohne Passwort oder exportiere als CSV.",
+    "hist.err.pdf_no_text": "Die PDF enthält keinen Text (eingescannt?). Exportiere die Buchungen als CSV oder XLSX.",
+    "hist.err.pdf_unavailable": "PDF kann auf diesem System nicht gelesen werden. Exportiere als CSV.",
     "hist.err.too_large": "Die Datei ist größer als 5 MB.",
     "hist.err.empty": "Die Datei ist leer.",
     "hist.err.unreadable": "Die Datei konnte nicht gelesen werden.",
@@ -90,10 +92,10 @@ const FB = {
     "ai.purpose.history_import.title": "Buchungshistorie importieren",
   },
   en: {
-    "hist.intro": "The bank serves only about 90 days. An export file (CSV or XLSX) from your online banking lets you add 13 to 24 months, so yearly contracts are found too. Optional: you see what will be imported first and can undo it as a whole.",
+    "hist.intro": "The bank serves only about 90 days. An export file (CSV or XLSX) or a PDF statement from your online banking lets you add 13 to 24 months, so yearly contracts are found too. Optional: you see what will be imported first and can undo it as a whole.",
     "hist.account": "Account",
     "hist.pick": "Choose file",
-    "hist.file_hint": "CSV or XLSX, at most 5 MB. The file is read locally.",
+    "hist.file_hint": "CSV, XLSX or a PDF statement, at most 5 MB. The file is read locally.",
     "hist.busy": "Reading file …",
     "hist.unavailable": "Not available in demo mode or without writable storage.",
     "hist.no_accounts": "Connect an account first.",
@@ -140,7 +142,9 @@ const FB = {
     "hist.undo_confirm": "Really remove all $n bookings?",
     "hist.undone": "Import undone",
     "hist.err.generic": "Import failed",
-    "hist.err.pdf_unsupported": "PDF statements cannot be read. Export the bookings as CSV or XLSX.",
+    "hist.err.pdf_encrypted": "The PDF is password protected. Save the statement without a password or export as CSV.",
+    "hist.err.pdf_no_text": "The PDF holds no text (scanned?). Export the bookings as CSV or XLSX.",
+    "hist.err.pdf_unavailable": "PDF cannot be read on this system. Export as CSV.",
     "hist.err.too_large": "The file is larger than 5 MB.",
     "hist.err.empty": "The file is empty.",
     "hist.err.unreadable": "The file could not be read.",
@@ -387,7 +391,7 @@ class FdHistoryImport extends HTMLElement {
       `<option value="${escHtml(a.key)}" ${a.key === this._account ? "selected" : ""}>${escHtml(a.name)} ${escHtml(a.iban_masked)}</option>`).join("");
     html += `<div class="f"><label for="hist-acc">${escHtml(tr("hist.account"))}</label><select id="hist-acc" ${this._busy ? "disabled" : ""}>${opts}</select></div>
       <div class="acts"><button type="button" class="btn" data-pick ${this._busy ? "disabled aria-busy=\"true\"" : ""}>${escHtml(tr(this._busy ? "hist.busy" : "hist.pick"))}</button>
-      <input type="file" id="hist-file" accept=".csv,.xlsx,.txt,.tsv,text/csv" tabindex="-1" aria-hidden="true"></div>
+      <input type="file" id="hist-file" accept=".csv,.xlsx,.pdf,.txt,.tsv,text/csv,application/pdf" tabindex="-1" aria-hidden="true"></div>
       <p class="muted">${escHtml(tr("hist.file_hint"))}</p>`;
     if (this._err) html += `<p class="err" role="alert">${escHtml(this._err)}</p>`;
     if (this._done) html += `<p class="chip" role="status">${escHtml(this._done)}</p>`;

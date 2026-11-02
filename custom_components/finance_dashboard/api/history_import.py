@@ -7,7 +7,7 @@ View classes (registered via ``VIEWS``):
 * ``FinanceDashboardHistoryImportCommitView``   ``POST /api/finance_dashboard/history_import/commit``
 * ``FinanceDashboardHistoryImportUndoView``     ``POST /api/finance_dashboard/history_import/undo``
 
-The preview parses the upload locally (CSV / XLSX). Only when the user asks
+The preview parses the upload locally (CSV / XLSX / PDF). Only when the user asks
 for it (``use_ai: true``) and the one-time ``history_import`` consent is
 granted does the masked file content go to the AI. The validated rows wait
 in memory (never persisted) until the commit names the preview id; the commit
