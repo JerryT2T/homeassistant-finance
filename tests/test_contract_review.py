@@ -157,25 +157,83 @@ def test_manual_contract_shows_in_list_totals_and_reserves_without_bookings():
 def test_manual_contract_is_edited_like_any_other_and_can_be_deleted():
     store = blank_store()
     mid = _manual(store)
-    _manual(store)  # same name twice -> a second id
-    assert set(store.manual) == {mid, f"{mid}_2"}
+    other = _manual(store, name="Kfz Versicherung")  # another name, the same slug -> a second id
+    assert set(store.manual) == {mid, other} and other == f"{mid}_2"
     store.contracts[mid].apply({"display_name": "Auto", "interval": "quarterly", "plan_fixed_amount": 130})
     c = next(c for c in build_contracts([], store, today=TODAY) if c["id"] == mid)
     assert (c["display_name"], c["interval"], c["annual_cost"]) == ("Auto", "quarterly", 520.0)
     assert store.remove_manual(mid) and not store.remove_manual(mid)
-    assert [c["id"] for c in build_contracts([], store, today=TODAY)] == [f"{mid}_2"]
+    assert [c["id"] for c in build_contracts([], store, today=TODAY)] == [other]
     assert mid not in store.contracts
 
 
 @pytest.mark.parametrize(
     "bad",
-    [{"name": ""}, {"amount": 0}, {"amount": "12"}, {"interval": "daily"}, {"kind": "loan"}, {"start": "x"}],
+    [
+        {"name": ""}, {"amount": 0}, {"amount": "12"}, {"interval": "daily"}, {"kind": "loan"},
+        {"start": "x"}, {"start": "1999-12-31"}, {"start": "2027-06-17"}, {"owner": "Mallory"},
+    ],
 )
 def test_manual_contract_input_is_validated(bad):
     store = blank_store()
     with pytest.raises(ContractError):
-        _manual(store, **bad)
+        store.add_manual({"name": "Kfz", "amount": 480, **bad}, TODAY, owners={"shared", "Alex"})
     assert store.manual == {} and store.contracts == {}
+
+
+def test_manual_contract_with_the_same_name_is_rejected():
+    store = blank_store()
+    _manual(store)
+    with pytest.raises(ContractError) as err:
+        _manual(store, name="  kfz-VERSICHERUNG ")
+    assert err.value.code == "manual_duplicate" and len(store.manual) == 1
+
+
+def test_manual_contract_owner_must_be_known_and_start_may_be_a_year_ahead():
+    store = blank_store()
+    mid = store.add_manual(
+        {"name": "Verein", "amount": 60, "owner": "Alex", "start": "2027-06-15"},
+        TODAY, owners={"shared", "Alex"},
+    )
+    (c,) = build_contracts([], store, today=TODAY)
+    assert c["id"] == mid and c["owner"] == "Alex" and c["next_expected"] == "2027-06-15"
+
+
+def test_manual_contract_without_start_leaves_the_next_due_open():
+    store = blank_store()
+    _manual(store, start=None)
+    (c,) = build_contracts([], store, today=TODAY)
+    assert c["next_expected"] is None and c["next_deadline"] is None and c["first_seen"] is None
+    assert contract_totals([c])["fixed"]["yearly"] == 480.0
+    (item,) = build_reserves([c])["items"]
+    assert item["next_due"] is None and item["monthly_reserve"] == 40.0
+
+
+@pytest.mark.parametrize(
+    ("start", "interval", "due"),
+    [
+        ("2000-01-31", "monthly", "2026-06-30"),
+        ("2026-06-15", "monthly", "2026-06-15"),
+        ("2026-06-14", "weekly", "2026-06-21"),
+        ("2001-03-15", "quarterly", "2026-06-15"),
+        ("2001-03-16", "half_yearly", "2026-09-16"),
+        ("2020-02-29", "yearly", "2027-02-28"),
+    ],
+)
+def test_next_due_is_arithmetic_and_does_not_drift(start, interval, due):
+    from custom_components.finance_dashboard.contracts import next_due
+
+    assert next_due(date.fromisoformat(start), interval, TODAY).isoformat() == due
+
+
+def test_booking_without_status_assigned_to_a_manual_contract_counts():
+    store = structured_store()
+    mid = _manual(store)
+    paid = _keyed([txn("2025-11-02", -480, "HUK Coburg")], "k")
+    del paid[0]["_status"]
+    store.structure.assign("acc0|k0", mid)
+    (c,) = build_contracts(paid, store, today=TODAY)
+    assert c["ledger_ids"] == ["acc0|k0"]
 
 
 # --- E / F: merge, split, booking assignment -----------------------------------
@@ -357,3 +415,73 @@ def test_structure_persists_and_reloads():
     again = ContractStructure(None, store=st._store)  # noqa: SLF001
     asyncio.run(again.async_load())
     assert (again.merges, again.splits, again.assignments) == (st.merges, st.splits, st.assignments)
+
+
+# --- QA round (#117) -------------------------------------------------------------
+
+
+def test_merge_needs_the_same_direction_and_interval():
+    from custom_components.finance_dashboard.contracts import merge_mismatch
+
+    out = {"direction": "out", "interval": "monthly"}
+    assert merge_mismatch(out, dict(out)) is None
+    assert merge_mismatch(out, {**out, "interval": "yearly"}) == "merge_interval_mismatch"
+    assert merge_mismatch(out, {**out, "direction": "in"}) == "merge_sign_mismatch"
+
+
+def test_dismissing_a_merge_target_releases_its_sources():
+    store = structured_store()
+    ids = {c["creditor"]: c["id"] for c in build_contracts(_two_sides(), store, today=TODAY)}
+    target, source = ids["streamly"], ids["paypal europe"]
+    store.structure.merge(target, source)
+    store.contracts[target] = Contract(target, review="not_contract")
+    (back,) = build_contracts(_two_sides(), store, today=TODAY)
+    assert back["id"] == source and back["occurrences"] == 3
+
+
+def test_refund_of_ten_assigned_to_a_series_survives_its_merge():
+    store = structured_store()
+    refund = _keyed([txn("2026-05-28", 10.0, "Streamly Gutschrift Kulanz")], "r")
+    rows = _two_sides() + refund
+    ids = {c["creditor"]: c["id"] for c in build_contracts(rows, store, today=TODAY)}
+    target, source = ids["paypal europe"], ids["streamly"]
+    store.structure.assign("acc0|r0", source)
+    store.structure.merge(target, source)
+    (merged,) = build_contracts(rows, store, today=TODAY)
+    assert merged["id"] == target
+    assert [(s["key"], s["amount"], s["source"]) for s in merged["settlement"]["history"]] == [
+        ("acc0|r0", 10.0, "manual")
+    ]
+
+
+def test_an_answered_question_is_no_longer_open():
+    from custom_components.finance_dashboard.questions import open_contract_questions
+
+    store = blank_store()
+    (cand,) = build_contracts(_cafe(), store, today=TODAY)
+    assert [q["id"] for q in open_contract_questions([cand], TODAY)] == [f"contract:{cand['id']}"]
+    _answer(store, cand, "contract", "regular")
+    (again,) = build_contracts(_cafe(), store, today=TODAY)
+    assert open_contract_questions([again], TODAY) == []
+
+
+def test_new_price_keeps_a_fixed_amount_the_user_set():
+    from custom_components.finance_dashboard.questions import contract_questions
+
+    rows = monthly([-10, -10, -10, -10, -15], name="Streamly", start=date(2026, 1, 10))
+    store = blank_store()
+    (c,) = build_contracts(rows, store, today=TODAY)
+    store.contracts[c["id"]] = Contract(c["id"], plan_mode="fixed", plan_fixed_amount=12.5)
+    (c,) = build_contracts(rows, store, today=TODAY)
+    assert contract_questions([c], today=TODAY) == ([], 0)  # not asked: the user fixed it
+    _answer(store, c, "price", "new_price")
+    (c,) = build_contracts(rows, store, today=TODAY)
+    assert (c["plan_mode"], c["plan_amount"]) == ("fixed", -12.5)
+
+
+def test_irregular_is_a_valid_candidate_answer():
+    store = blank_store()
+    (cand,) = build_contracts(_cafe(), store, today=TODAY)
+    _answer(store, cand, "contract", "irregular")
+    (again,) = build_contracts(_cafe(), store, today=TODAY)
+    assert again["kind"] == "irregular" and not again["candidate"]

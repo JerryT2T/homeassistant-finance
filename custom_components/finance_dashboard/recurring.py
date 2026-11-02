@@ -702,7 +702,10 @@ def _apply_merges(
             continue
         for sid in sources:
             src = by_id.get(sid)
-            if src is None or sid in gone or sid == target or src["negative"] != tgt["negative"]:
+            if src is None or sid in gone or sid == target:
+                continue
+            if src["negative"] != tgt["negative"]:  # the API refuses this (merge_sign_mismatch)
+                _LOGGER.warning("Skipping a stored merge of an expense and an income series")
                 continue
             rows = sorted([*tgt["part"].rows, *src["part"].rows], key=lambda r: r[0])
             found = _as_series(rows, date_tol, amount_tol)

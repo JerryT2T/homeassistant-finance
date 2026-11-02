@@ -13,11 +13,13 @@ from homeassistant.util import dt as dt_util
 from ..const import DOMAIN
 from ..contracts import (
     own_account_names,
+    REVIEW_NOT_CONTRACT,
     SOURCE_MANUAL,
     Contract,
     ContractError,
     aggregate_view,
     contract_totals,
+    merge_mismatch,
     async_get_store,
     build_contracts,
     build_reserves,
@@ -82,7 +84,8 @@ class FinanceDashboardContractsView(HomeAssistantView):
             return bad
         store = await async_get_store(request.app["hass"])
         try:
-            mid = store.add_manual(body, dt_util.now().date())
+            owners = getattr(manager, "_valid_owners", None)  # slim hosts: no owner check
+            mid = store.add_manual(body, dt_util.now().date(), owners() if owners else None)
         except ContractError as err:
             return self.json({"error": err.code, "detail": err.detail}, status_code=400)
         await store.async_save()
@@ -149,6 +152,8 @@ class FinanceDashboardContractView(HomeAssistantView):
             return self.json({"error": err.code, "detail": err.detail}, status_code=400)
         store.contracts[series_id] = contract
         await store.async_save()
+        if contract.review == REVIEW_NOT_CONTRACT and store.structure.merges.pop(series_id, None):
+            await store.structure.async_save()  # its merged sources come back on their own
         _store, contracts = await _contracts_for(request, manager)
         item = next((c for c in contracts if c["id"] == series_id), None)
         if item is None:  # answered "Kein Vertrag": the series is gone for good
@@ -163,6 +168,7 @@ class FinanceDashboardContractView(HomeAssistantView):
         if not store.remove_manual(series_id):
             return self.json({"error": "not_manual"}, status_code=404)
         await store.async_save()
+        await store.structure.async_save()  # its booking assignments were dropped
         return self.json({"id": series_id, "deleted": True})
 
 
@@ -203,6 +209,9 @@ class FinanceDashboardContractOverridesView(HomeAssistantView):
                     for sid in (target, source):
                         if sid not in by_id or by_id[sid].get("source") == SOURCE_MANUAL:
                             return self.json({"error": "unknown_series"}, status_code=404)
+                    if (mismatch := merge_mismatch(by_id[target], by_id[source])) is not None:
+                        return self.json({"error": mismatch, "detail": "Only series with the same "
+                                          "direction and interval can be merged"}, status_code=400)
                     st.merge(target, source)
             elif action in ("split", "unsplit"):
                 item = by_id.get(body.get("series_id"))

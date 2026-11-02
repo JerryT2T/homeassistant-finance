@@ -17,6 +17,7 @@ from ..questions import (
     QUESTION_PRICE,
     WEEKLY_QUESTIONS,
     contract_questions,
+    open_contract_questions,
 )
 from ._helpers import _get_manager
 from .refunds import load_refund_inputs
@@ -90,7 +91,9 @@ async def _answer_contract_question(request: web.Request, manager, body: dict) -
     sid = qid.split(":", 1)[1]
     store, contracts = await _contracts_for(request, manager)
     item = next((c for c in contracts if c["id"] == sid), None)
-    if item is None:
+    # only a question that is open right now counts: a replay earns nothing
+    open_ids = {q["id"] for q in open_contract_questions(contracts, dt_util.now().date())}
+    if item is None or qid not in open_ids:
         raise QuestionError("unknown_question")
     try:
         fields = answer_fields(qtype, body.get("answer"), item)
@@ -100,6 +103,9 @@ async def _answer_contract_question(request: web.Request, manager, body: dict) -
         raise QuestionError(err.code, err.detail) from err
     store.contracts[sid] = contract
     await store.async_save()
+    structure = getattr(store, "structure", None)
+    if contract.review == "not_contract" and structure and structure.merges.pop(sid, None):
+        await structure.async_save()  # its merged sources come back on their own
     count = getattr(manager, "async_count_contract_answer", None)
     if count is None:  # a host without the questions mixin awards nothing
         return {"point_awarded": False}

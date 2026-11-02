@@ -115,13 +115,19 @@ def _price_open(c: dict[str, Any], today: date) -> bool:
     if not pc or not dates or pc.get("date") != dates[-1] or c.get("status") == "ended":
         return False
     stored = (c.get("contract") or {}).get("stored") or {}
-    if stored.get("price_reviewed") == pc["date"]:
-        return False
+    if stored.get("price_reviewed") == pc["date"] or stored.get("plan_mode") == "fixed":
+        return False  # answered, or the user fixed the amount himself
     # only a jump after a steady price: amounts that always vary have no "price"
     before = [abs(a) for a in (c.get("amounts") or [])[:-1]]
     if len(before) < 2 or max(before) > min(before) * STEADY_PRICE_SPREAD:
         return False
     return (today - date.fromisoformat(pc["date"])).days <= PRICE_QUESTION_DAYS
+
+
+def open_contract_questions(contracts: list[dict[str, Any]], today: date) -> list[dict[str, Any]]:
+    """Every contract and price question open right now, unlimited - what an
+    answer is checked against, so replaying an answered card earns nothing."""
+    return contract_questions(contracts, today=today, limit=len(contracts) * 2)[0]
 
 
 def contract_questions(
