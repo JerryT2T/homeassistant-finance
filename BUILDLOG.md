@@ -1,5 +1,13 @@
 # Build Log
 
+## 0.35.0 — 2026-11-02
+Version: 0.35.0
+Branch: feat/121-history-import
+Changes:
+- feat(import): load 13 to 24 months of booking history from your online banking's CSV or XLSX export (Einstellungen, Buchungshistorie) so yearly contracts are recognised right away instead of after two years; the file is read locally, you see a preview with new rows, duplicates and invalid rows before anything is saved, and every import can be undone as a whole
+- feat(import): a file whose columns are not recognised can optionally be read by your own AI provider - only after a separate one-time consent that names exactly what is sent (file content including amounts and dates, IBANs masked locally first) and with the calls counted against your monthly AI budget
+- feat(import): where the bank delivers bookings itself, its data always wins - duplicates and rows inside the bank's own period are not imported, and a later bank backfill replaces matching imported rows
+
 ## 0.34.0 — 2026-11-02
 Version: 0.34.0
 Branch: feat/119-refund-matching
