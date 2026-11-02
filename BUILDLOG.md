@@ -1,5 +1,12 @@
 # Build Log
 
+## 0.38.0 — 2026-11-02
+Version: 0.38.0
+Branch: claude/reverent-merkle-1b5657
+Changes:
+- feat(import): the booking-history import now also reads PDF bank statements - the text is extracted on your Home Assistant (no external call), every booking line with date and amount becomes a row, and you get the same preview (new, duplicates, overlap with the bank's own period, invalid rows) and the same per-import undo as with CSV or XLSX
+- feat(import): a PDF whose amounts carry no debit marker is not guessed - it is offered to your own AI provider only after the separate consent, with IBANs masked; password-protected and scanned PDFs get a clear message instead
+
 ## 0.37.0 — 2026-11-02
 Version: 0.37.0
 Branch: feat/118-contract-search
