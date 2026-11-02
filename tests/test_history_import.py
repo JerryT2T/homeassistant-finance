@@ -234,6 +234,26 @@ def test_pdf_lines_year_rollover_and_markers():
     ]
 
 
+def test_pdf_yearless_dates_roll_over_after_a_december_reference():
+    # Codex #147: the only full date is in December, the statement runs into January
+    lines = [
+        "Auszug erstellt am 28.12.2025",
+        "30.12. Lastschrift Beispiel Strom -50,00",
+        "02.01. Lastschrift Beispiel Wasser -20,00",
+        "15.01. Gutschrift Beispiel Lohn 1.000,00",
+    ]
+    rows = hi.rows_from_pdf_lines(lines)
+    assert [r["date"] for r in rows] == ["2025-12-30", "2026-01-02", "2026-01-15"]
+
+
+def test_pdf_oversized_page_content_is_refused(monkeypatch):
+    pytest.importorskip("pypdf")
+    monkeypatch.setattr(hi, "MAX_PDF_PAGE_BYTES", 50)
+    with pytest.raises(hi.ImportFileError) as exc:
+        hi.read_table(_pdf(STATEMENT))
+    assert exc.value.code == "too_many_rows"
+
+
 def test_pdf_without_debit_markers_goes_the_ai_way():
     # separate Soll/Haben columns flatten to unsigned numbers: never guess the sign
     lines = ["Datum Text Soll Haben", "03.03.2025 Stadtwerke 89,00", "15.03.2025 Gehalt 2.500,00"]

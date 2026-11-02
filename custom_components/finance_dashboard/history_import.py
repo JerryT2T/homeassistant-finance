@@ -62,6 +62,7 @@ _ZIP_MAGIC = b"PK\x03\x04"
 _PDF_MAGIC = b"%PDF-"
 MAX_PDF_PAGES = 300
 MAX_PDF_CHARS = 2_000_000
+MAX_PDF_PAGE_BYTES = 4 * 1024 * 1024  # inflated content stream of one page
 PDF_MAX_CONTINUATION = 3  # purpose lines kept below a booking line
 
 _SYNONYMS: dict[str, tuple[str, ...]] = {
@@ -185,6 +186,15 @@ def _read_pdf(data: bytes) -> list[str]:
     lines: list[str] = []
     total = 0
     for page in reader.pages:
+        # a tiny compressed page may inflate to a huge content stream: refuse it before
+        # the (costly) text extraction; pypdf itself caps one stream at 75 MB inflated
+        try:
+            contents = page.get_contents()
+            size = len(contents.get_data()) if contents is not None else 0
+        except Exception as err:  # noqa: BLE001 - damaged or over-limit stream
+            raise ImportFileError("unreadable", "The PDF could not be read") from err
+        if size > MAX_PDF_PAGE_BYTES:
+            raise ImportFileError("too_many_rows", "A PDF page holds too much content")
         try:
             # layout mode keeps the cells of one table row on one line
             text = page.extract_text(extraction_mode="layout")
@@ -477,18 +487,26 @@ def _pdf_reference_date(lines: list[str]) -> date | None:
     return best
 
 
-def _pdf_date(token: str, ref: date | None) -> str:
-    """ISO date for a booking date token; a yearless one takes the year from ``ref``."""
+def _pdf_date(token: str, ref: date | None, prev: date | None) -> date | str:
+    """The date of a booking date token, or the token itself when it cannot be resolved.
+
+    A yearless one ("01.03.") follows the booking before it (``prev``) and
+    rolls the year over when the month jumps by more than half a year
+    (Dec -> Jan); the first one takes its year from ``ref``, the statement's
+    latest full date (a January statement lists December of the year before).
+    """
     m = re.fullmatch(r"(\d{1,2})\.(\d{1,2})\.", token)
     if not m:
-        day = parse_date(token)
-        return day.isoformat() if day else token
-    if ref is None:
-        return token  # left unparsed: the row is listed as invalid
+        return parse_date(token) or token
     d, mo = int(m.group(1)), int(m.group(2))
-    year = ref.year - 1 if mo > ref.month else ref.year  # a January statement lists December
+    if prev is not None:
+        year = prev.year + (1 if mo < prev.month - 6 else -1 if mo > prev.month + 6 else 0)
+    elif ref is not None:
+        year = ref.year - 1 if mo > ref.month else ref.year
+    else:
+        return token  # left unparsed: the row is listed as invalid
     try:
-        return date(year, mo, d).isoformat()
+        return date(year, mo, d)
     except ValueError:
         return token
 
@@ -517,6 +535,7 @@ def rows_from_pdf_lines(lines: list[str]) -> list[dict[str, Any]] | None:
     as income.
     """
     ref = _pdf_reference_date(lines)
+    prev: date | None = None
     out: list[dict[str, Any]] = []
     current: dict[str, Any] | None = None
     signs: list[int] = []
@@ -536,9 +555,12 @@ def rows_from_pdf_lines(lines: list[str]) -> list[dict[str, Any]] | None:
                 continue
             start, tail = _pdf_tail_money(rest)
             kind, party = _split_type(rest[:start].strip())
+            day = _pdf_date(booking.group(1), ref, prev)
+            if isinstance(day, date):
+                prev = day
             current = {
                 "line": n,
-                "date": _pdf_date(booking.group(1), ref),
+                "date": day.isoformat() if isinstance(day, date) else day,
                 "amount": "",
                 "counterparty": party,
                 "text": kind,
