@@ -592,11 +592,11 @@ class FdContracts extends HTMLElement {
   _focusSel() {
     const a = this.shadowRoot.activeElement;
     if (!a) return null;
-    if (a.id) return `#${CSS.escape(a.id)}`;
+    if (a.id) return `#${window.CSS.escape(a.id)}`;
     const ds = Object.entries(a.dataset || {});
     if (!ds.length) return null;
     const attr = (k) => k.replace(/[A-Z]/g, (m) => `-${m.toLowerCase()}`);
-    return a.tagName.toLowerCase() + ds.map(([k, v]) => `[data-${attr(k)}="${CSS.escape(v)}"]`).join("");
+    return a.tagName.toLowerCase() + ds.map(([k, v]) => `[data-${attr(k)}="${window.CSS.escape(v)}"]`).join("");
   }
 
   _kindOf(c) { return c.kind || "contract"; }
@@ -920,7 +920,7 @@ class FdContracts extends HTMLElement {
       const item = await this._hass.callApi("POST", `${DOMAIN}/contracts`, body);
       this._items = [...(this._items || []), item];
       this._closeSheet();
-      this._focusAfter = `[data-edit="${CSS.escape(item.id)}"]`; // the new row
+      this._focusAfter = `[data-edit="${window.CSS.escape(item.id)}"]`; // the new row
       this._render();
       this._toast(tr("ct.add.done"), "success");
       this._reloadReserves();
