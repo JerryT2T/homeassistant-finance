@@ -166,6 +166,38 @@ async def _query_vocab(hass, manager) -> dict:
     return {"categories": [*LIFE_AREAS, OTHER], "labels": labels, "owners": owners}
 
 
+async def run_contract_query(hass, manager, body) -> tuple[dict, int]:
+    """Ask the AI for a filter spec: ``(payload, http status)``. Never raises on AI output."""
+    raw_q = body.get("question") if isinstance(body, dict) else None
+    question = cf.clean_question(raw_q) if isinstance(raw_q, str) else ""
+    if not question:
+        return {"error": "invalid_body", "detail": "Need a question"}, 400
+    status = await _query_ai_status(hass, manager)
+    if not status["consented"]:
+        return {"error": "consent_required"}, 403
+    if not status["usable"]:
+        return {"error": "no_provider"}, 400
+    if status["remaining"] < 1:
+        return {"error": "budget_exhausted"}, 400
+    vocab = await _query_vocab(hass, manager)
+    answers, error = await ai_provider.async_extract_history(
+        hass,
+        credentials=getattr(manager, "_credential_manager", None),
+        prompts=[cf.build_query_prompt(question, vocab)],
+        max_tokens=cf.QUERY_MAX_TOKENS,
+        today=dt_util.now().date(),
+        usable=True,
+    )
+    if error:
+        return {"error": error}, 502
+    await ai_consent.async_mark_used(hass, "contract_query")
+    raw = cf.parse_answer(answers[0] if answers else "")
+    spec, errors = cf.validate_spec(raw, vocab)
+    if raw is None:
+        errors = [{"field": "_", "reason": "unparsable"}]
+    return {"spec": spec, "errors": errors}, 200
+
+
 class FinanceDashboardContractQueryView(HomeAssistantView):
     """Optional AI search: a question in, a validated filter spec out (#118, purpose ``contract_query``).
 
@@ -193,34 +225,8 @@ class FinanceDashboardContractQueryView(HomeAssistantView):
         manager = _get_manager(hass)
         if not manager:
             return self.json({"error": "Not configured"}, status_code=404)
-        body = await _json_body(request)
-        question = cf.clean_question(body.get("question")) if isinstance(body, dict) else ""
-        if not question:
-            return self.json({"error": "invalid_body", "detail": "Need a question"}, status_code=400)
-        status = await _query_ai_status(hass, manager)
-        if not status["consented"]:
-            return self.json({"error": "consent_required"}, status_code=403)
-        if not status["usable"]:
-            return self.json({"error": "no_provider"}, status_code=400)
-        if status["remaining"] < 1:
-            return self.json({"error": "budget_exhausted"}, status_code=400)
-        vocab = await _query_vocab(hass, manager)
-        answers, error = await ai_provider.async_extract_history(
-            hass,
-            credentials=getattr(manager, "_credential_manager", None),
-            prompts=[cf.build_query_prompt(question, vocab)],
-            max_tokens=cf.QUERY_MAX_TOKENS,
-            today=dt_util.now().date(),
-            usable=True,
-        )
-        if error:
-            return self.json({"error": error}, status_code=502)
-        await ai_consent.async_mark_used(hass, "contract_query")
-        raw = cf.parse_answer(answers[0] if answers else "")
-        spec, errors = cf.validate_spec(raw, vocab)
-        if raw is None:
-            errors = [{"field": "_", "reason": "unparsable"}]
-        return self.json({"spec": spec, "errors": errors})
+        data, status = await run_contract_query(hass, manager, await _json_body(request))
+        return self.json(data, status_code=status)
 
 
 class FinanceDashboardContractView(HomeAssistantView):

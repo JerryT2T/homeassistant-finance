@@ -1,0 +1,1227 @@
+{
+ "ctx": {
+  "me": "Anna",
+  "persons": [
+   "Anna",
+   "Ben"
+  ]
+ },
+ "contracts": [
+  {
+   "id": "c1",
+   "display_name": "Stadtwerke Strom",
+   "creditor": "Stadtwerke Strom",
+   "display_name_detected": "Stadtwerke Strom",
+   "kind": "contract",
+   "category": "housing_warm",
+   "owner": "shared",
+   "monthly_equivalent": 85.5,
+   "annual_cost": 1026.0,
+   "annual_total": 1026.0,
+   "status": "active",
+   "candidate": false,
+   "next_deadline": "2027-03-31",
+   "labels": [
+    "home"
+   ],
+   "remittance": [
+    "Abschlag Strom Kundennr 12345"
+   ]
+  },
+  {
+   "id": "c2",
+   "display_name": "Müller Haftpflicht",
+   "creditor": "Müller Haftpflicht",
+   "display_name_detected": "Müller Haftpflicht",
+   "kind": "contract",
+   "category": "finance",
+   "owner": "Anna",
+   "monthly_equivalent": 12.0,
+   "annual_cost": 144.0,
+   "annual_total": 144.0,
+   "status": "active",
+   "candidate": false,
+   "next_deadline": "2027-01-15",
+   "labels": [],
+   "remittance": [
+    "Beitrag Haftpflichtversicherung"
+   ]
+  },
+  {
+   "id": "c3",
+   "display_name": "Streamo",
+   "creditor": "Streamo",
+   "display_name_detected": "Streamo",
+   "kind": "subscription",
+   "category": "media",
+   "owner": "Ben",
+   "monthly_equivalent": 13.99,
+   "annual_cost": 167.88,
+   "annual_total": 167.88,
+   "status": "active",
+   "candidate": false,
+   "next_deadline": "2026-12-01",
+   "labels": [
+    "fun"
+   ],
+   "remittance": []
+  },
+  {
+   "id": "c4",
+   "display_name": "Fitness Fuchs",
+   "creditor": "Fitness Fuchs",
+   "display_name_detected": "Fitness Fuchs",
+   "kind": "subscription",
+   "category": "leisure",
+   "owner": "Anna",
+   "monthly_equivalent": 29.9,
+   "annual_cost": 358.8,
+   "annual_total": 358.8,
+   "status": "missing",
+   "candidate": false,
+   "next_deadline": "2026-12-20",
+   "labels": [],
+   "remittance": []
+  },
+  {
+   "id": "c5",
+   "display_name": "Biomarkt Grün",
+   "creditor": "Biomarkt Grün",
+   "display_name_detected": "Biomarkt Grün",
+   "kind": "regular",
+   "category": "groceries",
+   "owner": "shared",
+   "monthly_equivalent": 120.0,
+   "annual_cost": 1440.0,
+   "annual_total": 1440.0,
+   "status": "active",
+   "candidate": false,
+   "next_deadline": null,
+   "labels": [],
+   "remittance": [
+    "Wocheneinkauf"
+   ]
+  },
+  {
+   "id": "c6",
+   "display_name": "Apotheke am Eck",
+   "creditor": "Apotheke am Eck",
+   "display_name_detected": "Apotheke am Eck",
+   "kind": "irregular",
+   "category": "health",
+   "owner": "Ben",
+   "monthly_equivalent": 18.25,
+   "annual_cost": 219.0,
+   "annual_total": 219.0,
+   "status": "active",
+   "candidate": false,
+   "next_deadline": null,
+   "labels": [],
+   "remittance": []
+  },
+  {
+   "id": "c7",
+   "display_name": "Alter Zeitungsverlag",
+   "creditor": "Alter Zeitungsverlag",
+   "display_name_detected": "Alter Zeitungsverlag",
+   "kind": "subscription",
+   "category": "media",
+   "owner": "Anna",
+   "monthly_equivalent": 9.99,
+   "annual_cost": 119.88,
+   "annual_total": 119.88,
+   "status": "ended",
+   "candidate": false,
+   "next_deadline": "2026-06-01",
+   "labels": [],
+   "remittance": []
+  },
+  {
+   "id": "c8",
+   "display_name": "Großer Versicherer",
+   "creditor": "Großer Versicherer",
+   "display_name_detected": "Großer Versicherer",
+   "kind": "contract",
+   "category": "finance",
+   "owner": "shared",
+   "monthly_equivalent": 44.0,
+   "annual_cost": 528.0,
+   "annual_total": 528.0,
+   "status": "active",
+   "candidate": true,
+   "next_deadline": "2027-05-01",
+   "labels": [],
+   "remittance": []
+  },
+  {
+   "id": "c9",
+   "display_name": "Straße & Co",
+   "creditor": "Straße & Co",
+   "display_name_detected": "Straße & Co",
+   "kind": "contract",
+   "category": "housing_cold",
+   "owner": "shared",
+   "monthly_equivalent": 640.0,
+   "annual_cost": 7680.0,
+   "annual_total": 7680.0,
+   "status": "active",
+   "candidate": false,
+   "next_deadline": "2027-02-01",
+   "labels": [
+    "home"
+   ],
+   "remittance": [
+    "Miete Straße 5"
+   ]
+  },
+  {
+   "id": "c10",
+   "display_name": "Handy Mobil",
+   "creditor": "Handy Mobil",
+   "display_name_detected": "Handy Mobil",
+   "kind": "contract",
+   "category": "media",
+   "owner": "Ben",
+   "monthly_equivalent": 19.99,
+   "annual_cost": 239.88,
+   "annual_total": 239.88,
+   "status": "active",
+   "candidate": false,
+   "next_deadline": null,
+   "labels": [],
+   "remittance": []
+  }
+ ],
+ "cases": [
+  {
+   "name": "default",
+   "raw": {},
+   "spec": {
+    "q": "",
+    "kinds": [],
+    "statuses": [],
+    "categories": [],
+    "labels": [],
+    "owners": [],
+    "amount_min": null,
+    "amount_max": null,
+    "sort": "deadline",
+    "aggregate": null
+   },
+   "error_fields": [],
+   "ids": [
+    "c3",
+    "c4",
+    "c2",
+    "c9",
+    "c1",
+    "c6",
+    "c5",
+    "c10",
+    "c7"
+   ],
+   "totals": {
+    "fixed": {
+     "monthly": 801.38,
+     "yearly": 9616.56,
+     "count": 6
+    },
+    "regular": {
+     "monthly": 138.25,
+     "yearly": 1659.0,
+     "count": 2
+    },
+    "yearly": 11275.56,
+    "monthly": 939.63,
+    "count": 8
+   }
+  },
+  {
+   "name": "text search name",
+   "raw": {
+    "q": "strom"
+   },
+   "spec": {
+    "q": "strom",
+    "kinds": [],
+    "statuses": [],
+    "categories": [],
+    "labels": [],
+    "owners": [],
+    "amount_min": null,
+    "amount_max": null,
+    "sort": "deadline",
+    "aggregate": null
+   },
+   "error_fields": [],
+   "ids": [
+    "c1"
+   ],
+   "totals": {
+    "fixed": {
+     "monthly": 85.5,
+     "yearly": 1026.0,
+     "count": 1
+    },
+    "regular": {
+     "monthly": 0.0,
+     "yearly": 0.0,
+     "count": 0
+    },
+    "yearly": 1026.0,
+    "monthly": 85.5,
+    "count": 1
+   }
+  },
+  {
+   "name": "text search remittance umlaut",
+   "raw": {
+    "q": "HAFTPFLICHT versicherung"
+   },
+   "spec": {
+    "q": "HAFTPFLICHT versicherung",
+    "kinds": [],
+    "statuses": [],
+    "categories": [],
+    "labels": [],
+    "owners": [],
+    "amount_min": null,
+    "amount_max": null,
+    "sort": "deadline",
+    "aggregate": null
+   },
+   "error_fields": [],
+   "ids": [
+    "c2"
+   ],
+   "totals": {
+    "fixed": {
+     "monthly": 12.0,
+     "yearly": 144.0,
+     "count": 1
+    },
+    "regular": {
+     "monthly": 0.0,
+     "yearly": 0.0,
+     "count": 0
+    },
+    "yearly": 144.0,
+    "monthly": 12.0,
+    "count": 1
+   }
+  },
+  {
+   "name": "fold sharp s and umlaut",
+   "raw": {
+    "q": "strasse"
+   },
+   "spec": {
+    "q": "strasse",
+    "kinds": [],
+    "statuses": [],
+    "categories": [],
+    "labels": [],
+    "owners": [],
+    "amount_min": null,
+    "amount_max": null,
+    "sort": "deadline",
+    "aggregate": null
+   },
+   "error_fields": [],
+   "ids": [
+    "c9"
+   ],
+   "totals": {
+    "fixed": {
+     "monthly": 640.0,
+     "yearly": 7680.0,
+     "count": 1
+    },
+    "regular": {
+     "monthly": 0.0,
+     "yearly": 0.0,
+     "count": 0
+    },
+    "yearly": 7680.0,
+    "monthly": 640.0,
+    "count": 1
+   }
+  },
+  {
+   "name": "fold umlaut typed as ue",
+   "raw": {
+    "q": "gruen"
+   },
+   "spec": {
+    "q": "gruen",
+    "kinds": [],
+    "statuses": [],
+    "categories": [],
+    "labels": [],
+    "owners": [],
+    "amount_min": null,
+    "amount_max": null,
+    "sort": "deadline",
+    "aggregate": null
+   },
+   "error_fields": [],
+   "ids": [
+    "c5"
+   ],
+   "totals": {
+    "fixed": {
+     "monthly": 0.0,
+     "yearly": 0.0,
+     "count": 0
+    },
+    "regular": {
+     "monthly": 120.0,
+     "yearly": 1440.0,
+     "count": 1
+    },
+    "yearly": 1440.0,
+    "monthly": 120.0,
+    "count": 1
+   }
+  },
+  {
+   "name": "fold umlaut mueller",
+   "raw": {
+    "q": "MÜLLER"
+   },
+   "spec": {
+    "q": "MÜLLER",
+    "kinds": [],
+    "statuses": [],
+    "categories": [],
+    "labels": [],
+    "owners": [],
+    "amount_min": null,
+    "amount_max": null,
+    "sort": "deadline",
+    "aggregate": null
+   },
+   "error_fields": [],
+   "ids": [
+    "c2"
+   ],
+   "totals": {
+    "fixed": {
+     "monthly": 12.0,
+     "yearly": 144.0,
+     "count": 1
+    },
+    "regular": {
+     "monthly": 0.0,
+     "yearly": 0.0,
+     "count": 0
+    },
+    "yearly": 144.0,
+    "monthly": 12.0,
+    "count": 1
+   }
+  },
+  {
+   "name": "kind subscription",
+   "raw": {
+    "kinds": [
+     "subscription"
+    ]
+   },
+   "spec": {
+    "q": "",
+    "kinds": [
+     "subscription"
+    ],
+    "statuses": [],
+    "categories": [],
+    "labels": [],
+    "owners": [],
+    "amount_min": null,
+    "amount_max": null,
+    "sort": "deadline",
+    "aggregate": null
+   },
+   "error_fields": [],
+   "ids": [
+    "c3",
+    "c4",
+    "c7"
+   ],
+   "totals": {
+    "fixed": {
+     "monthly": 43.89,
+     "yearly": 526.68,
+     "count": 2
+    },
+    "regular": {
+     "monthly": 0.0,
+     "yearly": 0.0,
+     "count": 0
+    },
+    "yearly": 526.68,
+    "monthly": 43.89,
+    "count": 2
+   }
+  },
+  {
+   "name": "kinds regular and irregular",
+   "raw": {
+    "kinds": [
+     "regular",
+     "irregular"
+    ]
+   },
+   "spec": {
+    "q": "",
+    "kinds": [
+     "regular",
+     "irregular"
+    ],
+    "statuses": [],
+    "categories": [],
+    "labels": [],
+    "owners": [],
+    "amount_min": null,
+    "amount_max": null,
+    "sort": "deadline",
+    "aggregate": null
+   },
+   "error_fields": [],
+   "ids": [
+    "c6",
+    "c5"
+   ],
+   "totals": {
+    "fixed": {
+     "monthly": 0.0,
+     "yearly": 0.0,
+     "count": 0
+    },
+    "regular": {
+     "monthly": 138.25,
+     "yearly": 1659.0,
+     "count": 2
+    },
+    "yearly": 1659.0,
+    "monthly": 138.25,
+    "count": 2
+   }
+  },
+  {
+   "name": "status overdue",
+   "raw": {
+    "statuses": [
+     "overdue"
+    ]
+   },
+   "spec": {
+    "q": "",
+    "kinds": [],
+    "statuses": [
+     "overdue"
+    ],
+    "categories": [],
+    "labels": [],
+    "owners": [],
+    "amount_min": null,
+    "amount_max": null,
+    "sort": "deadline",
+    "aggregate": null
+   },
+   "error_fields": [],
+   "ids": [
+    "c4"
+   ],
+   "totals": {
+    "fixed": {
+     "monthly": 29.9,
+     "yearly": 358.8,
+     "count": 1
+    },
+    "regular": {
+     "monthly": 0.0,
+     "yearly": 0.0,
+     "count": 0
+    },
+    "yearly": 358.8,
+    "monthly": 29.9,
+    "count": 1
+   }
+  },
+  {
+   "name": "status ended",
+   "raw": {
+    "statuses": [
+     "ended"
+    ]
+   },
+   "spec": {
+    "q": "",
+    "kinds": [],
+    "statuses": [
+     "ended"
+    ],
+    "categories": [],
+    "labels": [],
+    "owners": [],
+    "amount_min": null,
+    "amount_max": null,
+    "sort": "deadline",
+    "aggregate": null
+   },
+   "error_fields": [],
+   "ids": [
+    "c7"
+   ],
+   "totals": {
+    "fixed": {
+     "monthly": 9.99,
+     "yearly": 119.88,
+     "count": 1
+    },
+    "regular": {
+     "monthly": 0.0,
+     "yearly": 0.0,
+     "count": 0
+    },
+    "yearly": 119.88,
+    "monthly": 9.99,
+    "count": 1
+   }
+  },
+  {
+   "name": "status candidate",
+   "raw": {
+    "statuses": [
+     "candidate"
+    ]
+   },
+   "spec": {
+    "q": "",
+    "kinds": [],
+    "statuses": [
+     "candidate"
+    ],
+    "categories": [],
+    "labels": [],
+    "owners": [],
+    "amount_min": null,
+    "amount_max": null,
+    "sort": "deadline",
+    "aggregate": null
+   },
+   "error_fields": [],
+   "ids": [
+    "c8"
+   ],
+   "totals": {
+    "fixed": {
+     "monthly": 44.0,
+     "yearly": 528.0,
+     "count": 1
+    },
+    "regular": {
+     "monthly": 0.0,
+     "yearly": 0.0,
+     "count": 0
+    },
+    "yearly": 528.0,
+    "monthly": 44.0,
+    "count": 1
+   }
+  },
+  {
+   "name": "status active and candidate",
+   "raw": {
+    "statuses": [
+     "active",
+     "candidate"
+    ]
+   },
+   "spec": {
+    "q": "",
+    "kinds": [],
+    "statuses": [
+     "active",
+     "candidate"
+    ],
+    "categories": [],
+    "labels": [],
+    "owners": [],
+    "amount_min": null,
+    "amount_max": null,
+    "sort": "deadline",
+    "aggregate": null
+   },
+   "error_fields": [],
+   "ids": [
+    "c3",
+    "c2",
+    "c9",
+    "c1",
+    "c8",
+    "c6",
+    "c5",
+    "c10"
+   ],
+   "totals": {
+    "fixed": {
+     "monthly": 815.48,
+     "yearly": 9785.76,
+     "count": 6
+    },
+    "regular": {
+     "monthly": 138.25,
+     "yearly": 1659.0,
+     "count": 2
+    },
+    "yearly": 11444.76,
+    "monthly": 953.73,
+    "count": 8
+   }
+  },
+  {
+   "name": "category and label",
+   "raw": {
+    "categories": [
+     "housing_warm",
+     "housing_cold"
+    ],
+    "labels": [
+     "home"
+    ]
+   },
+   "spec": {
+    "q": "",
+    "kinds": [],
+    "statuses": [],
+    "categories": [
+     "housing_warm",
+     "housing_cold"
+    ],
+    "labels": [
+     "home"
+    ],
+    "owners": [],
+    "amount_min": null,
+    "amount_max": null,
+    "sort": "deadline",
+    "aggregate": null
+   },
+   "error_fields": [],
+   "ids": [
+    "c9",
+    "c1"
+   ],
+   "totals": {
+    "fixed": {
+     "monthly": 725.5,
+     "yearly": 8706.0,
+     "count": 2
+    },
+    "regular": {
+     "monthly": 0.0,
+     "yearly": 0.0,
+     "count": 0
+    },
+    "yearly": 8706.0,
+    "monthly": 725.5,
+    "count": 2
+   }
+  },
+  {
+   "name": "owner me",
+   "raw": {
+    "owners": [
+     "me"
+    ]
+   },
+   "spec": {
+    "q": "",
+    "kinds": [],
+    "statuses": [],
+    "categories": [],
+    "labels": [],
+    "owners": [
+     "me"
+    ],
+    "amount_min": null,
+    "amount_max": null,
+    "sort": "deadline",
+    "aggregate": null
+   },
+   "error_fields": [],
+   "ids": [
+    "c4",
+    "c2",
+    "c7"
+   ],
+   "totals": {
+    "fixed": {
+     "monthly": 41.9,
+     "yearly": 502.8,
+     "count": 2
+    },
+    "regular": {
+     "monthly": 0.0,
+     "yearly": 0.0,
+     "count": 0
+    },
+    "yearly": 502.8,
+    "monthly": 41.9,
+    "count": 2
+   }
+  },
+  {
+   "name": "owner partner",
+   "raw": {
+    "owners": [
+     "partner"
+    ]
+   },
+   "spec": {
+    "q": "",
+    "kinds": [],
+    "statuses": [],
+    "categories": [],
+    "labels": [],
+    "owners": [
+     "partner"
+    ],
+    "amount_min": null,
+    "amount_max": null,
+    "sort": "deadline",
+    "aggregate": null
+   },
+   "error_fields": [],
+   "ids": [
+    "c3",
+    "c6",
+    "c10"
+   ],
+   "totals": {
+    "fixed": {
+     "monthly": 33.98,
+     "yearly": 407.76,
+     "count": 2
+    },
+    "regular": {
+     "monthly": 18.25,
+     "yearly": 219.0,
+     "count": 1
+    },
+    "yearly": 626.76,
+    "monthly": 52.23,
+    "count": 3
+   }
+  },
+  {
+   "name": "owner shared via wir",
+   "raw": {
+    "owners": [
+     "wir"
+    ]
+   },
+   "spec": {
+    "q": "",
+    "kinds": [],
+    "statuses": [],
+    "categories": [],
+    "labels": [],
+    "owners": [
+     "shared"
+    ],
+    "amount_min": null,
+    "amount_max": null,
+    "sort": "deadline",
+    "aggregate": null
+   },
+   "error_fields": [],
+   "ids": [
+    "c9",
+    "c1",
+    "c5"
+   ],
+   "totals": {
+    "fixed": {
+     "monthly": 725.5,
+     "yearly": 8706.0,
+     "count": 2
+    },
+    "regular": {
+     "monthly": 120.0,
+     "yearly": 1440.0,
+     "count": 1
+    },
+    "yearly": 10146.0,
+    "monthly": 845.5,
+    "count": 3
+   }
+  },
+  {
+   "name": "owner literal name",
+   "raw": {
+    "owners": [
+     "Ben"
+    ]
+   },
+   "spec": {
+    "q": "",
+    "kinds": [],
+    "statuses": [],
+    "categories": [],
+    "labels": [],
+    "owners": [
+     "Ben"
+    ],
+    "amount_min": null,
+    "amount_max": null,
+    "sort": "deadline",
+    "aggregate": null
+   },
+   "error_fields": [],
+   "ids": [
+    "c3",
+    "c6",
+    "c10"
+   ],
+   "totals": {
+    "fixed": {
+     "monthly": 33.98,
+     "yearly": 407.76,
+     "count": 2
+    },
+    "regular": {
+     "monthly": 18.25,
+     "yearly": 219.0,
+     "count": 1
+    },
+    "yearly": 626.76,
+    "monthly": 52.23,
+    "count": 3
+   }
+  },
+  {
+   "name": "amount range",
+   "raw": {
+    "amount_min": 13,
+    "amount_max": 45
+   },
+   "spec": {
+    "q": "",
+    "kinds": [],
+    "statuses": [],
+    "categories": [],
+    "labels": [],
+    "owners": [],
+    "amount_min": 13.0,
+    "amount_max": 45.0,
+    "sort": "deadline",
+    "aggregate": null
+   },
+   "error_fields": [],
+   "ids": [
+    "c3",
+    "c4",
+    "c6",
+    "c10"
+   ],
+   "totals": {
+    "fixed": {
+     "monthly": 63.88,
+     "yearly": 766.56,
+     "count": 3
+    },
+    "regular": {
+     "monthly": 18.25,
+     "yearly": 219.0,
+     "count": 1
+    },
+    "yearly": 985.56,
+    "monthly": 82.13,
+    "count": 4
+   }
+  },
+  {
+   "name": "sort amount",
+   "raw": {
+    "sort": "amount"
+   },
+   "spec": {
+    "q": "",
+    "kinds": [],
+    "statuses": [],
+    "categories": [],
+    "labels": [],
+    "owners": [],
+    "amount_min": null,
+    "amount_max": null,
+    "sort": "amount",
+    "aggregate": null
+   },
+   "error_fields": [],
+   "ids": [
+    "c9",
+    "c5",
+    "c1",
+    "c4",
+    "c10",
+    "c6",
+    "c3",
+    "c2",
+    "c7"
+   ],
+   "totals": {
+    "fixed": {
+     "monthly": 801.38,
+     "yearly": 9616.56,
+     "count": 6
+    },
+    "regular": {
+     "monthly": 138.25,
+     "yearly": 1659.0,
+     "count": 2
+    },
+    "yearly": 11275.56,
+    "monthly": 939.63,
+    "count": 8
+   }
+  },
+  {
+   "name": "combined",
+   "raw": {
+    "kinds": [
+     "contract",
+     "subscription"
+    ],
+    "owners": [
+     "me",
+     "shared"
+    ],
+    "amount_max": 100,
+    "sort": "amount"
+   },
+   "spec": {
+    "q": "",
+    "kinds": [
+     "contract",
+     "subscription"
+    ],
+    "statuses": [],
+    "categories": [],
+    "labels": [],
+    "owners": [
+     "me",
+     "shared"
+    ],
+    "amount_min": null,
+    "amount_max": 100.0,
+    "sort": "amount",
+    "aggregate": null
+   },
+   "error_fields": [],
+   "ids": [
+    "c1",
+    "c4",
+    "c2",
+    "c7"
+   ],
+   "totals": {
+    "fixed": {
+     "monthly": 127.4,
+     "yearly": 1528.8,
+     "count": 3
+    },
+    "regular": {
+     "monthly": 0.0,
+     "yearly": 0.0,
+     "count": 0
+    },
+    "yearly": 1528.8,
+    "monthly": 127.4,
+    "count": 3
+   }
+  },
+  {
+   "name": "invalid parts dropped",
+   "raw": {
+    "kinds": [
+     "contract",
+     "bogus"
+    ],
+    "statuses": "active",
+    "amount_min": "x",
+    "amount_max": -3,
+    "sort": "random",
+    "aggregate": "week",
+    "foo": 1,
+    "q": 5
+   },
+   "spec": {
+    "q": "",
+    "kinds": [
+     "contract"
+    ],
+    "statuses": [],
+    "categories": [],
+    "labels": [],
+    "owners": [],
+    "amount_min": null,
+    "amount_max": null,
+    "sort": "deadline",
+    "aggregate": null
+   },
+   "error_fields": [
+    [
+     "foo",
+     "unknown_field"
+    ],
+    [
+     "q",
+     "invalid_value"
+    ],
+    [
+     "kinds",
+     "unknown_value"
+    ],
+    [
+     "statuses",
+     "not_a_list"
+    ],
+    [
+     "amount_min",
+     "invalid_value"
+    ],
+    [
+     "amount_max",
+     "invalid_value"
+    ],
+    [
+     "sort",
+     "invalid_value"
+    ],
+    [
+     "aggregate",
+     "invalid_value"
+    ]
+   ],
+   "ids": [
+    "c2",
+    "c9",
+    "c1",
+    "c10"
+   ],
+   "totals": {
+    "fixed": {
+     "monthly": 757.49,
+     "yearly": 9089.88,
+     "count": 4
+    },
+    "regular": {
+     "monthly": 0.0,
+     "yearly": 0.0,
+     "count": 0
+    },
+    "yearly": 9089.88,
+    "monthly": 757.49,
+    "count": 4
+   }
+  },
+  {
+   "name": "min above max",
+   "raw": {
+    "amount_min": 50,
+    "amount_max": 10
+   },
+   "spec": {
+    "q": "",
+    "kinds": [],
+    "statuses": [],
+    "categories": [],
+    "labels": [],
+    "owners": [],
+    "amount_min": 50.0,
+    "amount_max": null,
+    "sort": "deadline",
+    "aggregate": null
+   },
+   "error_fields": [
+    [
+     "amount_max",
+     "below_min"
+    ]
+   ],
+   "ids": [
+    "c9",
+    "c1",
+    "c5"
+   ],
+   "totals": {
+    "fixed": {
+     "monthly": 725.5,
+     "yearly": 8706.0,
+     "count": 2
+    },
+    "regular": {
+     "monthly": 120.0,
+     "yearly": 1440.0,
+     "count": 1
+    },
+    "yearly": 10146.0,
+    "monthly": 845.5,
+    "count": 3
+   }
+  },
+  {
+   "name": "not an object",
+   "raw": [
+    "x"
+   ],
+   "spec": {
+    "q": "",
+    "kinds": [],
+    "statuses": [],
+    "categories": [],
+    "labels": [],
+    "owners": [],
+    "amount_min": null,
+    "amount_max": null,
+    "sort": "deadline",
+    "aggregate": null
+   },
+   "error_fields": [
+    [
+     "_",
+     "not_an_object"
+    ]
+   ],
+   "ids": [
+    "c3",
+    "c4",
+    "c2",
+    "c9",
+    "c1",
+    "c6",
+    "c5",
+    "c10",
+    "c7"
+   ],
+   "totals": {
+    "fixed": {
+     "monthly": 801.38,
+     "yearly": 9616.56,
+     "count": 6
+    },
+    "regular": {
+     "monthly": 138.25,
+     "yearly": 1659.0,
+     "count": 2
+    },
+    "yearly": 11275.56,
+    "monthly": 939.63,
+    "count": 8
+   }
+  }
+ ]
+}

@@ -52,6 +52,7 @@ _STATUS_OF_RAW = {"active": "active", "missing": "overdue", "ended": "ended"}
 _OWNER_ALIASES = {"ich": OWNER_ME, "wir": OWNER_SHARED, "haushalt": OWNER_SHARED,
                   "household": OWNER_SHARED}
 _NO_NOTICE = (KIND_REGULAR, KIND_IRREGULAR)
+_UMLAUTS = str.maketrans({"ä": "ae", "ö": "oe", "ü": "ue", "ß": "ss"})
 _COMBINING = re.compile(r"[̀-ͯ]")
 _FENCE = re.compile(r"^```(?:json)?\s*|\s*```$", re.I)
 
@@ -72,9 +73,9 @@ def default_spec() -> dict[str, Any]:
 
 
 def fold(text: Any) -> str:
-    """Lower case without accents; ``ß`` -> ``ss``. Mirrors ``fold`` in the JS twin."""
-    s = unicodedata.normalize("NFKD", str(text or "").lower())
-    return _COMBINING.sub("", s).replace("ß", "ss")
+    """Lower case, ``ä ö ü ß`` -> ``ae oe ue ss``, other accents dropped. Twin of ``fold`` in the JS file."""
+    s = str(text or "").lower().translate(_UMLAUTS)
+    return _COMBINING.sub("", unicodedata.normalize("NFKD", s))
 
 
 # --------------------------------------------------------------------------
