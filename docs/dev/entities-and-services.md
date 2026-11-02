@@ -118,8 +118,14 @@ duplicate check, AI prompt/answer parsing), `api/history_import.py` (endpoints),
 / `remove_import_batch` (`data_store.py`), manager methods in `manager/_persistence.py`.
 
 - Local first: CSV (`;,	|` sniffed, cp1252/UTF-8) and XLSX (first sheet) are mapped by header synonyms
-  (de/en, preamble lines skipped, `Soll`/`Haben` or a signed `Betrag`). PDF is rejected
-  (`pdf_unsupported`). Only a file with no recognisable columns can go to the AI: purpose
+  (de/en, preamble lines skipped, `Soll`/`Haben` or a signed `Betrag`). PDF statements (#147): text
+  extracted locally with `pypdf` (layout mode, empty-password encryption opened, max 300 pages, no OCR);
+  `rows_from_pdf_lines` takes every line that starts with a booking date (year-less `01.03.` gets the year
+  from the statement's latest full date) and ends with an amount (a running balance after it is ignored),
+  the next up to 3 lines are its purpose; balance/carry-over lines are skipped. A PDF whose amounts carry
+  no debit marker (`-`, trailing `-`, `S`) is not guessed: it counts as unreadable and goes the AI way
+  below. Errors `pdf_encrypted`, `pdf_no_text` (scan), `pdf_unavailable`. Only a file with no
+  recognisable columns or booking lines can go to the AI: purpose
   `history_import` (`once`), IBAN/long numbers masked by `mask_sensitive`, one call per 100 lines
   (max 12), refused up front when the monthly budget cannot cover all calls. The AI returns a JSON
   array of `{date, amount (expense negative), counterparty, text, currency}`; local and AI rows pass the
@@ -127,7 +133,7 @@ duplicate check, AI prompt/answer parsing), `api/history_import.py` (endpoints),
 - `GET /history_import` -> `{allowed, accounts[{key,name,iban_masked}], batches[{id,at,method,count,first,last,account_key}], ai{usable,consented,remaining}}`.
 - `POST /history_import/preview` `{content_base64, account_key, use_ai?}` -> `{preview_id, method, summary{new,duplicate,overlap,invalid,total,window_start}, rows[{line,date,amount,counterparty,text,currency,status}], invalid[{line,reason,raw}]}`;
   or `{needs_ai: true, calls, ai}` when the layout is unreadable and `use_ai` is not set. Rows wait in memory
-  (30 min, max 3 previews), nothing is stored. Errors: `pdf_unsupported`, `too_large`, `unreadable`,
+  (30 min, max 3 previews), nothing is stored. Errors: `pdf_encrypted`, `pdf_no_text`, `too_large`, `unreadable`,
   `consent_required`, `no_provider`, `budget_exhausted`, `unparsable`, `unknown_account`, `import_unavailable` (demo).
 - Row status: `duplicate` = same date + amount + counterparty already in the ledger (one-to-one);
   `overlap` = inside the bank fetch window (last 90 days, `fetch_window_start`), so the bank's data wins; `new` = older. Only `new` is stored, re-classified against the ledger at commit.

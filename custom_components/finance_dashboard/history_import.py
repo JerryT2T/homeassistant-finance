@@ -5,9 +5,15 @@ days apart.  This module lets the user add older bookings from a statement
 export.  Everything here is pure (no storage, no network): the endpoint
 (``api/history_import.py``) and the manager wire it to the ledger.
 
-Flow: ``read_table`` (CSV/XLSX, local) -> ``map_table`` (column guess, local)
--> ``validate_rows`` -> ``classify_rows`` against the ledger -> preview ->
-commit as one tagged batch (``Ledger.add_import_batch``) -> undo as a whole.
+Flow: ``read_table`` (CSV/XLSX/PDF, local) -> ``rows_from_table`` (column
+guess, or booking lines of a PDF statement, local) -> ``validate_rows`` ->
+``classify_rows`` against the ledger -> preview -> commit as one tagged batch
+(``Ledger.add_import_batch``) -> undo as a whole.
+
+A PDF statement has no columns: its text is extracted locally (``pypdf``,
+pure Python) and every line that starts with a booking date and ends with a
+signed amount becomes a row; the lines below it up to the next booking are
+its purpose text (``rows_from_pdf_lines``).
 
 A file the local mapping cannot read (odd layout, no recognisable columns)
 may go to the AI, but only with the ``history_import`` consent and only after
@@ -53,6 +59,10 @@ AI_MAX_CALLS = 12
 AI_MAX_TOKENS = 6000
 
 _ZIP_MAGIC = b"PK\x03\x04"
+_PDF_MAGIC = b"%PDF-"
+MAX_PDF_PAGES = 300
+MAX_PDF_CHARS = 2_000_000
+PDF_MAX_CONTINUATION = 3  # purpose lines kept below a booking line
 
 _SYNONYMS: dict[str, tuple[str, ...]] = {
     "date": (
@@ -99,7 +109,7 @@ class Table:
     """The file as text cells, header row not yet located."""
 
     rows: list[list[Any]]
-    kind: str  # "csv" | "xlsx" | "text"
+    kind: str  # "csv" | "xlsx" | "pdf"
     lines: list[str] = field(default_factory=list)  # raw text lines (AI path)
 
 
@@ -152,6 +162,46 @@ def _read_xlsx(data: bytes) -> list[list[Any]]:
         wb.close()
 
 
+def _read_pdf(data: bytes) -> list[str]:
+    """The text lines of a PDF, whitespace collapsed.  Local only, no OCR."""
+    try:
+        from pypdf import PdfReader
+    except ImportError as err:  # declared in manifest requirements
+        raise ImportFileError("pdf_unavailable", "pypdf is not installed") from err
+    try:
+        reader = PdfReader(io.BytesIO(data))
+    except Exception as err:  # noqa: BLE001 - any structural damage
+        raise ImportFileError("unreadable", "The PDF could not be read") from err
+    if reader.is_encrypted:
+        # statements are often encrypted with an empty user password (print/copy rights only)
+        try:
+            opened = reader.decrypt("")
+        except Exception:  # noqa: BLE001 - unsupported algorithm, missing crypto backend
+            opened = 0
+        if not opened:
+            raise ImportFileError("pdf_encrypted", "The PDF is password protected")
+    if len(reader.pages) > MAX_PDF_PAGES:
+        raise ImportFileError("too_many_rows", f"More than {MAX_PDF_PAGES} pages")
+    lines: list[str] = []
+    total = 0
+    for page in reader.pages:
+        try:
+            # layout mode keeps the cells of one table row on one line
+            text = page.extract_text(extraction_mode="layout")
+        except Exception:  # noqa: BLE001 - layout mode trips over some fonts
+            text = page.extract_text() or ""
+        for raw in text.splitlines():
+            line = " ".join(raw.replace("\u2212", "-").split())  # typographic minus
+            if line:
+                lines.append(line)
+                total += len(line)
+        if total > MAX_PDF_CHARS:
+            raise ImportFileError("too_many_rows", "The PDF holds too much text")
+    if not any(re.search(r"\d", ln) for ln in lines):
+        raise ImportFileError("pdf_no_text", "The PDF holds no text (scanned image?)")
+    return lines
+
+
 def _read_csv(text: str) -> list[list[str]]:
     sample = "\n".join(text.splitlines()[:50])
     try:
@@ -175,7 +225,7 @@ def _read_csv(text: str) -> list[list[str]]:
 
 
 def read_table(data: bytes) -> Table:
-    """Parse an uploaded CSV / XLSX / text file into cells.  Nothing leaves the host.
+    """Parse an uploaded CSV / XLSX / PDF / text file.  Nothing leaves the host.
 
     Only :class:`ImportFileError` escapes: any other failure is a bad file, not a server error.
     """
@@ -202,11 +252,8 @@ def _read_table(data: bytes) -> Table:
         raise ImportFileError("empty", "The file is empty")
     if len(data) > MAX_FILE_BYTES:
         raise ImportFileError("too_large", "The file is larger than 5 MB")
-    if data.startswith(b"%PDF"):
-        raise ImportFileError(
-            "pdf_unsupported",
-            "PDF statements cannot be read. Export the bookings as CSV or XLSX from your bank.",
-        )
+    if _PDF_MAGIC in data[:1024]:  # the header may follow a few junk bytes
+        return Table(rows=[], kind="pdf", lines=_read_pdf(data))
     if data.startswith(_ZIP_MAGIC):
         if not zipfile.is_zipfile(io.BytesIO(data)):
             raise ImportFileError("unreadable", "The file could not be read")
@@ -323,7 +370,13 @@ def parse_amount(value: Any) -> float | None:
 
 
 def rows_from_table(table: Table) -> tuple[list[dict[str, Any]], dict[str, int] | None]:
-    """Candidate rows (unvalidated) from a table, or ``(…, None)`` when no mapping fits."""
+    """Candidate rows (unvalidated) from a table, or ``(…, None)`` when no mapping fits.
+
+    A PDF has no columns: its mapping is ``{}`` when the booking lines were read.
+    """
+    if table.kind == "pdf":
+        rows = rows_from_pdf_lines(table.lines)
+        return (rows, {}) if rows is not None else ([], None)
     located = locate_header(table.rows)
     if located is None:
         return [], None
@@ -353,6 +406,180 @@ def rows_from_table(table: Table) -> tuple[list[dict[str, Any]], dict[str, int] 
             }
         )
     return out, mapping
+
+
+# ---------------------------------------------------------------------------
+# PDF statements: booking lines from extracted text
+# ---------------------------------------------------------------------------
+
+# one or two leading dates (booking day, value day); the year may be missing ("01.03.")
+_PDF_DATE = r"(?:\d{1,2}\.\d{1,2}\.(?:\d{4}|\d{2}(?!\d))?|\d{4}-\d{2}-\d{2}|\d{1,2}/\d{1,2}/\d{4})"
+_PDF_BOOKING = re.compile(rf"^({_PDF_DATE})(?:\s+{_PDF_DATE})?(?:\s+|$)(.*)$")
+# money with exactly two decimals; dates ("01.03.2025") and long numbers never match
+_PDF_MONEY = re.compile(
+    r"(?<![\w.,/-])([+-]\s?)?((?:\d{1,3}(?:[.,'  ]\d{3})+|\d+)[.,]\d{2})"
+    r"(\s?[+-](?![\w])|\s?[SH]\b)?(?:\s?(?:EUR|€))?(?![\w.,/])"
+)
+_PDF_FULL_DATE = re.compile(r"(?<![\d.])(\d{1,2})\.(\d{1,2})\.(\d{4})(?!\d)")
+_PDF_SKIP = re.compile(
+    r"^(?:alter|neuer|anfangs|end)?\s*(?:kontostand|saldo)|^(?:übertrag|uebertrag|zwischensumme|summe)\b"
+    r"|^(?:opening|closing|new|old)?\s*balance\b|^(?:carried|brought) forward",
+    re.I,
+)
+_PDF_NOISE = re.compile(
+    r"^(?:seite|page|blatt)\s+\d|^(?:iban|bic|kontoauszug|kontonummer|buchungstag|buchung|datum|date)\b",
+    re.I,
+)
+_PDF_TYPES = (
+    "sepa-basislastschrift", "sepa-lastschrift", "basislastschrift", "folgelastschrift",
+    "erstlastschrift", "lastschrift", "sepa-überweisung", "echtzeitüberweisung", "überweisung",
+    "dauerauftrag", "gutschrift", "kartenzahlung", "kartenumsatz", "zahlungseingang",
+    "gehalt/rente", "gehalt", "rente", "entgelt", "abschluss", "bargeldauszahlung",
+    "direct debit", "standing order", "card payment", "transfer", "credit",
+)
+
+
+def _pdf_tail_money(line: str) -> tuple[int, list[re.Match[str]]]:
+    """The money tokens that end the line (amount, then perhaps a running balance)."""
+    matches = list(_PDF_MONEY.finditer(line))
+    tail: list[re.Match[str]] = []
+    end = len(line.rstrip())
+    for m in reversed(matches):
+        if line[m.end() : end].strip():
+            break
+        tail.insert(0, m)
+        end = m.start()
+        if len(tail) == 2:
+            break
+    return (tail[0].start() if tail else len(line)), tail
+
+
+def _pdf_sign(match: re.Match[str]) -> int:
+    """-1 for a debit marker, +1 for a credit marker, 0 when the token carries none."""
+    lead, trail = (match.group(1) or "").strip(), (match.group(3) or "").strip().upper()
+    if lead == "-" or trail in ("-", "S"):
+        return -1
+    if lead == "+" or trail in ("+", "H"):
+        return 1
+    return 0
+
+
+def _pdf_reference_date(lines: list[str]) -> date | None:
+    """The statement's latest full date, for booking dates printed without a year."""
+    best: date | None = None
+    for line in lines:
+        for d, m, y in _PDF_FULL_DATE.findall(line):
+            try:
+                day = date(int(y), int(m), int(d))
+            except ValueError:
+                continue
+            best = day if best is None or day > best else best
+    return best
+
+
+def _pdf_date(token: str, ref: date | None) -> str:
+    """ISO date for a booking date token; a yearless one takes the year from ``ref``."""
+    m = re.fullmatch(r"(\d{1,2})\.(\d{1,2})\.", token)
+    if not m:
+        day = parse_date(token)
+        return day.isoformat() if day else token
+    if ref is None:
+        return token  # left unparsed: the row is listed as invalid
+    d, mo = int(m.group(1)), int(m.group(2))
+    year = ref.year - 1 if mo > ref.month else ref.year  # a January statement lists December
+    try:
+        return date(year, mo, d).isoformat()
+    except ValueError:
+        return token
+
+
+def _split_type(desc: str) -> tuple[str, str]:
+    """``("SEPA-Lastschrift", "Stadtwerke")`` from ``"SEPA-Lastschrift Stadtwerke"``."""
+    low = desc.lower()
+    for word in _PDF_TYPES:
+        if low.startswith(word) and (len(low) == len(word) or not low[len(word)].isalnum()):
+            return desc[: len(word)], desc[len(word) :].strip(" :-,")
+    return "", desc
+
+
+def rows_from_pdf_lines(lines: list[str]) -> list[dict[str, Any]] | None:
+    """Candidate rows from the text lines of a PDF statement, or None when the layout is unknown.
+
+    A booking line starts with a date and ends with an amount (an optional
+    running balance after it is ignored); up to ``PDF_MAX_CONTINUATION``
+    lines below it are its purpose.  A booking whose amount sits on the
+    next line is completed from there.
+
+    None (-> the AI path) when no booking line is found, or when no amount
+    in the whole statement carries a debit marker (``-``, trailing ``-``,
+    ``S``): unsigned amounts in separate debit/credit columns cannot be told
+    apart once the text is flat, and a guessed sign would import expenses
+    as income.
+    """
+    ref = _pdf_reference_date(lines)
+    out: list[dict[str, Any]] = []
+    current: dict[str, Any] | None = None
+    signs: list[int] = []
+
+    def close() -> None:
+        nonlocal current
+        if current is not None and current["amount"] != "":
+            out.append(current)
+        current = None
+
+    for n, line in enumerate(lines, start=1):
+        booking = _PDF_BOOKING.match(line)
+        if booking:
+            close()
+            rest = booking.group(2)
+            if _PDF_SKIP.search(rest):
+                continue
+            start, tail = _pdf_tail_money(rest)
+            kind, party = _split_type(rest[:start].strip())
+            current = {
+                "line": n,
+                "date": _pdf_date(booking.group(1), ref),
+                "amount": "",
+                "counterparty": party,
+                "text": kind,
+                "currency": "",
+                "_more": 0,
+            }
+            if tail:
+                current["amount"] = _pdf_amount(tail[0], signs)
+            continue
+        if current is None:
+            continue
+        if _PDF_SKIP.search(line) or _PDF_NOISE.search(line):
+            close()
+            continue
+        if current["amount"] == "":
+            start, tail = _pdf_tail_money(line)
+            if tail:
+                current["amount"] = _pdf_amount(tail[0], signs)
+                line = line[:start].strip()
+        if line and current["_more"] < PDF_MAX_CONTINUATION:
+            current["_more"] += 1
+            if not current["counterparty"]:
+                current["counterparty"] = line
+            else:
+                current["text"] = f"{current['text']} {line}".strip()
+    close()
+
+    if not out or -1 not in signs:
+        return None
+    for row in out:
+        del row["_more"]  # an unsigned amount stays positive: a credit where debits are marked
+    return out
+
+
+def _pdf_amount(match: re.Match[str], signs: list[int]) -> Any:
+    sign = _pdf_sign(match)
+    signs.append(sign)
+    value = parse_amount(match.group(2))
+    if value is None:
+        return ""
+    return -abs(value) if sign < 0 else abs(value)
 
 
 # ---------------------------------------------------------------------------

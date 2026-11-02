@@ -84,12 +84,199 @@ def test_unreadable_layout_has_no_mapping():
     assert hi.rows_from_table(table)[1] is None
 
 
-def test_pdf_and_binary_are_rejected():
-    with pytest.raises(hi.ImportFileError) as exc:
-        hi.read_table(b"%PDF-1.7 ...")
-    assert exc.value.code == "pdf_unsupported"
+def test_binary_is_rejected():
     with pytest.raises(hi.ImportFileError):
         hi.read_table(b"\x00\x01\x02" * 100)
+
+
+# --- PDF statements (#147) ------------------------------------------------------------
+# Invented sample statements only: no real names, accounts or amounts.
+
+
+def _pdf(pages: list[list[tuple[float, str]]] | list[list[list[tuple[float, str]]]]) -> bytes:
+    """A minimal text PDF.  Each page is a list of lines, each line a list of (x, text) cells."""
+
+    def esc(text: str) -> bytes:
+        raw = text.encode("cp1252")
+        return raw.replace(b"\\", b"\\\\").replace(b"(", b"\\(").replace(b")", b"\\)")
+
+    objects: list[bytes] = []
+    kids = []
+    font_id = 3
+    objects.append(b"<< /Type /Catalog /Pages 2 0 R >>")
+    objects.append(b"")  # pages, filled below
+    objects.append(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>")
+    for page in pages:
+        ops = []
+        y = 800
+        for line in page:
+            for x, text in line:
+                ops.append(b"BT /F1 9 Tf %d %d Td (" % (x, y) + esc(text) + b") Tj ET")
+            y -= 14
+        stream = b"\n".join(ops)
+        objects.append(b"<< /Length %d >>\nstream\n" % len(stream) + stream + b"\nendstream")
+        content_id = len(objects)
+        objects.append(
+            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents %d 0 R "
+            b"/Resources << /Font << /F1 %d 0 R >> >> >>" % (content_id, font_id)
+        )
+        kids.append(len(objects))
+    objects[1] = b"<< /Type /Pages /Kids [%s] /Count %d >>" % (
+        b" ".join(b"%d 0 R" % k for k in kids),
+        len(kids),
+    )
+    out = bytearray(b"%PDF-1.4\n")
+    offsets = []
+    for n, body in enumerate(objects, start=1):
+        offsets.append(len(out))
+        out += b"%d 0 obj\n" % n + body + b"\nendobj\n"
+    xref = len(out)
+    out += b"xref\n0 %d\n0000000000 65535 f \n" % (len(objects) + 1)
+    out += b"".join(b"%010d 00000 n \n" % o for o in offsets)
+    out += b"trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n" % (len(objects) + 1, xref)
+    return bytes(out)
+
+
+def _cells(*cells: str) -> list[tuple[float, str]]:
+    """One table row: booking day, value day, description, amount, balance at fixed columns."""
+    xs = (40, 90, 140, 420, 500)
+    return [(x, c) for x, c in zip(xs, cells) if c]
+
+
+STATEMENT = [
+    [
+        [(40, "Musterbank - Kontoauszug 3/2025")],
+        [(40, "IBAN DE00 1234 5678 9012 3456 78")],
+        [(40, "Zeitraum 01.03.2025 bis 31.03.2025")],
+        _cells("Buchung", "Valuta", "Vorgang", "Betrag", "Saldo"),
+        _cells("01.03.", "01.03.", "Alter Kontostand", "", "1.000,00"),
+        _cells("03.03.", "03.03.", "SEPA-Lastschrift Stadtwerke Beispielstadt", "-89,00", "911,00"),
+        [(140, "Abschlag Strom März")],
+        [(140, "Kundennr 4711")],
+        _cells("15.03.", "15.03.", "Gutschrift", "2.500,00", "3.411,00"),
+        [(140, "Erika Beispiel")],
+        [(140, "Gehalt März")],
+        _cells("20.03.", "20.03.", "Kartenzahlung Bäckerei Kornfeld", "12,40-", "3.398,60"),
+    ],
+    [
+        [(40, "Seite 2 von 2")],
+        _cells("28.03.", "28.03.", "Dauerauftrag Muster Wohnbau GmbH", "-800,00", "2.598,60"),
+        [(140, "Miete Wohnung 3 OG")],
+        _cells("31.03.", "31.03.", "Neuer Kontostand", "", "2.598,60"),
+    ],
+]
+
+
+def test_pdf_statement_rows_through_the_same_validation():
+    pytest.importorskip("pypdf")
+    table = hi.read_table(_pdf(STATEMENT))
+    assert table.kind == "pdf"
+    cands, mapping = hi.rows_from_table(table)
+    assert mapping == {}
+    valid, invalid = hi.validate_rows(cands, today=TODAY)
+    assert not invalid
+    assert [(r["date"], r["amount"]) for r in valid] == [
+        ("2025-03-03", -89.0),
+        ("2025-03-15", 2500.0),
+        ("2025-03-20", -12.4),
+        ("2025-03-28", -800.0),
+    ]
+    first, credit, card, rent = valid
+    assert first["counterparty"] == "Stadtwerke Beispielstadt"
+    assert "Abschlag Strom März" in first["text"] and first["text"].startswith("SEPA-Lastschrift")
+    assert credit["counterparty"] == "Erika Beispiel" and "Gehalt März" in credit["text"]
+    assert card["counterparty"] == "Bäckerei Kornfeld"
+    # the page header between bookings is not swallowed as purpose text
+    assert rent["counterparty"] == "Muster Wohnbau GmbH" and "Seite" not in rent["text"]
+
+
+def test_pdf_preview_classifies_like_csv():
+    pytest.importorskip("pypdf")
+    _, cands, mapping = hi.parse_upload(_pdf(STATEMENT))
+    valid, _ = hi.validate_rows(cands, today=TODAY)
+    ledger = Ledger(None)
+    ledger.ingest(
+        "acc",
+        [
+            {
+                "transactionId": "b1",
+                "bookingDate": "2025-03-03",
+                "transactionAmount": {"amount": "-89.00", "currency": "EUR"},
+                "creditorName": "Stadtwerke Beispielstadt",
+                "remittanceInformationUnstructured": "Abschlag",
+            }
+        ],
+        [],
+        date_from="2025-03-01",
+    )
+    rows, summary = hi.classify_rows(valid, ledger.transactions("acc"), window_start="2025-03-25")
+    assert [r["status"] for r in rows] == ["duplicate", "new", "new", "overlap"]
+    assert (summary["new"], summary["duplicate"], summary["overlap"]) == (2, 1, 1)
+    new = [r for r in rows if r["status"] == "new"]
+    assert ledger.add_import_batch("acc", "p1", hi.to_ledger_transactions(new, "p1"), hi.batch_summary(new)) == 2
+    assert ledger.remove_import_batch("p1") == 2
+
+
+def test_pdf_lines_year_rollover_and_markers():
+    lines = [
+        "Kontoauszug 1/2026 vom 02.01.2026",
+        "30.12. 30.12. Lastschrift",
+        "Versicherung Beispiel AG",
+        "Beitrag 2026 120,00 S",
+        "02.01. Gutschrift Erstattung Beispiel 15,00 H",
+        "02.01.2026 Abschluss Entgelt -4,90",
+    ]
+    rows = hi.rows_from_pdf_lines(lines)
+    assert [(r["date"], r["amount"], r["counterparty"]) for r in rows] == [
+        ("2025-12-30", -120.0, "Versicherung Beispiel AG"),  # amount from the line below
+        ("2026-01-02", 15.0, "Erstattung Beispiel"),
+        ("2026-01-02", -4.9, "Entgelt"),
+    ]
+
+
+def test_pdf_without_debit_markers_goes_the_ai_way():
+    # separate Soll/Haben columns flatten to unsigned numbers: never guess the sign
+    lines = ["Datum Text Soll Haben", "03.03.2025 Stadtwerke 89,00", "15.03.2025 Gehalt 2.500,00"]
+    assert hi.rows_from_pdf_lines(lines) is None
+    assert hi.rows_from_pdf_lines(["Sehr geehrte Kundin", "Ihr Auszug liegt bei"]) is None
+
+
+def test_pdf_ai_fallback_masks_the_text():
+    pytest.importorskip("pypdf")
+    data = _pdf([[[(40, "Umsatz an DE00 1234 5678 9012 3456 78 Stadtwerke 89,00")]]])
+    table, cands, mapping = hi.parse_upload(data)
+    assert mapping is None and not cands
+    chunk = "\n".join(hi.ai_chunks(table))
+    assert "Stadtwerke" in chunk and "5678" not in chunk and "[IBAN]" in chunk
+
+
+def test_pdf_without_text_and_with_password_are_rejected():
+    pypdf = pytest.importorskip("pypdf")
+    import io
+
+    with pytest.raises(hi.ImportFileError) as exc:
+        hi.read_table(_pdf([[]]))
+    assert exc.value.code == "pdf_no_text"
+
+    def encrypted(user_password: str) -> bytes:
+        writer = pypdf.PdfWriter(clone_from=io.BytesIO(_pdf(STATEMENT)))
+        writer.encrypt(user_password=user_password, owner_password="owner-x", algorithm="AES-128")
+        buf = io.BytesIO()
+        writer.write(buf)
+        return buf.getvalue()
+
+    with pytest.raises(hi.ImportFileError) as exc:
+        hi.read_table(encrypted("secret"))
+    assert exc.value.code == "pdf_encrypted"
+    # print/copy protection with an empty user password is readable
+    assert hi.rows_from_table(hi.read_table(encrypted("")))[1] == {}
+
+
+def test_damaged_pdf_is_unreadable():
+    pytest.importorskip("pypdf")
+    with pytest.raises(hi.ImportFileError) as exc:
+        hi.read_table(b"%PDF-1.7 truncated garbage")
+    assert exc.value.code in ("unreadable", "pdf_no_text")
 
 
 def test_ai_payload_masks_ibans():
