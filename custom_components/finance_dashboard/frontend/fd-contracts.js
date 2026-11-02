@@ -714,7 +714,7 @@ class FdContracts extends HTMLElement {
   // ---- optional AI search (#118, purpose contract_query) --------------------
   _aiOffered() {
     const a = this._ai;
-    return !!(a && a.usable && (a.consented || this._isAdmin));
+    return !!(a && a.available !== false && a.usable && this._isAdmin);
   }
 
   _specSummary(spec) {
@@ -794,7 +794,6 @@ class FdContracts extends HTMLElement {
     }
     this._ai = { ...this._ai, consented: granted };
     this._aiOn = granted;
-    this._consent = null;
     this._closeSheet();
     this._render();
     if (granted) this.shadowRoot.getElementById("ai-q")?.focus();
@@ -1120,10 +1119,15 @@ class FdContracts extends HTMLElement {
     const back = this._sheet ? this._sheet.id : null;
     this._sheet = null;
     this._add = null;
+    const hadConsent = !!this._consent;
     const hadFilter = !!(this._fs || this._consent);
     this._fs = null;
     this._consent = null;
-    if (hadFilter) setTimeout(() => this.shadowRoot.getElementById("f-open")?.focus(), 0);
+    if (hadFilter) {
+      // the consent dialog was opened from the AI switch; the filter sheet from the filter button
+      const back = hadConsent ? (this._aiOn ? "ai-q" : "ai-sw") : "f-open";
+      setTimeout(() => this.shadowRoot.getElementById(back)?.focus(), 0);
+    }
     // keyboard users land back on the row they opened
     if (back) setTimeout(() => [...this.shadowRoot.querySelectorAll("[data-edit]")].find((b) => b.dataset.edit === back)?.focus(), 0);
     const el = this.shadowRoot.getElementById("sheet");

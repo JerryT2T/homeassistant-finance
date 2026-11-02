@@ -75,8 +75,8 @@ booking assignment, #117 E/F), `GET /reserves`, `PUT /accounts/{key}/savings`.
 `GET /contracts` also answers `viewer: {me, persons}` (resolves the owner filters "me" / "partner").
 Search and filters (#118): `contract_filter.py` (spec, `validate_spec`, `apply`, totals) is mirrored by
 `frontend/fd-contract-filter.js`; both run `tests/fixtures/contract_filter_cases.json`.
-`GET /contracts/query` -> `{usable, consented, remaining}` (offer the AI search?);
-`POST /contracts/query` `{question}` -> `{spec, errors}` (HA auth, purpose `contract_query` consent
+`GET /contracts/query` -> `{available, usable, consented, remaining}` (offer the AI search? non-admins get `available: false`);
+`POST /contracts/query` `{question}` -> `{spec, errors}` (admin only: 403 `admin_required`; purpose `contract_query` consent
 required: 403 `consent_required`; `no_provider` / `budget_exhausted` 400; provider failure 502). The AI
 returns a filter spec only; it is validated against the schema, valid parts are kept and dropped parts
 are listed in `errors` (an unreadable answer gives `[{field: "_", reason: "unparsable"}]` and an empty

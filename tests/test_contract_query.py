@@ -18,12 +18,13 @@ class _Json:
 
 
 class _Request:
-    def __init__(self, body):
+    def __init__(self, body, admin=True):
         self._body = body
+        self.admin = admin
         self.app = {"hass": MagicMock()}
 
     def get(self, key, default=None):
-        return SimpleNamespace(is_admin=False) if key == "hass_user" else default
+        return SimpleNamespace(is_admin=self.admin) if key == "hass_user" else default
 
     async def json(self):
         if isinstance(self._body, Exception):
@@ -40,7 +41,8 @@ class _Call:
             body = await request.json()
         except ValueError:
             pass
-        data, status = await api.run_contract_query(request.app["hass"], api._get_manager(None), body)  # noqa: SLF001
+        data, status = await api.run_contract_query(request.app["hass"], api._get_manager(None), body,
+                                            is_admin=request.admin)  # noqa: SLF001
         return SimpleNamespace(_data=data, _status=status)
 
 
@@ -155,3 +157,10 @@ def test_ai_call_counts_against_the_shared_budget() -> None:
     import inspect
 
     assert "spend_call" in inspect.getsource(ai_provider.async_extract_history)
+
+
+@pytest.mark.asyncio
+async def test_non_admin_is_refused_and_spends_nothing(env) -> None:
+    res = await _view().post(_Request({"question": "alle Abos"}, admin=False))
+    assert res._status == 403 and res._data["error"] == "admin_required"
+    assert env.prompts == [] and env.used == 0

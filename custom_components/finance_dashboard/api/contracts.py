@@ -166,8 +166,13 @@ async def _query_vocab(hass, manager) -> dict:
     return {"categories": [*LIFE_AREAS, OTHER], "labels": labels, "owners": owners}
 
 
-async def run_contract_query(hass, manager, body) -> tuple[dict, int]:
-    """Ask the AI for a filter spec: ``(payload, http status)``. Never raises on AI output."""
+async def run_contract_query(hass, manager, body, *, is_admin: bool = False) -> tuple[dict, int]:
+    """Ask the AI for a filter spec: ``(payload, http status)``. Never raises on AI output.
+
+    Admin only: the call spends the shared AI budget and sends the question out.
+    """
+    if not is_admin:
+        return {"error": "admin_required"}, 403
     raw_q = body.get("question") if isinstance(body, dict) else None
     question = cf.clean_question(raw_q) if isinstance(raw_q, str) else ""
     if not question:
@@ -218,14 +223,18 @@ class FinanceDashboardContractQueryView(HomeAssistantView):
         manager = _get_manager(hass)
         if not manager:
             return self.json({"error": "Not configured"}, status_code=404)
-        return self.json(await _query_ai_status(hass, manager))
+        if not _is_admin(request):  # the AI search is an admin feature (shared budget)
+            return self.json({"available": False, "usable": False, "consented": False, "remaining": 0})
+        return self.json({"available": True, **await _query_ai_status(hass, manager)})
 
     async def post(self, request: web.Request) -> web.Response:
         hass = request.app["hass"]
         manager = _get_manager(hass)
         if not manager:
             return self.json({"error": "Not configured"}, status_code=404)
-        data, status = await run_contract_query(hass, manager, await _json_body(request))
+        data, status = await run_contract_query(
+            hass, manager, await _json_body(request), is_admin=_is_admin(request)
+        )
         return self.json(data, status_code=status)
 
 

@@ -19,7 +19,8 @@ Spec fields (all always present after ``validate_spec``)::
     amount_min   lower bound of the monthly equivalent in EUR, or None
     amount_max   upper bound, or None
     sort         "deadline" | "amount"
-    aggregate    "month" | "year" | None (which total the user asked for)
+    aggregate    "month" | "year" | None - display hint only: the UI highlights that
+                 total; it never changes which contracts match
 
 Fields inside one list are OR, different fields are AND.
 """
