@@ -246,9 +246,10 @@ class QuestionsMixin:
 
     def get_refund_questions(self) -> list[dict[str, Any]]:
         """Question cards for the unsure refund matches (#119); cache only."""
-        if getattr(self, "_demo_mode", False):
+        analysis = getattr(self, "get_refund_analysis", None)  # a host without refunds asks none
+        if getattr(self, "_demo_mode", False) or analysis is None:
             return []
-        return refund_questions(self._transactions, self.get_refund_analysis()["proposals"])
+        return refund_questions(self._transactions, analysis()["proposals"])
 
     async def _answer_refund(
         self,
