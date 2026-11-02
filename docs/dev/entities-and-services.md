@@ -72,6 +72,16 @@ Contracts (`api/contracts.py`, details in `docs/dev/contracts/contracts-series-r
 `GET /contracts`, `POST /contracts` (admin, add by hand, #117 D), `PUT|DELETE /contracts/{id}`
 (admin; DELETE only for manual contracts), `POST /contract_overrides` (admin; merge / split /
 booking assignment, #117 E/F), `GET /reserves`, `PUT /accounts/{key}/savings`.
+`GET /contracts` also answers `viewer: {me, persons}` (resolves the owner filters "me" / "partner").
+Search and filters (#118): `contract_filter.py` (spec, `validate_spec`, `apply`, totals) is mirrored by
+`frontend/fd-contract-filter.js`; both run `tests/fixtures/contract_filter_cases.json`.
+`GET /contracts/query` -> `{usable, consented, remaining}` (offer the AI search?);
+`POST /contracts/query` `{question}` -> `{spec, errors}` (HA auth, purpose `contract_query` consent
+required: 403 `consent_required`; `no_provider` / `budget_exhausted` 400; provider failure 502). The AI
+returns a filter spec only; it is validated against the schema, valid parts are kept and dropped parts
+are listed in `errors` (an unreadable answer gives `[{field: "_", reason: "unparsable"}]` and an empty
+spec). The prompt holds the question plus allowed names only. Series carry `remittance` (up to 3 recent
+purpose texts) for the search; non-admins get the reduced aggregate view without it.
 Questions (`api/questions.py`): `GET /questions` puts contract and price-change cards (#117 B/G)
 in front of the merchant cards (shared weekly quota); `POST /questions/answer` takes
 `{id, type: "contract"|"price", answer}` besides the merchant answer.
@@ -81,7 +91,8 @@ in front of the merchant cards (shared weekly quota); `POST /questions/answer` t
 AI consent is per purpose (`ai_consent.py`, own store `finance_dashboard.ai_consent`; first load
 migrates the legacy wizard flag `ai_opt_in` into `categorize`). Purposes: `categorize`
 (`recurring`: merchant + remittance text of unclassified transactions, stays granted) and
-`history_import` (`once`: see below) and
+`history_import` (`once`: see below), `contract_query` (`recurring`: the contracts-search question plus names of
+categories, labels and persons, never amounts, IBANs, dates or bookings) and
 `sheet_analysis` (`once`: names of budget-sheet positions local matching could not place; consumed
 by the first analysis that gets a real AI answer). `manager/_questions.py` gates the categorisation
 pass on `async_granted(hass, "categorize")`.

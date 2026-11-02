@@ -202,6 +202,17 @@ Coverage: `Pot.account_key` (new optional field) names the account a `reserve`-k
 virtual total (pot `cycle_budget`) vs real balance (`pick_balance`) -> `covered` / `shortfall` (+`top_up`) / `unknown` (no cached balance).
 Pots without `account_key` are counted in `unassigned_pots`. The pots endpoint may expose `account_key` via `Pot.to_dict`.
 
+## Search, filters and AI query (#118)
+One **filter spec** (`q`, `kinds`, `statuses`, `categories`, `labels`, `owners`, `amount_min`, `amount_max`,
+`sort`, `aggregate`) drives the contracts tab, whether set by hand (search box, chips, filter sheet) or
+returned by the AI. Lists are OR inside a field, AND across fields. Statuses: `active`, `overdue`
+(= series status `missing`), `ended`, `candidate`; without a status filter candidates are hidden and ended
+series are listed last but not counted. Amounts compare the monthly equivalent. Owners: `me`, `partner`,
+`shared` or a person name ("ich" -> me, "wir" -> shared). Search folds case and umlauts (`ä` = `ae`, `ß` = `ss`)
+over name, display name, detected name and remittance text; every word must occur. Totals sum the filtered set,
+grouped fixed / regular like `contract_totals`. The filter is kept per user in localStorage. The logic exists twice
+(`contract_filter.py`, `frontend/fd-contract-filter.js`); change both and the shared fixture together.
+
 ## Notice event hook for the setup agent
 `await contracts.async_fire_notice_due(hass, get_effective_transactions(manager._transactions))` - call from the daily
 refresh path after the ledger update. Fires `finance_dashboard_notice_due` (`series_id, creditor, deadline, effective_end, days_left, owner`; no amount)
