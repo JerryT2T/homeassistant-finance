@@ -209,3 +209,14 @@ def test_xlsx_roundtrip():
     wb.save(buf)
     valid, invalid = _parse(buf.getvalue())
     assert not invalid and valid[0]["date"] == "2025-03-01" and valid[0]["amount"] == -30.0
+
+
+@pytest.mark.parametrize(
+    "iban", ["DE89370400440532013000", "DE89 3704 0044 0532 0130 00", "de89370400440532013000",
+     "GB29 NWBK 6016 1331 9268 19"]
+)
+def test_every_iban_spelling_is_masked(iban):
+    # Codex #121: a short last group left the IBAN readable
+    from custom_components.finance_dashboard.history_import import _IBAN
+
+    assert _IBAN.sub("X", f"Miete {iban} Juni") == "Miete X Juni"

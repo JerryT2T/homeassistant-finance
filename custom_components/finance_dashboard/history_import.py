@@ -73,7 +73,12 @@ _SYNONYMS: dict[str, tuple[str, ...]] = {
 # date/amount synonyms in order of preference: "valuta" must not beat "buchungstag"
 _FIELDS = ("date", "amount", "debit", "credit", "counterparty", "text", "currency")
 
-_IBAN = re.compile(r"\b[A-Z]{2}\d{2}(?:\s?[A-Z0-9]{3,4}){3,8}\b", re.I)
+# any grouping, also a short last group (DE89 3704 0044 0532 0130 00) (Codex #121)
+_IBAN = re.compile(
+    r"\b[A-Z]{2}\d{2}(?:[A-Z0-9]{11,30}"
+    r"|\s[A-Z0-9]{4}(?:\s(?=[A-Z0-9]*\d)[A-Z0-9]{1,4}){2,7})\b",
+    re.I,
+)
 _LONG_DIGITS = re.compile(r"\b\d{10,}\b")
 
 
@@ -354,6 +359,7 @@ def validate_rows(
         if amount is None:
             bad("bad_amount")
             continue
+        amount = round(amount, 2)  # zero after rounding is no booking (Codex #121)
         if amount == 0 or abs(amount) >= MAX_AMOUNT:
             bad("amount_out_of_range")
             continue
