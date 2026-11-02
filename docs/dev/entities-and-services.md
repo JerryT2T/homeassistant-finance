@@ -114,7 +114,7 @@ duplicate check, AI prompt/answer parsing), `api/history_import.py` (endpoints),
   `overlap` = inside the bank fetch window (last 90 days, `fetch_window_start`), so the bank's data wins; `new` = older. Only `new` is stored, re-classified against the ledger at commit.
 - `POST /history_import/commit` `{preview_id}` -> `{batch_id, added}`. Rows become ledger entries tagged
   `_source = "import:<batch_id>"`, `_ledger_id = imp:<batch>:<n>`; the ledger meta keeps `import_batches`.
-  Imported rows are never dropped by `ingest` or the raw-archive rebuild (`merge_uncovered`), and do not move
+  Imported rows survive `ingest` and the raw-archive rebuild (`merge_uncovered`) unless the bank wins afterwards: `Ledger.reconcile_imports` drops an imported row that a bank row covers (date +-2 days, equal amount, same normalised counterparty; batch `count` falls, `removed_by_bank` rises). They do not move
   `last_booked_date` / `first_booked_date` (fetch window, backfill, plan wizard). Parsing runs in the executor; the one-time consent is spent before the AI call.
 - `POST /history_import/undo` `{batch_id}` removes the whole batch.
 - Frontend: `fd-history-import.js`, embedded as settings section `history`.

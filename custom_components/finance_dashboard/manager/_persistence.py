@@ -116,6 +116,10 @@ class PersistenceMixin:
         stats["carried"] = merge_uncovered(old_accounts, accounts, coverage)
 
         self._ledger.data["accounts"] = accounts
+        # imported history the rebuilt bank rows now cover: the bank wins (#121)
+        reconcile = getattr(self._ledger, "reconcile_imports", None)
+        if reconcile is not None:
+            stats["imports_covered"] = reconcile()
         meta["processing_version"] = PROCESSING_VERSION
         log = list(meta.get("reprocessed") or [])
         log.append(

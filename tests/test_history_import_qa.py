@@ -149,6 +149,48 @@ def test_commit_reclassifies_against_the_current_ledger():
     assert hi.rows_to_commit(previewed, ledger.transactions("acc"), window_start="2026-08-03") == []
 
 
+def _bank_tx(tid: str, day: str, amount: str, party: str) -> dict:
+    return {
+        "transactionId": tid,
+        "bookingDate": day,
+        "transactionAmount": {"amount": amount, "currency": "EUR"},
+        "creditorName": party,
+        "remittanceInformationUnstructured": "",
+    }
+
+
+def test_later_bank_backfill_wins_over_imported_rows():
+    ledger = Ledger(None)
+    rows = [
+        {"line": n, "date": d, "amount": a, "counterparty": "Autoclub Muster", "text": "", "currency": "EUR"}
+        for n, (d, a) in enumerate([("2025-03-10", -89.0), ("2025-04-10", -89.0), ("2025-05-10", -12.0)], 1)
+    ]
+    ledger.add_import_batch("acc", "bb", hi.to_ledger_transactions(rows, "bb"), hi.batch_summary(rows))
+    # the bank now reaches back: 2 days off (covered), same date but another amount (kept), other payee (kept)
+    bank = [
+        _bank_tx("a", "2025-03-12", "-89.00", "AUTOCLUB  Muster"),
+        _bank_tx("b", "2025-04-10", "-89.50", "Autoclub Muster"),
+        _bank_tx("c", "2025-05-10", "-12.00", "Someone Else"),
+    ]
+    ledger.ingest("acc", bank, [], date_from="2025-01-01", truncated=True)
+    left = [t for t in ledger.transactions("acc") if t.get("_source")]
+    assert [t["bookingDate"] for t in left] == ["2025-05-10", "2025-04-10"]
+    batch = ledger.import_batches()[0]
+    assert batch["count"] == 2 and batch["removed_by_bank"] == 1
+    assert ledger.remove_import_batch("bb") == 2  # undo stays consistent with the rows that remain
+
+
+def test_rebuild_reconciles_imports_with_bank_rows():
+    ledger = Ledger(None)
+    row = {"line": 1, "date": "2025-03-10", "amount": -89.0, "counterparty": "Verein", "text": "", "currency": "EUR"}
+    ledger.add_import_batch("acc", "bc", hi.to_ledger_transactions([row], "bc"), hi.batch_summary([row]))
+    ledger.data["accounts"]["acc"]["transactions"].append(
+        dict(_bank_tx("z", "2025-03-10", "-89.00", "Verein"), _status="booked", _ledger_id="id:z")
+    )
+    assert ledger.reconcile_imports() == 1
+    assert ledger.import_batches()[0]["removed_by_bank"] == 1
+
+
 def test_one_preview_at_a_time():
     from unittest.mock import MagicMock
 
