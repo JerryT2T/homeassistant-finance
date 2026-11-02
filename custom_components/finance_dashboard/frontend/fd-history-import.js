@@ -82,6 +82,11 @@ const FB = {
     "hist.err.no_key": "Kein API-Schlüssel gespeichert.",
     "hist.err.import_unavailable": "Import ist gerade nicht möglich.",
     "hist.err.preview_expired": "Die Vorschau ist abgelaufen. Datei erneut wählen.",
+    "hist.err.unknown_account": "Dieses Konto gibt es nicht mehr.",
+    "hist.err.nothing_to_import": "Es gibt nichts Neues zu importieren.",
+    "hist.err.unknown_batch": "Dieser Import ist nicht mehr vorhanden.",
+    "hist.err.xlsx_unavailable": "XLSX kann auf diesem System nicht gelesen werden. Exportiere als CSV.",
+    "hist.err.too_many_columns": "Die Datei hat zu viele Spalten.",
     "ai.purpose.history_import.title": "Buchungshistorie importieren",
   },
   en: {
@@ -148,6 +153,11 @@ const FB = {
     "hist.err.no_key": "No API key stored.",
     "hist.err.import_unavailable": "Import is not possible right now.",
     "hist.err.preview_expired": "The preview expired. Choose the file again.",
+    "hist.err.unknown_account": "This account no longer exists.",
+    "hist.err.nothing_to_import": "Nothing new to import.",
+    "hist.err.unknown_batch": "This import no longer exists.",
+    "hist.err.xlsx_unavailable": "XLSX cannot be read on this system. Export as CSV.",
+    "hist.err.too_many_columns": "The file has too many columns.",
     "ai.purpose.history_import.title": "Import booking history",
   },
 };
@@ -161,6 +171,7 @@ function tr(key, vars = {}) {
   return s;
 }
 
+const MAX_BYTES = 5 * 1024 * 1024;
 const EUR = new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" });
 
 const CSS = `
@@ -254,6 +265,7 @@ class FdHistoryImport extends HTMLElement {
   // ---- actions -------------------------------------------------------------
   _pickFile(file) {
     if (!file) return;
+    if (file.size > MAX_BYTES) { this._err = tr("hist.err.too_large"); this._render(); return; }
     const reader = new FileReader();
     reader.onload = () => { this._file = String(reader.result || ""); this._runPreview(false); };
     reader.onerror = () => { this._err = tr("hist.err.unreadable"); this._render(); };
@@ -274,9 +286,21 @@ class FdHistoryImport extends HTMLElement {
       } else {
         this._preview = res;
       }
-    } catch (e) { this._err = this._errText(e); }
+    } catch (e) {
+      this._err = this._errText(e);
+      // the file stays; re-ask what the AI would need now (the one-time consent may be spent)
+      if (useAi) await this._refreshNeedsAi();
+    }
     this._busy = false;
     this._render();
+  }
+
+  async _refreshNeedsAi() {
+    try {
+      const res = await this._api("POST", "history_import/preview",
+        { content_base64: this._file, account_key: this._account, use_ai: false });
+      if (res.needs_ai) this._needsAi = res;
+    } catch (e) { /* the error above is the one to show */ }
   }
 
   async _agreeAndRead() {
@@ -315,6 +339,7 @@ class FdHistoryImport extends HTMLElement {
   }
 
   _cancel() {
+    this._undoArm = "";
     this._preview = null; this._needsAi = null; this._file = null; this._err = ""; this._render();
   }
 
@@ -327,8 +352,29 @@ class FdHistoryImport extends HTMLElement {
     if (this._loadFailed) body = `<p class="err" role="alert">${escHtml(tr("hist.load_error"))}</p>`;
     else if (!this._info) body = `<p class="muted" role="status">${escHtml(tr("hist.busy"))}</p>`;
     else body = this._body();
+    const focus = this._focusKey();
+    this._rendering = true;
     sh.innerHTML = `<style>${window._fd.SHARED_CSS}${CSS}</style><div class="root">${body}</div>`;
+    this._restoreFocus(focus);
+    this._rendering = false;
     if (!this._wired) { this._wired = true; this._wire(); }
+  }
+
+  /** Selector of the control that has keyboard focus, so a re-render can give it back. */
+  _focusKey() {
+    const el = this.shadowRoot.activeElement;
+    if (!el) return "";
+    if (el.id) return `#${el.id}`;
+    for (const a of ["data-pick", "data-agree", "data-commit", "data-cancel"]) if (el.hasAttribute && el.hasAttribute(a)) return `[${a}]`;
+    if (el.dataset && el.dataset.undo) return `[data-undo="${el.dataset.undo}"]`;
+    return "";
+  }
+
+  _restoreFocus(key) {
+    if (!key) return;
+    const el = this.shadowRoot.querySelector(key)
+      || this.shadowRoot.querySelector("[data-pick]");  // the control is gone (e.g. after commit): the start of the flow
+    if (el && !el.disabled) el.focus();
   }
 
   _body() {
@@ -405,12 +451,18 @@ class FdHistoryImport extends HTMLElement {
     const sh = this.shadowRoot;
     sh.addEventListener("click", (ev) => {
       const t = ev.target.closest("button");
+      if (this._undoArm && !(t && t.dataset.undo === this._undoArm)) { this._undoArm = ""; this._render(); }
       if (!t || t.disabled) return;
       if (t.hasAttribute("data-pick")) sh.getElementById("hist-file")?.click();
       else if (t.hasAttribute("data-agree")) this._agreeAndRead();
       else if (t.hasAttribute("data-commit")) this._commit();
       else if (t.hasAttribute("data-cancel")) this._cancel();
       else if (t.dataset.undo) this._undo(t.dataset.undo);
+    });
+    sh.addEventListener("focusout", (ev) => {
+      // keyboard leaves the armed undo button: disarm (but not while the render itself moves focus)
+      if (this._undoArm && ev.target.dataset && ev.target.dataset.undo === this._undoArm && !this._rendering
+          && !(ev.relatedTarget && ev.relatedTarget === ev.target)) { this._undoArm = ""; this._render(); }
     });
     sh.addEventListener("change", (ev) => {
       if (ev.target.id === "hist-acc") { this._account = ev.target.value; this._preview = null; this._needsAi = null; }

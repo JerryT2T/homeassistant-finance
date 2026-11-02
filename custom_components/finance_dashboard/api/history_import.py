@@ -16,6 +16,7 @@ stores them as one tagged batch that the undo removes as a whole.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import binascii
 import logging
@@ -86,12 +87,47 @@ async def _refresh_coordinator(hass) -> None:
             _LOGGER.exception("Coordinator refresh after history import failed")
 
 
+def _preview_lock(hass) -> asyncio.Lock:
+    """One preview at a time: two concurrent AI previews must not both spend the one-time consent."""
+    data = hass.data.setdefault(DOMAIN, {})
+    lock = data.get("_history_import_lock")
+    if lock is None:
+        lock = data["_history_import_lock"] = asyncio.Lock()
+    return lock
+
+
 async def _json_body(request: web.Request) -> dict:
     try:
         body = await request.json()
     except ValueError:
         return {}
     return body if isinstance(body, dict) else {}
+
+
+async def _ask_ai(hass, manager, ai: dict, chunks: list[str]):
+    # The one-time consent is spent BEFORE anything is sent; a failed call does not give it back.
+    await ai_consent.async_mark_used(hass, "history_import")
+    answers, error = await ai_provider.async_extract_history(
+        hass,
+        credentials=getattr(manager, "_credential_manager", None),
+        prompts=[hi.build_import_prompt(c) for c in chunks],
+        max_tokens=hi.AI_MAX_TOKENS,
+        today=dt_util.now().date(),
+        usable=ai["usable"],
+    )
+    if error:
+        return [], error
+    rows: list = []
+    for answer in answers or []:
+        parsed = hi.parse_ai_answer(answer)
+        if parsed is None:
+            return [], "unparsable"
+        rows.extend(parsed)
+    # a sequential line number per AI row so the preview can point at it
+    for n, row in enumerate(rows, start=1):
+        if isinstance(row, dict):
+            row["line"] = n
+    return rows, None
 
 
 class FinanceDashboardHistoryImportView(HomeAssistantView):
@@ -139,9 +175,13 @@ class FinanceDashboardHistoryImportPreviewView(HomeAssistantView):
         key = str(body.get("account_key") or "")
         if key not in {a["key"] for a in manager.history_accounts()}:
             return self.json({"error": "unknown_account"}, status_code=400)
+        async with _preview_lock(hass):
+            return await self._preview(hass, manager, body, key)
+
+    async def _preview(self, hass, manager, body: dict, key: str) -> web.Response:
         try:
-            table = hi.read_table(_decode(str(body.get("content_base64") or "")))
-            candidates, mapping = hi.rows_from_table(table)
+            data = _decode(str(body.get("content_base64") or ""))
+            table, candidates, mapping = await hass.async_add_executor_job(hi.parse_upload, data)
             method = "local"
             if mapping is None:
                 chunks = hi.ai_chunks(table)
@@ -153,7 +193,7 @@ class FinanceDashboardHistoryImportPreviewView(HomeAssistantView):
                 blocked = self._blocked(ai, len(chunks))
                 if blocked:
                     return self.json({"error": blocked}, status_code=400)
-                candidates, error = await self._ask_ai(hass, manager, ai, chunks)
+                candidates, error = await _ask_ai(hass, manager, ai, chunks)
                 if error:
                     return self.json({"error": error}, status_code=502)
                 method = "ai"
@@ -161,7 +201,11 @@ class FinanceDashboardHistoryImportPreviewView(HomeAssistantView):
             return self.json({"error": err.code, "detail": str(err)}, status_code=400)
 
         valid, invalid = hi.validate_rows(candidates, today=dt_util.now().date())
-        rows, summary = hi.classify_rows(valid, manager.history_ledger_transactions(key))
+        rows, summary = hi.classify_rows(
+            valid,
+            manager.history_ledger_transactions(key),
+            window_start=hi.fetch_window_start(dt_util.now().date()),
+        )
         store = _previews(hass)
         while len(store) >= MAX_PREVIEWS:
             store.pop(min(store, key=lambda p: store[p]["at"]))
@@ -189,31 +233,6 @@ class FinanceDashboardHistoryImportPreviewView(HomeAssistantView):
             return "budget_exhausted"
         return None
 
-    @staticmethod
-    async def _ask_ai(hass, manager, ai: dict, chunks: list[str]):
-        answers, error = await ai_provider.async_extract_history(
-            hass,
-            credentials=getattr(manager, "_credential_manager", None),
-            prompts=[hi.build_import_prompt(c) for c in chunks],
-            max_tokens=hi.AI_MAX_TOKENS,
-            today=dt_util.now().date(),
-            usable=ai["usable"],
-        )
-        if error:
-            return [], error
-        await ai_consent.async_mark_used(hass, "history_import")  # once: consumed
-        rows: list = []
-        for answer in answers or []:
-            parsed = hi.parse_ai_answer(answer)
-            if parsed is None:
-                return [], "unparsable"
-            rows.extend(parsed)
-        # a sequential line number per AI row so the preview can point at it
-        for n, row in enumerate(rows, start=1):
-            if isinstance(row, dict):
-                row["line"] = n
-        return rows, None
-
 
 class FinanceDashboardHistoryImportCommitView(HomeAssistantView):
     """Store a previewed import as one batch."""
@@ -236,7 +255,14 @@ class FinanceDashboardHistoryImportCommitView(HomeAssistantView):
         preview = _previews(hass).pop(str(body.get("preview_id") or ""), None)
         if preview is None:
             return self.json({"error": "preview_expired"}, status_code=404)
-        rows = [r for r in preview["rows"] if r["status"] == "new"]
+        if preview["key"] not in {a["key"] for a in manager.history_accounts()}:
+            return self.json({"error": "unknown_account"}, status_code=400)
+        # the ledger may have changed since the preview (a fetch ran): classify again
+        rows = hi.rows_to_commit(
+            preview["rows"],
+            manager.history_ledger_transactions(preview["key"]),
+            window_start=hi.fetch_window_start(dt_util.now().date()),
+        )
         if not rows:
             return self.json({"error": "nothing_to_import"}, status_code=400)
         batch_id = secrets.token_hex(6)

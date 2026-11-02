@@ -299,10 +299,11 @@ class Ledger:
         return [dict(p) for p in self.data.get("accounts", {}).get(key, {}).get("balances", [])]
 
     def last_booked_date(self, key: str) -> str | None:
+        """Latest booked date the bank delivered (imported history does not count)."""
         dates = [
             str(t.get("bookingDate") or "")
             for t in self.data.get("accounts", {}).get(key, {}).get("transactions", [])
-            if t.get("_status") == "booked" and t.get("bookingDate")
+            if t.get("_status") == "booked" and t.get("bookingDate") and not t.get("_source")
         ]
         return max(dates) if dates else None
 
@@ -377,6 +378,9 @@ class Ledger:
                 continue  # pending is volatile — replaced below
             if tx["_ledger_id"] in fresh_ids:
                 continue
+            if tx.get("_source"):
+                kept.append(tx)  # imported history is never a reversal candidate (#121)
+                continue
             bdate = str(tx.get("bookingDate") or "")
             if not truncated and authoritative_from and bdate and bdate >= authoritative_from:
                 continue
@@ -431,10 +435,11 @@ class Ledger:
         return removed
 
     def first_booked_date(self, key: str) -> str | None:
+        """Earliest booked date the bank delivered (imported history does not count)."""
         dates = [
             str(t.get("bookingDate") or "")
             for t in self.data.get("accounts", {}).get(key, {}).get("transactions", [])
-            if t.get("_status") == "booked" and t.get("bookingDate")
+            if t.get("_status") == "booked" and t.get("bookingDate") and not t.get("_source")
         ]
         return min(dates) if dates else None
 

@@ -901,5 +901,10 @@
   "ai.purpose.history_import.pro3": "Du siehst alle Zeilen vorab und kannst den Import rückgängig machen.",
   "ai.purpose.history_import.risk1": "Der Dateiinhalt inklusive Beträgen und Daten verlässt dein Home Assistant.",
   "ai.purpose.history_import.risk2": "IBANs werden vorher lokal maskiert, Namen und Verwendungszwecke nicht.",
-  "ai.purpose.history_import.risk3": "Zählt als ein Aufruf je 100 Zeilen gegen dein Monatsbudget."
+  "ai.purpose.history_import.risk3": "Zählt als ein Aufruf je 100 Zeilen gegen dein Monatsbudget.",
+  "hist.err.unknown_account": "Dieses Konto gibt es nicht mehr.",
+  "hist.err.nothing_to_import": "Es gibt nichts Neues zu importieren.",
+  "hist.err.unknown_batch": "Dieser Import ist nicht mehr vorhanden.",
+  "hist.err.xlsx_unavailable": "XLSX kann auf diesem System nicht gelesen werden. Exportiere als CSV.",
+  "hist.err.too_many_columns": "Die Datei hat zu viele Spalten."
 }

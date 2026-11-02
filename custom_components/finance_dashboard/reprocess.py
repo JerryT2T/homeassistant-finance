@@ -142,7 +142,8 @@ def merge_uncovered(
             if tx.get("_status") != "booked" or tx.get("_ledger_id") in ids:
                 continue
             bdate = str(tx.get("bookingDate") or "")
-            if start is None or (bdate and bdate < start):
+            # imported history (#121) is never rebuilt from the archive: always carried
+            if tx.get("_source") or start is None or (bdate and bdate < start):
                 new["transactions"].append(tx)
                 carried += 1
         new["transactions"].sort(key=lambda t: str(t.get("bookingDate") or ""), reverse=True)

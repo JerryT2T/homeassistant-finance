@@ -136,7 +136,7 @@ def test_classification_duplicate_overlap_new():
         {"line": 2, "date": "2026-09-10", "amount": -9.0, "counterparty": "Foo", **base},
         {"line": 3, "date": "2025-01-10", "amount": -9.0, "counterparty": "Foo", **base},
     ]
-    out, summary = hi.classify_rows(rows, ledger.transactions("acc"))
+    out, summary = hi.classify_rows(rows, ledger.transactions("acc"), window_start="2026-08-03")
     assert [r["status"] for r in out] == ["duplicate", "overlap", "new"]
     assert summary["new"] == summary["duplicate"] == summary["overlap"] == 1
 
@@ -150,7 +150,7 @@ def test_batch_commit_reimport_and_undo():
     assert len(ledger.transactions("acc")) == 3
     assert ledger.import_batches()[0]["count"] == 2
     # the same file again is all duplicates
-    again, _ = hi.classify_rows(rows, ledger.transactions("acc"))
+    again, _ = hi.classify_rows(rows, ledger.transactions("acc"), window_start="2026-08-03")
     assert {r["status"] for r in again} == {"duplicate"}
     # a later bank fetch keeps history older than its window
     ledger.ingest("acc", [], [], date_from="2026-08-01", truncated=False)
@@ -168,7 +168,7 @@ def test_yearly_contracts_detected_after_import():
     assert not invalid and len(valid) == len(fixture_txns)
 
     ledger = Ledger(None)
-    rows, summary = hi.classify_rows(valid, [])
+    rows, summary = hi.classify_rows(valid, [], window_start=None)
     assert summary["new"] == len(valid)
     ledger.add_import_batch(GIRO["id"], "t1", hi.to_ledger_transactions(rows, "t1"), hi.batch_summary(rows))
 

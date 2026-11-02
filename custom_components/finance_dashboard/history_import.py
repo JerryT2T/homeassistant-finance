@@ -30,12 +30,16 @@ import json
 import math
 import re
 import zipfile
+from decimal import ROUND_HALF_UP, Decimal
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any
+
+from .const import DEFAULT_FETCH_DAYS
 
 MAX_FILE_BYTES = 5 * 1024 * 1024
 MAX_ROWS = 20000
+MAX_COLUMNS = 200
 MAX_PREAMBLE = 40  # header row must appear within the first lines
 MAX_COUNTERPARTY = 120
 MAX_TEXT = 300
@@ -76,7 +80,7 @@ _FIELDS = ("date", "amount", "debit", "credit", "counterparty", "text", "currenc
 # any grouping, also a short last group (DE89 3704 0044 0532 0130 00) (Codex #121)
 _IBAN = re.compile(
     r"\b[A-Z]{2}\d{2}(?:[A-Z0-9]{11,30}"
-    r"|\s[A-Z0-9]{4}(?:\s(?=[A-Z0-9]*\d)[A-Z0-9]{1,4}){2,7})\b",
+    r"|[\s-][A-Z0-9]{4}(?:[\s-](?=[A-Z0-9]*\d)[A-Z0-9]{1,4}){2,7})\b",
     re.I,
 )
 _LONG_DIGITS = re.compile(r"\b\d{10,}\b")
@@ -94,7 +98,7 @@ class ImportFileError(ValueError):
 class Table:
     """The file as text cells, header row not yet located."""
 
-    rows: list[list[str]]
+    rows: list[list[Any]]
     kind: str  # "csv" | "xlsx" | "text"
     lines: list[str] = field(default_factory=list)  # raw text lines (AI path)
 
@@ -113,19 +117,19 @@ def _decode(data: bytes) -> str:
     return data.decode("latin-1")
 
 
-def _cell(value: Any) -> str:
+def _cell(value: Any) -> Any:
     if value is None:
         return ""
     if isinstance(value, datetime):
         return value.date().isoformat()
     if isinstance(value, date):
         return value.isoformat()
-    if isinstance(value, float):
-        return repr(value)
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return value  # numbers stay numbers: no text round trip (1e-05, 19.990000000000002)
     return str(value).strip()
 
 
-def _read_xlsx(data: bytes) -> list[list[str]]:
+def _read_xlsx(data: bytes) -> list[list[Any]]:
     try:
         import openpyxl
     except ImportError as err:  # declared in manifest requirements
@@ -136,7 +140,7 @@ def _read_xlsx(data: bytes) -> list[list[str]]:
         raise ImportFileError("unreadable", "The workbook could not be read") from err
     try:
         sheet = wb.worksheets[0]
-        rows: list[list[str]] = []
+        rows: list[list[Any]] = []
         for raw in sheet.iter_rows(values_only=True):
             row = [_cell(c) for c in raw]
             if any(row):
@@ -153,20 +157,47 @@ def _read_csv(text: str) -> list[list[str]]:
     try:
         dialect = csv.Sniffer().sniff(sample, delimiters=";,\t|")
     except csv.Error:
-        dialect = csv.excel
-        dialect.delimiter = ";" if sample.count(";") >= sample.count(",") else ","
+        # a copy: assigning to csv.excel itself would change the delimiter for the whole process
+        dialect = type("_Guessed", (csv.excel,), {"delimiter": ";" if sample.count(";") >= sample.count(",") else ","})
     rows = []
-    for raw in csv.reader(io.StringIO(text), dialect):
-        row = [c.strip() for c in raw]
-        if any(row):
-            rows.append(row)
-        if len(rows) > MAX_ROWS:
-            raise ImportFileError("too_many_rows", f"More than {MAX_ROWS} rows")
+    try:
+        for raw in csv.reader(io.StringIO(text), dialect):
+            row = [c.strip() for c in raw]
+            if len(row) > MAX_COLUMNS:
+                raise ImportFileError("too_many_columns", f"More than {MAX_COLUMNS} columns")
+            if any(row):
+                rows.append(row)
+            if len(rows) > MAX_ROWS:
+                raise ImportFileError("too_many_rows", f"More than {MAX_ROWS} rows")
+    except csv.Error as err:  # field larger than the limit, stray quote, ...
+        raise ImportFileError("unreadable", "The CSV could not be read") from err
     return rows
 
 
 def read_table(data: bytes) -> Table:
-    """Parse an uploaded CSV / XLSX / text file into cells.  Nothing leaves the host."""
+    """Parse an uploaded CSV / XLSX / text file into cells.  Nothing leaves the host.
+
+    Only :class:`ImportFileError` escapes: any other failure is a bad file, not a server error.
+    """
+    try:
+        return _read_table(data)
+    except ImportFileError:
+        raise
+    except Exception as err:  # noqa: BLE001 - parser internals of csv / openpyxl / zip
+        raise ImportFileError("unreadable", "The file could not be read") from err
+
+
+def parse_upload(data: bytes) -> tuple[Table, list[dict[str, Any]], dict[str, int] | None]:
+    """Everything CPU-bound about an upload (runs in the executor)."""
+    table = read_table(data)
+    try:
+        candidates, mapping = rows_from_table(table)
+    except Exception as err:  # noqa: BLE001
+        raise ImportFileError("unreadable", "The file could not be read") from err
+    return table, candidates, mapping
+
+
+def _read_table(data: bytes) -> Table:
     if not data:
         raise ImportFileError("empty", "The file is empty")
     if len(data) > MAX_FILE_BYTES:
@@ -180,7 +211,7 @@ def read_table(data: bytes) -> Table:
         if not zipfile.is_zipfile(io.BytesIO(data)):
             raise ImportFileError("unreadable", "The file could not be read")
         rows = _read_xlsx(data)
-        return Table(rows=rows, kind="xlsx", lines=["\t".join(r) for r in rows])
+        return Table(rows=rows, kind="xlsx", lines=["\t".join(str(c) for c in r) for r in rows])
     if b"\x00" in data[:2048]:
         raise ImportFileError("unreadable", "The file is not a text, CSV or XLSX file")
     text = _decode(data)
@@ -192,8 +223,13 @@ def read_table(data: bytes) -> Table:
 # ---------------------------------------------------------------------------
 
 
-def _norm_header(value: str) -> str:
-    return " ".join(value.lower().replace("_", " ").split())
+def _norm_header(value: Any) -> str:
+    """Header label without units, brackets and gender suffixes ("Betrag (€)" -> "betrag")."""
+    text = str(value or "").lower().replace("_", " ")
+    text = re.sub(r"\([^)]*\)|\[[^\]]*\]", " ", text)
+    text = re.sub(r"[*:]in\b|[€*]", " ", text)
+    text = re.sub(r"\b(?:in\s+)?(?:eur|euro)\b", " ", text)
+    return " ".join(text.split())
 
 
 def guess_mapping(header: list[str]) -> dict[str, int]:
@@ -248,6 +284,11 @@ def parse_date(value: Any) -> date | None:
     return None
 
 
+def _cents(amount: float) -> float:
+    """Round to cents, half away from zero, from the shortest decimal form (-12.345 -> -12.35)."""
+    return float(Decimal(repr(amount)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+
+
 def parse_amount(value: Any) -> float | None:
     """Signed amount from "1.234,56", "-89,00", "89,00-", "1,234.56", "+12.5 EUR"."""
     if isinstance(value, (int, float)):
@@ -256,7 +297,7 @@ def parse_amount(value: Any) -> float | None:
     if not text:
         return None
     negative = bool(
-        re.search(r"(^|[^\d])-\s*\d|\d\s*-$|\d\s+S$|\(", text.strip())
+        re.search(r"(^|[^\d])-\s*\d|\d\s*-$|\d\s*S$|\(", text.strip())
     )
     text = re.sub(r"[^\d.,]", "", text)
     if not text or not re.search(r"\d", text):
@@ -359,7 +400,7 @@ def validate_rows(
         if amount is None:
             bad("bad_amount")
             continue
-        amount = round(amount, 2)  # zero after rounding is no booking (Codex #121)
+        amount = _cents(amount)  # zero after rounding is no booking (Codex #121)
         if amount == 0 or abs(amount) >= MAX_AMOUNT:
             bad("amount_out_of_range")
             continue
@@ -412,27 +453,35 @@ def _ledger_view(tx: dict[str, Any]) -> tuple[str, float, str] | None:
     return day, round(value, 2), party
 
 
+def rows_to_commit(
+    preview_rows: list[dict[str, Any]], ledger_txs: list[dict[str, Any]], *, window_start: str | None
+) -> list[dict[str, Any]]:
+    """The previewed rows that are still ``new`` against the ledger as it is now."""
+    bare = [{k: v for k, v in r.items() if k != "status"} for r in preview_rows]
+    rows, _ = classify_rows(bare, ledger_txs, window_start=window_start)
+    return [r for r in rows if r["status"] == "new"]
+
+
+def fetch_window_start(today: date) -> str:
+    """Start of the incremental bank fetch window (what the bank re-delivers)."""
+    return (today - timedelta(days=DEFAULT_FETCH_DAYS)).isoformat()
+
+
 def classify_rows(
-    rows: list[dict[str, Any]], ledger_txs: list[dict[str, Any]]
+    rows: list[dict[str, Any]], ledger_txs: list[dict[str, Any]], *, window_start: str | None
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """Tag each valid row ``new`` | ``duplicate`` | ``overlap`` against the account.
 
     * ``duplicate``: the ledger already holds a booking with the same date,
       amount and counterparty.  Matching is one-to-one, so two genuine
       identical payments are not both swallowed by one ledger row.
-    * ``overlap``: no match, but the row lies inside the span the bank itself
-      covers.  The bank's rows are authoritative there, so the row is not
-      imported (``ingest`` would drop it at the next fetch anyway).
-    * ``new``: older than the bank's span (or the account has none).
+    * ``overlap``: no match, but the row lies inside the bank's fetch window
+      (``window_start``, see :func:`fetch_window_start`).  The bank delivers
+      that span itself and its rows are authoritative there, so the row is
+      not imported.
+    * ``new``: older than the fetch window.
     """
-    bank_days = [
-        v[0]
-        for t in ledger_txs
-        if t.get("_status", "booked") == "booked" and not t.get("_source")
-        for v in [_ledger_view(t)]
-        if v
-    ]
-    bank_start = min(bank_days) if bank_days else None
+    bank_start = window_start
     pool: dict[tuple[str, float], list[str]] = {}
     for t in ledger_txs:
         if t.get("_status", "booked") != "booked":
@@ -453,7 +502,7 @@ def classify_rows(
             status = "overlap"
         out.append({**row, "status": status})
     counts = {s: sum(1 for r in out if r["status"] == s) for s in ("new", "duplicate", "overlap")}
-    return out, {**counts, "bank_start": bank_start}
+    return out, {**counts, "window_start": bank_start}
 
 
 # ---------------------------------------------------------------------------

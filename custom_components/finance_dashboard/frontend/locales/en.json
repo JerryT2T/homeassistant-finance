@@ -901,5 +901,10 @@
   "ai.purpose.history_import.pro3": "You see every row first and can undo the import.",
   "ai.purpose.history_import.risk1": "The file content including amounts and dates leaves your Home Assistant.",
   "ai.purpose.history_import.risk2": "IBANs are masked locally first; names and purposes are not.",
-  "ai.purpose.history_import.risk3": "Counts as one call per 100 rows against your monthly budget."
+  "ai.purpose.history_import.risk3": "Counts as one call per 100 rows against your monthly budget.",
+  "hist.err.unknown_account": "This account no longer exists.",
+  "hist.err.nothing_to_import": "Nothing new to import.",
+  "hist.err.unknown_batch": "This import no longer exists.",
+  "hist.err.xlsx_unavailable": "XLSX cannot be read on this system. Export as CSV.",
+  "hist.err.too_many_columns": "The file has too many columns."
 }

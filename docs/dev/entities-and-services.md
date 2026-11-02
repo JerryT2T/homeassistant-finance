@@ -106,16 +106,16 @@ duplicate check, AI prompt/answer parsing), `api/history_import.py` (endpoints),
   array of `{date, amount (expense negative), counterparty, text, currency}`; local and AI rows pass the
   same `validate_rows`. Invalid rows are listed with line + reason, never dropped silently.
 - `GET /history_import` -> `{allowed, accounts[{key,name,iban_masked}], batches[{id,at,method,count,first,last,account_key}], ai{usable,consented,remaining}}`.
-- `POST /history_import/preview` `{content_base64, account_key, use_ai?}` -> `{preview_id, method, summary{new,duplicate,overlap,invalid,total,bank_start}, rows[{line,date,amount,counterparty,text,currency,status}], invalid[{line,reason,raw}]}`;
+- `POST /history_import/preview` `{content_base64, account_key, use_ai?}` -> `{preview_id, method, summary{new,duplicate,overlap,invalid,total,window_start}, rows[{line,date,amount,counterparty,text,currency,status}], invalid[{line,reason,raw}]}`;
   or `{needs_ai: true, calls, ai}` when the layout is unreadable and `use_ai` is not set. Rows wait in memory
   (30 min, max 3 previews), nothing is stored. Errors: `pdf_unsupported`, `too_large`, `unreadable`,
   `consent_required`, `no_provider`, `budget_exhausted`, `unparsable`, `unknown_account`, `import_unavailable` (demo).
 - Row status: `duplicate` = same date + amount + counterparty already in the ledger (one-to-one);
-  `overlap` = inside the span the bank itself covers, so the bank's data wins; `new` = older. Only `new` is stored.
+  `overlap` = inside the bank fetch window (last 90 days, `fetch_window_start`), so the bank's data wins; `new` = older. Only `new` is stored, re-classified against the ledger at commit.
 - `POST /history_import/commit` `{preview_id}` -> `{batch_id, added}`. Rows become ledger entries tagged
   `_source = "import:<batch_id>"`, `_ledger_id = imp:<batch>:<n>`; the ledger meta keeps `import_batches`.
-  A later bank fetch supersedes them by the normal `ingest` rules (only rows older than its window stay);
-  a raw-archive rebuild carries them over (`merge_uncovered`).
+  Imported rows are never dropped by `ingest` or the raw-archive rebuild (`merge_uncovered`), and do not move
+  `last_booked_date` / `first_booked_date` (fetch window, backfill, plan wizard). Parsing runs in the executor; the one-time consent is spent before the AI call.
 - `POST /history_import/undo` `{batch_id}` removes the whole batch.
 - Frontend: `fd-history-import.js`, embedded as settings section `history`.
 
