@@ -983,5 +983,16 @@
   "tx.ct.assign": "Übernehmen",
   "tx.ct.done": "Dem Vertrag zugeordnet",
   "tx.ct.removed": "Zuordnung entfernt",
-  "tx.ct.detected": "Die Erkennung ordnet diese Buchung dem Vertrag zu. Wähle einen anderen Vertrag oder teile die Zahlungsreihe im Vertrag."
+  "tx.ct.detected": "Die Erkennung ordnet diese Buchung dem Vertrag zu. Wähle einen anderen Vertrag oder teile die Zahlungsreihe im Vertrag.",
+  "ct.next_open": "nächste Fälligkeit offen",
+  "ct.add.start_hint": "Bestimmt die Fälligkeiten. Ohne Datum bleibt die nächste Fälligkeit offen.",
+  "ct.add.err.manual_duplicate": "Einen Vertrag mit diesem Namen gibt es schon.",
+  "ct.add.err.invalid_start": "Das Datum muss zwischen 2000 und einem Jahr ab heute liegen.",
+  "ct.add.err.invalid_owner": "Diese Person ist unbekannt.",
+  "ct.st.merge_none": "Keine andere Zahlungsreihe mit dem Rhythmus „$interval“ zum Zusammenführen.",
+  "ct.st.err.merge_interval_mismatch": "Nur Zahlungsreihen mit gleichem Rhythmus lassen sich zusammenführen.",
+  "ct.st.err.merge_sign_mismatch": "Ausgaben und Einnahmen lassen sich nicht zusammenführen.",
+  "ct.st.err.invalid_merge": "Diese Zahlungsreihe steckt schon in der anderen.",
+  "questions.c_irregular": "Unregelmäßige Ausgabe",
+  "tx.ct.ended": "beendet"
 }

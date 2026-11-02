@@ -27,6 +27,7 @@ const DESKTOP = "(min-width: 1024px)";
 /*FB-START*/
 const FB = {
   de: {
+    "tx.ct.ended": "beendet",
     "tx.ct.title": "Vertrag zuordnen",
     "tx.ct.none": "Kein Vertrag",
     "tx.ct.assign": "Übernehmen",
@@ -50,6 +51,7 @@ const FB = {
     "tx.desktop_only": "Die Transaktionsliste gibt es nur am Desktop.",
   },
   en: {
+    "tx.ct.ended": "ended",
     "tx.ct.title": "Assign to contract",
     "tx.ct.none": "No contract",
     "tx.ct.assign": "Apply",
@@ -473,7 +475,7 @@ class FdTransactions extends HTMLElement {
     const list = this._contracts;
     if (!list) return "";
     const cur = d.x.contract_id || "";
-    const opts = list.map((c) => `<option value="${e(c.id)}"${c.id === (d.ct ?? cur) ? " selected" : ""}>${e(c.display_name || c.creditor)}</option>`).join("");
+    const opts = list.map((c) => `<option value="${e(c.id)}"${c.id === (d.ct ?? cur) ? " selected" : ""}>${e(c.display_name || c.creditor)}${c.status === "ended" ? ` · ${e(tr("tx.ct.ended"))}` : ""}</option>`).join("");
     return `<div class="sec"><label for="ctsel">${e(tr("tx.ct.title"))}</label></div>
   <div class="newrow"><select id="ctsel"><option value=""${(d.ct ?? cur) ? "" : " selected"}>${e(tr("tx.ct.none"))}</option>${opts}</select>
     <button type="button" class="btn ghost" data-act="ct-assign" ${d.ctBusy ? "disabled" : ""}>${e(tr("tx.ct.assign"))}</button></div>
@@ -484,7 +486,8 @@ class FdTransactions extends HTMLElement {
     if (this._contracts || !this._isAdmin) return;
     try {
       const r = await this._hass.callApi("GET", `${DOMAIN}/contracts`);
-      this._contracts = ((r && r.contracts) || []).filter((c) => !c.candidate && c.status !== "ended");
+      // ended contracts stay assignable: an old booking may belong to one
+      this._contracts = ((r && r.contracts) || []).filter((c) => !c.candidate);
     } catch (_) {
       this._contracts = null;
     }
@@ -502,7 +505,7 @@ class FdTransactions extends HTMLElement {
       const body = want ? { action: "assign", booking: d.x.ledger_id, series_id: want } : { action: "unassign", booking: d.x.ledger_id };
       const r = await this._hass.callApi("POST", `${DOMAIN}/contract_overrides`, body);
       const all = (r && r.contracts) || [];
-      this._contracts = all.filter((c) => !c.candidate && c.status !== "ended");
+      this._contracts = all.filter((c) => !c.candidate);
       const hit = all.find((c) => (c.ledger_ids || []).includes(d.x.ledger_id));
       d.x.contract_id = hit ? hit.id : null;
       d.x.contract_name = hit ? hit.display_name || hit.creditor : null;

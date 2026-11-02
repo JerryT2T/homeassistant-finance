@@ -38,6 +38,7 @@ const PERSON_COLORS = ["var(--fd-person-a)", "var(--fd-person-b)", "#ef6c00", "#
 
 const FB = {
   de: {
+    "questions.c_irregular": "Unregelmäßige Ausgabe",
     "questions.c_kind": "Wiederkehrende Zahlung",
     "questions.c_prompt": "Vertrag, Abo, regelmäßige Ausgabe oder Zufall?",
     "questions.c_payments": "$n Zahlungen",
@@ -119,6 +120,7 @@ const FB = {
     "questions.rf_back": "Zurück",
   },
   en: {
+    "questions.c_irregular": "Irregular spending",
     "questions.c_kind": "Recurring payment",
     "questions.c_prompt": "Contract, subscription, regular spending or coincidence?",
     "questions.c_payments": "$n payments",
@@ -477,7 +479,8 @@ class FdQuestions extends HTMLElement {
   _contractOptions(c) {
     if (c.type === "price") return [["new_price", "questions.price_new", "↗"], ["one_off", "questions.price_once", "①"]];
     return [["contract", "questions.c_contract", "📄"], ["subscription", "questions.c_subscription", "🔁"],
-      ["regular", "questions.c_regular", "🛒"], ["coincidence", "questions.c_coincidence", "🎲"]];
+      ["regular", "questions.c_regular", "🛒"], ["irregular", "questions.c_irregular", "〰"],
+      ["coincidence", "questions.c_coincidence", "🎲"]];
   }
 
   _contractCardHtml(c) {

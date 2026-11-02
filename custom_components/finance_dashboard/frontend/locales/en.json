@@ -983,5 +983,16 @@
   "tx.ct.assign": "Apply",
   "tx.ct.done": "Assigned to the contract",
   "tx.ct.removed": "Assignment removed",
-  "tx.ct.detected": "Detection links this booking to the contract. Pick another contract or split the series in the contract."
+  "tx.ct.detected": "Detection links this booking to the contract. Pick another contract or split the series in the contract.",
+  "ct.next_open": "next due date open",
+  "ct.add.start_hint": "Sets the due dates. Without a date the next due date stays open.",
+  "ct.add.err.manual_duplicate": "A contract with this name already exists.",
+  "ct.add.err.invalid_start": "The date must lie between 2000 and one year from today.",
+  "ct.add.err.invalid_owner": "This person is unknown.",
+  "ct.st.merge_none": "No other payment series with the rhythm “$interval” to merge with.",
+  "ct.st.err.merge_interval_mismatch": "Only payment series with the same rhythm can be merged.",
+  "ct.st.err.merge_sign_mismatch": "Expenses and income cannot be merged.",
+  "ct.st.err.invalid_merge": "This payment series is already part of the other one.",
+  "questions.c_irregular": "Irregular spending",
+  "tx.ct.ended": "ended"
 }

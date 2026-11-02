@@ -26,6 +26,15 @@ const DOMAIN = "finance_dashboard";
 // Fallback texts: used until locales/*.json carry the ct.* / rs.* keys.
 const FB = {
   "de": {
+    "ct.next_open": "nächste Fälligkeit offen",
+    "ct.add.start_hint": "Bestimmt die Fälligkeiten. Ohne Datum bleibt die nächste Fälligkeit offen.",
+    "ct.add.err.manual_duplicate": "Einen Vertrag mit diesem Namen gibt es schon.",
+    "ct.add.err.invalid_start": "Das Datum muss zwischen 2000 und einem Jahr ab heute liegen.",
+    "ct.add.err.invalid_owner": "Diese Person ist unbekannt.",
+    "ct.st.merge_none": "Keine andere Zahlungsreihe mit dem Rhythmus „$interval“ zum Zusammenführen.",
+    "ct.st.err.merge_interval_mismatch": "Nur Zahlungsreihen mit gleichem Rhythmus lassen sich zusammenführen.",
+    "ct.st.err.merge_sign_mismatch": "Ausgaben und Einnahmen lassen sich nicht zusammenführen.",
+    "ct.st.err.invalid_merge": "Diese Zahlungsreihe steckt schon in der anderen.",
     "ct.st.title": "Zusammenführen, teilen, Buchungen",
     "ct.st.say": "Wirkt sofort und lässt sich jederzeit rückgängig machen.",
     "ct.st.merged": "zusammengeführt",
@@ -171,6 +180,15 @@ const FB = {
     "rs.savings_failed": "Konnte nicht gespeichert werden"
   },
   "en": {
+    "ct.next_open": "next due date open",
+    "ct.add.start_hint": "Sets the due dates. Without a date the next due date stays open.",
+    "ct.add.err.manual_duplicate": "A contract with this name already exists.",
+    "ct.add.err.invalid_start": "The date must lie between 2000 and one year from today.",
+    "ct.add.err.invalid_owner": "This person is unknown.",
+    "ct.st.merge_none": "No other payment series with the rhythm “$interval” to merge with.",
+    "ct.st.err.merge_interval_mismatch": "Only payment series with the same rhythm can be merged.",
+    "ct.st.err.merge_sign_mismatch": "Expenses and income cannot be merged.",
+    "ct.st.err.invalid_merge": "This payment series is already part of the other one.",
     "ct.st.title": "Merge, split, bookings",
     "ct.st.say": "Takes effect right away and can be undone at any time.",
     "ct.st.merged": "merged",
@@ -333,7 +351,8 @@ const PER_YEAR = { weekly: 52, monthly: 12, quarterly: 4, half_yearly: 2, yearly
 // Mirrors recurring.plan_amount (#114) for the live preview in the sheet.
 function planAmount(amounts, mode, fixed) {
   const m = (amounts || []).map((a) => Math.abs(a));
-  if (!m.length) return 0;
+  // No payments (a contract added by hand): the fixed amount is the plan.
+  if (!m.length) return fixed != null && fixed !== "" ? Math.round(Math.abs(Number(fixed)) * 100) / 100 : 0;
   const r2 = (v) => Math.round(v * 100) / 100;
   const median = (xs) => { const s = [...xs].sort((a, b) => a - b); const h = s.length >> 1; return s.length % 2 ? s[h] : (s[h - 1] + s[h]) / 2; };
   if (mode === "fixed" && fixed != null && fixed !== "") return r2(Math.abs(Number(fixed)));
@@ -440,6 +459,7 @@ button.ct { min-height: var(--fd-touch); }
 .btn.ghost { background: transparent; color: var(--fd-a700); border-color: var(--fd-a100); }
 .btn:disabled { opacity: .5; cursor: default; }
 .scrim { position: fixed; inset: 0; z-index: 50; display: flex; align-items: flex-end; justify-content: center; background: rgba(0,0,0,.4); }
+.sheet:focus { outline: none; }
 .sheet { width: min(480px, 100%); max-height: 90dvh; overflow: auto; padding: 16px; border-radius: 18px 18px 0 0; background: var(--fd-card); box-shadow: var(--fd-sh2); }
 .sheet label, .sheet .lbl { display: block; margin: 12px 0 4px; font-size: 12px; color: var(--fd-t2); }
 .sheet input[type=number], .sheet input[type=date], .sheet input[type=text], .sheet input[type=search], .sheet select { box-sizing: border-box; width: 100%; min-height: var(--fd-touch); padding: 0 12px; border: 1px solid var(--fd-line); border-radius: 10px; background: var(--fd-page); color: var(--fd-t1); font: inherit; }
@@ -555,9 +575,28 @@ class FdContracts extends HTMLElement {
     else if (!this._items) body = `<div class="msg">${e(tr("ct.loading"))}</div>`;
     else body = this._main();
     const head = this.hasAttribute("embedded") ? "" : `<fd-subpage-header title="${e(tr("ct.title"))}"></fd-subpage-header>`;
+    // A re-render (e.g. reserves arriving late) must not drop the keyboard focus (QA #117).
+    const keep = this._focusAfter || this._focusSel();
+    this._focusAfter = null;
+    const top = sh.querySelector(".sheet")?.scrollTop || 0;
     sh.innerHTML = `<style>${window._fd.SHARED_CSS}${CSS}</style><div class="root">${head}<div class="cols">${body}</div><div id="sheet"></div></div>`;
     if (this._sheet || this._add) this._paintSheet();
+    const sc = sh.querySelector(".sheet");
+    if (sc) sc.scrollTop = top;
+    if (keep) sh.querySelector(keep)?.focus();
+    this._keepFocusInSheet();
     if (!this._wired) { this._wired = true; this._wire(); }
+  }
+
+  /** Selector of the focused control (its id or its data-* attributes), to find it again after a repaint. */
+  _focusSel() {
+    const a = this.shadowRoot.activeElement;
+    if (!a) return null;
+    if (a.id) return `#${CSS.escape(a.id)}`;
+    const ds = Object.entries(a.dataset || {});
+    if (!ds.length) return null;
+    const attr = (k) => k.replace(/[A-Z]/g, (m) => `-${m.toLowerCase()}`);
+    return a.tagName.toLowerCase() + ds.map(([k, v]) => `[data-${attr(k)}="${CSS.escape(v)}"]`).join("");
   }
 
   _kindOf(c) { return c.kind || "contract"; }
@@ -690,7 +729,8 @@ class FdContracts extends HTMLElement {
     const own = (c.labels || []).map((id) => window._fd.labelChip(id, this._labels, "own"));
     if (own.length) badges.push(...own);
     const interval = tr(`ct.interval.${c.interval}`);
-    const sub = [interval, ended ? "" : tr("ct.next", { date: this._date(c.next_expected) }), this._ownerLabel(c.owner)].filter(Boolean).join(" · ");
+    const next = c.next_expected ? tr("ct.next", { date: this._date(c.next_expected) }) : tr("ct.next_open");
+    const sub = [interval, ended ? "" : next, this._ownerLabel(c.owner)].filter(Boolean).join(" · ");
     const inner = `<div class="l1"><span class="nm"><i aria-hidden="true">${this._catIcon(c.category)}</i><span>${e(c.display_name || c.creditor)}</span></span>
   <span class="amt"><b>${e(tr("ct.per_year", { amount: this._m(c.annual_cost) }))}</b><span class="muted">${e(tr("ct.per_month", { amount: this._m(c.monthly_equivalent, 2) }))}</span></span></div>
 <div class="l2">${badges.join("")}</div>
@@ -709,7 +749,7 @@ class FdContracts extends HTMLElement {
     let h = `<section class="card"><h3>${e(tr("rs.title"))}</h3><p class="muted" style="margin:0 0 6px">${e(tr("rs.intro"))}</p>`;
     if (!items.length) h += `<p class="muted">${e(tr("rs.empty"))}</p>`;
     else {
-      h += items.map((i) => `<div class="rw"><span><b>${e(i.display_name || i.creditor)}</b><span class="muted">${e(i.type === "settlement" ? tr("rs.settlement") : tr(`ct.interval.${i.interval}`))} · ${e(tr("rs.due", { date: this._date(i.next_due) }))}</span></span>
+      h += items.map((i) => `<div class="rw"><span><b>${e(i.display_name || i.creditor)}</b><span class="muted">${e(i.type === "settlement" ? tr("rs.settlement") : tr(`ct.interval.${i.interval}`))} · ${e(i.next_due ? tr("rs.due", { date: this._date(i.next_due) }) : tr("ct.next_open"))}</span></span>
         <b>${e(tr("rs.month", { amount: this._m(i.monthly_reserve, 2) }))}</b></div>`).join("");
       h += `<div class="rw"><span><b>${e(tr("rs.total", { amount: this._m(r.total_monthly, 2) }))}</b>${owners.length > 1
         ? `<span class="muted">${owners.map(([o, v]) => e(tr("rs.owner_total", { owner: this._ownerLabel(o), amount: this._m(v, 2) }))).join(" · ")}</span>` : ""}</span></div>`;
@@ -813,10 +853,9 @@ class FdContracts extends HTMLElement {
 
   _pickTemplate(i) {
     const t = CHECKLIST[i];
-    const today = new Date().toISOString().slice(0, 10);
     this._add.d = t
-      ? { name: tr(`ct.add.t.${t.id}`), amount: "", interval: t.interval, kind: t.kind, category: t.category, start: today, owner: "shared" }
-      : { name: "", amount: "", interval: "yearly", kind: "contract", category: "other", start: today, owner: "shared" };
+      ? { name: tr(`ct.add.t.${t.id}`), amount: "", interval: t.interval, kind: t.kind, category: t.category, start: "", owner: "shared" }
+      : { name: "", amount: "", interval: "yearly", kind: "contract", category: "other", start: "", owner: "shared" };
     this._add.step = "form";
     this._paintSheet();
     this.shadowRoot.querySelector("#sheet input")?.focus();
@@ -851,7 +890,8 @@ class FdContracts extends HTMLElement {
   <div class="lbl" id="a-kh">${e(tr("ct.f.kind"))}</div>
   <div class="opts" role="radiogroup" aria-labelledby="a-kh">${KINDS.map((k) => opt("kind", k, tr(`ct.kind.${k}`))).join("")}</div>
   <label for="a-cat">${e(tr("ct.f.category"))}</label><select id="a-cat" data-af="category">${this._categoryOptions(d.category).map((k) => `<option value="${e(k)}"${k === d.category ? " selected" : ""}>${e(this._catLabel(k))}</option>`).join("")}</select>
-  <label for="a-start">${e(tr("ct.f.start"))}</label><input id="a-start" type="date" data-af="start" value="${e(d.start)}">
+  <label for="a-start">${e(tr("ct.f.start"))}</label><input id="a-start" type="date" data-af="start" min="2000-01-01" value="${e(d.start)}" aria-describedby="a-start-h">
+  <div class="muted" id="a-start-h" style="margin-top:4px">${e(tr("ct.add.start_hint"))}</div>
   <div class="lbl" id="a-oh">${e(tr("ct.f.owner"))}</div>
   <div class="opts" role="radiogroup" aria-labelledby="a-oh">${this._owners({ d }).map((o) => opt("owner", o, this._ownerLabel(o))).join("")}</div>
   <div class="hint">${e(tr("ct.add.private"))}</div>
@@ -859,7 +899,7 @@ class FdContracts extends HTMLElement {
   <div class="acts"><button type="button" class="btn ghost" data-act="add-back">${e(tr("ct.add.back"))}</button>
     <button type="button" class="btn" data-act="add-save" ${a.saving ? "disabled" : ""}>${e(tr(a.saving ? "ct.saving" : "ct.add.save"))}</button></div>`;
     }
-    el.innerHTML = `<div class="scrim" data-act="scrim"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="addh">${inner}</div></div>`;
+    el.innerHTML = `<div class="scrim" data-act="scrim"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="addh" tabindex="-1">${inner}</div></div>`;
   }
 
   async _saveAdd() {
@@ -867,8 +907,10 @@ class FdContracts extends HTMLElement {
     if (!a || a.saving || !a.d) return;
     const d = a.d;
     const amount = Number(d.amount);
-    if (!String(d.name).trim()) { a.error = tr("ct.add.need_name"); return this._paintSheet(); }
-    if (!(amount > 0)) { a.error = tr("ct.add.need_amount"); return this._paintSheet(); }
+    // a validation error puts the focus on the field to fix
+    const invalid = (key, sel) => { a.error = tr(key); this._paintSheet(); this.shadowRoot.querySelector(sel)?.focus(); };
+    if (!String(d.name).trim()) return invalid("ct.add.need_name", "#a-name");
+    if (!(amount > 0)) return invalid("ct.add.need_amount", "#a-amt");
     a.saving = true;
     a.error = "";
     this._paintSheet();
@@ -878,14 +920,19 @@ class FdContracts extends HTMLElement {
       const item = await this._hass.callApi("POST", `${DOMAIN}/contracts`, body);
       this._items = [...(this._items || []), item];
       this._closeSheet();
+      this._focusAfter = `[data-edit="${CSS.escape(item.id)}"]`; // the new row
       this._render();
       this._toast(tr("ct.add.done"), "success");
       this._reloadReserves();
     } catch (err) {
       a.saving = false;
-      const detail = (err && err.body && (err.body.detail || err.body.error)) || "";
-      a.error = detail ? `${tr("ct.save_failed")}: ${detail}` : tr("ct.save_failed");
+      const code = (err && err.body && err.body.error) || "";
+      const field = { manual_duplicate: "#a-name", invalid_name: "#a-name", invalid_amount: "#a-amt", invalid_start: "#a-start" }[code];
+      const known = code && tr(`ct.add.err.${code}`) !== `ct.add.err.${code}`;
+      const detail = (err && err.body && err.body.detail) || code;
+      a.error = known ? tr(`ct.add.err.${code}`) : detail ? `${tr("ct.save_failed")}: ${detail}` : tr("ct.save_failed");
       this._paintSheet();
+      this.shadowRoot.querySelector(field || '[data-act="add-save"]')?.focus();
     }
   }
 
@@ -919,7 +966,15 @@ class FdContracts extends HTMLElement {
     } catch (e) { /* reserves stay as they were */ }
   }
 
+  /** Repaint the open sheet; the focused control keeps the focus (QA #117). */
   _paintSheet() {
+    const keep = this._focusSel();
+    this._paintSheetRaw();
+    if (keep && !this.shadowRoot.activeElement) this.shadowRoot.querySelector(keep)?.focus();
+    this._keepFocusInSheet();
+  }
+
+  _paintSheetRaw() {
     if (this._add) {
       const host = this.shadowRoot.getElementById("sheet");
       if (host) this._paintAdd(host);
@@ -934,7 +989,7 @@ class FdContracts extends HTMLElement {
     const notice = !NO_NOTICE.has(d.kind);
     const manual = s.c.source === "manual";
     const opt =(grp, val, label, cur) => `<button type="button" role="radio" aria-checked="${cur === val}" data-grp="${grp}" data-val="${e(val)}">${e(label)}</button>`;
-    el.innerHTML = `<div class="scrim" data-act="scrim"><div class="sheet" role="dialog" aria-modal="true" aria-label="${e(tr("ct.edit"))}">
+    el.innerHTML = `<div class="scrim" data-act="scrim"><div class="sheet" role="dialog" aria-modal="true" aria-label="${e(tr("ct.edit"))}" tabindex="-1">
   <h3>${e(s.c.display_name || s.c.creditor)}</h3>
   <p class="muted" style="margin:0">${e(this._catLabel(s.c.category))} · ${e(tr(`ct.interval.${s.c.interval}`))}${manual ? ` · ${e(tr("ct.manual"))}` : ""}</p>
   <label for="f-name">${e(tr("ct.f.name"))}</label><input id="f-name" type="text" maxlength="80" autocomplete="off" data-f="display_name" value="${e(d.display_name)}" placeholder="${e(s.c.display_name_detected || s.c.creditor || "")}">
@@ -1024,11 +1079,15 @@ class FdContracts extends HTMLElement {
         h += `<div class="rw"><span><b>${e(m.name)}</b><span class="muted">${e(tr("ct.st.merged"))}</span></span>
         <span class="hit"><button type="button" class="btn ghost" data-st="unmerge" data-sid="${e(m.id)}"${busy}>${e(tr("ct.st.unmerge"))}</button></span></div>`;
       }
-      const others = (this._items || []).filter((x) => x.id !== c.id && x.source !== "manual");
+      // only what the server accepts: same direction, same rhythm (merge_*_mismatch otherwise)
+      const others = (this._items || []).filter((x) => x.id !== c.id && x.source !== "manual"
+        && x.interval === c.interval && (x.direction || "out") === (c.direction || "out"));
       if (others.length) {
         h += `<label for="f-merge">${e(tr("ct.st.merge_with"))}</label><div class="nrow" style="grid-template-columns:1fr auto">
         <select id="f-merge">${others.map((x) => `<option value="${e(x.id)}"${x.id === s.mergeWith ? " selected" : ""}>${e(x.display_name || x.creditor)} · ${e(tr(`ct.interval.${x.interval}`))}</option>`).join("")}</select>
         <button type="button" class="btn ghost" data-st="merge"${busy}>${e(tr("ct.st.merge"))}</button></div>`;
+      } else {
+        h += `<p class="muted" style="margin:4px 0">${e(tr("ct.st.merge_none", { interval: tr(`ct.interval.${c.interval}`) }))}</p>`;
       }
       h += `<div class="opts" style="margin-top:8px">${c.split_by
         ? `<button type="button" data-st="unsplit"${busy}>${e(tr("ct.st.unsplit"))}</button>`
@@ -1083,37 +1142,51 @@ class FdContracts extends HTMLElement {
       el.focus();
       if (el.setSelectionRange && el.type === "search") el.setSelectionRange(el.value.length, el.value.length);
     }
+    this._keepFocusInSheet();
+  }
+
+  /** A disabled or vanished control drops the focus to <body>, where Escape no longer reaches the
+   *  sheet: park it on the dialog itself instead. */
+  _keepFocusInSheet() {
+    if (!this.shadowRoot.activeElement) this.shadowRoot.querySelector("#sheet .sheet")?.focus();
   }
 
   async _structure(action, data) {
     const s = this._sheet;
     if (!s || s.structBusy) return;
+    const from = this._focusSel();
     s.structBusy = true;
     s.structError = "";
-    this._paintKeep();
+    this._paintKeep(from);
     try {
       const r = await this._hass.callApi("POST", `${DOMAIN}/contract_overrides`, { action, ...data });
       const all = (r && r.contracts) || [];
       this._items = all.filter((c) => !c.candidate);
       this._candidates = all.filter((c) => c.candidate && c.status !== "ended");
       this._toast(tr(`ct.st.done.${action}`), "success");
-      this._reloadReserves();
       const still = this._items.find((c) => c.id === s.id);
       if (still) {
-        const { q, hits } = s;
+        // The sheet shows the new structure, the unsaved edits stay (QA #117).
+        const keep = { d: s.d, touched: s.touched, reset: s.reset, q: s.q, hits: s.hits };
         this._openSheet(s.id);
-        Object.assign(this._sheet, { q, hits });
-        this._render();
-        this.shadowRoot.querySelector("#sheet [data-st], #sheet button")?.focus();
+        Object.assign(this._sheet, keep);
+        const next = {
+          assign: "#f-bq", unassign: "#f-bq", merge: "#f-merge", unmerge: "#f-merge",
+          split: '[data-st="unsplit"]', unsplit: '[data-st="split"]',
+        }[action];
+        this._focusAfter = next;
+        this._render(); // the control may be gone (last merge undone): the sheet keeps the focus
       } else {
         this._closeSheet();
+        this._focusAfter = '[data-act="add"]';
         this._render();
       }
+      this._reloadReserves(); // re-renders later; _render keeps the focus
     } catch (err) {
       s.structBusy = false;
       const code = err && err.body && err.body.error;
       s.structError = code && tr(`ct.st.err.${code}`) !== `ct.st.err.${code}` ? tr(`ct.st.err.${code}`) : tr("ct.save_failed");
-      this._paintKeep();
+      this._paintKeep(from);
     }
   }
 
