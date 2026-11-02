@@ -8,6 +8,9 @@ provider is granted on its own, and says what it sends (see the endpoint
                      transactions. Stays granted until revoked.
 * ``sheet_analysis`` (once) names of budget-sheet positions local matching could
                      not place. Consumed by the first analysis that uses it.
+* ``history_import`` (once) rows of an uploaded booking-history file the local
+                     parser could not read, incl. amounts and dates, IBANs
+                     masked locally. Consumed by the import that uses it.
 
 Stored in its own HA store. First load without a store migrates the legacy
 setup-wizard flag ``ai_opt_in`` into ``categorize``. Nothing here makes a call.
@@ -29,6 +32,7 @@ STORAGE_VERSION = 1
 PURPOSES: dict[str, dict[str, str]] = {
     "categorize": {"mode": "recurring"},
     "sheet_analysis": {"mode": "once"},
+    "history_import": {"mode": "once"},
 }
 
 

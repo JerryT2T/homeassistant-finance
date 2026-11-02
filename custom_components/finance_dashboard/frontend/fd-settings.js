@@ -31,7 +31,7 @@
  */
 
 const DOMAIN = "finance_dashboard";
-const ALL = ["persons", "accounts", "payday", "region", "notifications", "ai", "points", "goals", "banks", "advanced"];
+const ALL = ["persons", "accounts", "payday", "region", "notifications", "ai", "history", "points", "goals", "banks", "advanced"];
 const POINTS_EVENT = "finance_dashboard_points_awarded";
 const STATES = [
   ["DE-BW", "Baden-Württemberg"], ["DE-BY", "Bayern"], ["DE-BE", "Berlin"], ["DE-BB", "Brandenburg"],
@@ -95,6 +95,7 @@ const FB = {
     "ai.mode.recurring": "regelmäßig",
     "ai.purpose.categorize.title": "Buchungen kategorisieren",
     "ai.purpose.sheet_analysis.title": "Haushaltstabelle analysieren",
+    "ai.purpose.history_import.title": "Buchungshistorie importieren",
     "settings.no_persons": "Lege zuerst oben mindestens eine Person fest.",
     "settings.save": "Speichern",
     "settings.saving": "Speichere…",
@@ -110,6 +111,7 @@ const FB = {
     "settings.sec.region": "Region",
     "settings.sec.notifications": "Benachrichtigungen",
     "settings.sec.ai": "KI",
+    "settings.sec.history": "Buchungshistorie",
     "settings.sec.points": "Punkte",
     "settings.sec.goals": "Sparziele",
     "settings.sec.banks": "Banken",
@@ -239,6 +241,7 @@ const FB = {
     "ai.mode.recurring": "recurring",
     "ai.purpose.categorize.title": "Categorise transactions",
     "ai.purpose.sheet_analysis.title": "Analyse household spreadsheet",
+    "ai.purpose.history_import.title": "Import booking history",
     "settings.no_persons": "Add at least one person above first.",
     "settings.save": "Save",
     "settings.saving": "Saving…",
@@ -254,6 +257,7 @@ const FB = {
     "settings.sec.region": "Region",
     "settings.sec.notifications": "Notifications",
     "settings.sec.ai": "AI",
+    "settings.sec.history": "Booking history",
     "settings.sec.points": "Points",
     "settings.sec.goals": "Savings goals",
     "settings.sec.banks": "Banks",
@@ -672,6 +676,7 @@ class FdSettings extends HTMLElement {
     const inner = fn ? fn.call(this, legacy) : "";
     const err = this._msg[sec] ? `<p class="err" role="alert">${escHtml(this._msg[sec])}</p>` : "";
     box.innerHTML = `${title}${inner}${err}`;
+    if (sec === "history") this._mountHistory(box);
   }
 
   _bar(action, label) {
@@ -801,6 +806,17 @@ class FdSettings extends HTMLElement {
     const n = this._dr.notif;
     const rows = n.enabled === false ? "" : NOTIF.map((k) => this._sw(`notif.${k}`, n[k] !== false, tr(`settings.notif.${k}`))).join("");
     return `<p class="muted">${escHtml(tr("settings.notif_hint"))}</p>${this._sw("notif.enabled", n.enabled !== false, tr("settings.notif.enabled"))}${rows}${this._bar("notif")}`;
+  }
+
+  /** History import lives in its own component; keep one instance so its state survives re-renders. */
+  _s_history() { return `<div data-history-host></div>`; }
+
+  _mountHistory(box) {
+    if (!this._histEl) {
+      this._histEl = document.createElement("fd-history-import");
+      this._histEl.hass = this._hass;
+    }
+    box.querySelector("[data-history-host]")?.appendChild(this._histEl);
   }
 
   _s_ai() {

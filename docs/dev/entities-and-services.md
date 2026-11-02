@@ -73,6 +73,7 @@ Home screen (`api/home.py`, `home.py`, `pots.py`, `cycle.py`):
 AI consent is per purpose (`ai_consent.py`, own store `finance_dashboard.ai_consent`; first load
 migrates the legacy wizard flag `ai_opt_in` into `categorize`). Purposes: `categorize`
 (`recurring`: merchant + remittance text of unclassified transactions, stays granted) and
+`history_import` (`once`: see below) and
 `sheet_analysis` (`once`: names of budget-sheet positions local matching could not place; consumed
 by the first analysis that gets a real AI answer). `manager/_questions.py` gates the categorisation
 pass on `async_granted(hass, "categorize")`.
@@ -90,6 +91,33 @@ pass on `async_granted(hass, "categorize")`.
   needs_consent, ai_used}`. Unmatched names go to the AI only with `sheet_analysis` consent (names
   only, one batched call, counts against the monthly budget); without it `needs_consent` is true
   and no call is made.
+
+## Booking-history import (#121)
+
+Optional, admin only, never a bank call. `history_import.py` (pure: reader, column guess, validation,
+duplicate check, AI prompt/answer parsing), `api/history_import.py` (endpoints), `Ledger.add_import_batch`
+/ `remove_import_batch` (`data_store.py`), manager methods in `manager/_persistence.py`.
+
+- Local first: CSV (`;,	|` sniffed, cp1252/UTF-8) and XLSX (first sheet) are mapped by header synonyms
+  (de/en, preamble lines skipped, `Soll`/`Haben` or a signed `Betrag`). PDF is rejected
+  (`pdf_unsupported`). Only a file with no recognisable columns can go to the AI: purpose
+  `history_import` (`once`), IBAN/long numbers masked by `mask_sensitive`, one call per 100 lines
+  (max 12), refused up front when the monthly budget cannot cover all calls. The AI returns a JSON
+  array of `{date, amount (expense negative), counterparty, text, currency}`; local and AI rows pass the
+  same `validate_rows`. Invalid rows are listed with line + reason, never dropped silently.
+- `GET /history_import` -> `{allowed, accounts[{key,name,iban_masked}], batches[{id,at,method,count,first,last,account_key}], ai{usable,consented,remaining}}`.
+- `POST /history_import/preview` `{content_base64, account_key, use_ai?}` -> `{preview_id, method, summary{new,duplicate,overlap,invalid,total,window_start}, rows[{line,date,amount,counterparty,text,currency,status}], invalid[{line,reason,raw}]}`;
+  or `{needs_ai: true, calls, ai}` when the layout is unreadable and `use_ai` is not set. Rows wait in memory
+  (30 min, max 3 previews), nothing is stored. Errors: `pdf_unsupported`, `too_large`, `unreadable`,
+  `consent_required`, `no_provider`, `budget_exhausted`, `unparsable`, `unknown_account`, `import_unavailable` (demo).
+- Row status: `duplicate` = same date + amount + counterparty already in the ledger (one-to-one);
+  `overlap` = inside the bank fetch window (last 90 days, `fetch_window_start`), so the bank's data wins; `new` = older. Only `new` is stored, re-classified against the ledger at commit.
+- `POST /history_import/commit` `{preview_id}` -> `{batch_id, added}`. Rows become ledger entries tagged
+  `_source = "import:<batch_id>"`, `_ledger_id = imp:<batch>:<n>`; the ledger meta keeps `import_batches`.
+  Imported rows survive `ingest` and the raw-archive rebuild (`merge_uncovered`) unless the bank wins afterwards: `Ledger.reconcile_imports` drops an imported row that a bank row covers (date +-2 days, equal amount, same normalised counterparty; batch `count` falls, `removed_by_bank` rises). They do not move
+  `last_booked_date` / `first_booked_date` (fetch window, backfill, plan wizard). Parsing runs in the executor; the one-time consent is spent before the AI call.
+- `POST /history_import/undo` `{batch_id}` removes the whole batch.
+- Frontend: `fd-history-import.js`, embedded as settings section `history`.
 
 Options flow (`init`): `raw_retention_days`, `show_household`, `demo_mode`,
 `enable_total_balance_sensor`. There is no refresh interval (no polling); the split model is the

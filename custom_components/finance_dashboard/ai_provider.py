@@ -593,3 +593,46 @@ async def async_classify_names(
         return None
     kinds = parse_kinds(answer or "", len(clean))
     return {names[i - 1]: kind for i, kind in kinds.items()}
+
+
+# ---------------------------------------------------------------------------
+# Booking-history file rows (purpose "history_import")
+# ---------------------------------------------------------------------------
+
+
+async def async_extract_history(
+    hass: HomeAssistant,
+    *,
+    credentials: Any,
+    prompts: list[str],
+    max_tokens: int,
+    today: date,
+    usable: bool,
+) -> tuple[list[str] | None, str | None]:
+    """One call per prompt: (answers, None) or (None, error code).
+
+    The prompts hold masked file content (amounts and dates included) and are
+    only built after the ``history_import`` consent. Every call counts against
+    the monthly budget; the whole import is refused up front when the
+    remaining budget cannot cover all of them.
+    """
+    if not usable:
+        return None, "no_provider"
+    cfg = await async_load_config(hass)
+    key = None
+    if cfg["provider"] in KEYED:
+        key = read_key(cfg, credentials)
+        if not key:
+            return None, "no_key"
+    if usage_view(cfg, today)["remaining"] < len(prompts):
+        return None, "budget_exhausted"
+    answers: list[str] = []
+    for prompt in prompts:
+        if not spend_call(cfg, today):
+            return None, "budget_exhausted"
+        await async_save_config(hass, cfg)  # persist the spend before the call
+        answer, error = await _ask_raw(hass, cfg, key, prompt, max_tokens)
+        if error:
+            return None, error
+        answers.append(answer or "")
+    return answers, None

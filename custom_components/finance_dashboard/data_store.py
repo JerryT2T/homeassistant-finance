@@ -230,6 +230,40 @@ async def _migrate_ledger(old_major: int, old_minor: int, payload: Any) -> Any:
     return payload
 
 
+IMPORT_MATCH_DAYS = 2
+
+
+def _amount_cents(tx: dict[str, Any]) -> int | None:
+    try:
+        return round(float((tx.get("transactionAmount") or {}).get("amount")) * 100)
+    except (TypeError, ValueError):
+        return None
+
+
+def _covered_imports(txs: list[dict[str, Any]]) -> set[int]:
+    """``id()`` of imported rows that a bank row on the same account covers."""
+    bank: dict[tuple[int, str], list[Any]] = {}
+    for t in txs:
+        if t.get("_source") or t.get("_status") != "booked":
+            continue
+        cents, party, day = _amount_cents(t), _counterparty(t), _parse_date(t.get("bookingDate"))
+        if cents is not None and party and day:
+            bank.setdefault((cents, party), []).append(day)
+    gone: set[int] = set()
+    for t in txs:
+        if not t.get("_source"):
+            continue
+        cents, party, day = _amount_cents(t), _counterparty(t), _parse_date(t.get("bookingDate"))
+        days = bank.get((cents, party)) if cents is not None and party and day else None
+        if not days:
+            continue
+        hit = next((i for i, d in enumerate(days) if abs((d - day).days) <= IMPORT_MATCH_DAYS), None)
+        if hit is not None:
+            days.pop(hit)
+            gone.add(id(t))
+    return gone
+
+
 class Ledger:
     """Per-account deduplicated transactions + balance time series.
 
@@ -299,10 +333,11 @@ class Ledger:
         return [dict(p) for p in self.data.get("accounts", {}).get(key, {}).get("balances", [])]
 
     def last_booked_date(self, key: str) -> str | None:
+        """Latest booked date the bank delivered (imported history does not count)."""
         dates = [
             str(t.get("bookingDate") or "")
             for t in self.data.get("accounts", {}).get(key, {}).get("transactions", [])
-            if t.get("_status") == "booked" and t.get("bookingDate")
+            if t.get("_status") == "booked" and t.get("bookingDate") and not t.get("_source")
         ]
         return max(dates) if dates else None
 
@@ -377,6 +412,9 @@ class Ledger:
                 continue  # pending is volatile — replaced below
             if tx["_ledger_id"] in fresh_ids:
                 continue
+            if tx.get("_source"):
+                kept.append(tx)  # imported history is never a reversal candidate (#121)
+                continue
             bdate = str(tx.get("bookingDate") or "")
             if not truncated and authoritative_from and bdate and bdate >= authoritative_from:
                 continue
@@ -389,13 +427,87 @@ class Ledger:
         merged = kept + fresh_booked + fresh_pending
         merged.sort(key=lambda t: str(t.get("bookingDate") or ""), reverse=True)
         acct["transactions"] = merged
+        self.reconcile_imports(key)
         return new
 
+    # -- imported history (#121) -------------------------------------------
+
+    def import_batches(self) -> list[dict[str, Any]]:
+        """Imported batches, newest first (ids, dates, counts - no booking values)."""
+        return [dict(b) for b in reversed(self.meta.get("import_batches") or [])]
+
+    def add_import_batch(
+        self, key: str, batch_id: str, txs: list[dict[str, Any]], info: dict[str, Any]
+    ) -> int:
+        """Add imported bookings tagged ``_source = import:<id>`` as one batch.
+
+        The rows are plain ledger entries, so detection treats them like bank
+        rows.  They never replace a row the ledger already has (``_ledger_id``
+        wins), and a later bank fetch that covers their span supersedes them
+        through the normal ``ingest`` rules.  Returns how many were added.
+        """
+        acct = self._acct(key)
+        have = {t.get("_ledger_id") for t in acct["transactions"]}
+        fresh = [t for t in txs if t.get("_ledger_id") not in have]
+        acct["transactions"] = sorted(
+            acct["transactions"] + fresh, key=lambda t: str(t.get("bookingDate") or ""), reverse=True
+        )
+        batches = self.meta.setdefault("import_batches", [])
+        batches.append({**info, "id": batch_id, "account_key": key, "count": len(fresh)})
+        return len(fresh)
+
+    def reconcile_imports(self, key: str | None = None) -> int:
+        """Bank wins after the fact: drop imported rows a bank row now covers.
+
+        A bank row covers an imported one on the same account when the booking
+        date is within ``IMPORT_MATCH_DAYS``, the amount is equal and the
+        normalised counterparty is the same (one bank row covers one imported
+        row).  The batch keeps its books straight: ``count`` falls and
+        ``removed_by_bank`` rises.  Returns how many imported rows were dropped.
+        """
+        dropped_total = 0
+        accounts = self.data.get("accounts", {})
+        for akey in [key] if key else list(accounts):
+            acct = accounts.get(akey)
+            if not acct:
+                continue
+            txs = acct.get("transactions") or []
+            gone = _covered_imports(txs)
+            if not gone:
+                continue
+            acct["transactions"] = [t for t in txs if id(t) not in gone]
+            by_batch: dict[str, int] = {}
+            for t in txs:
+                if id(t) in gone:
+                    batch = str(t["_source"]).split(":", 1)[1]
+                    by_batch[batch] = by_batch.get(batch, 0) + 1
+            for b in self.meta.get("import_batches") or []:
+                n = by_batch.get(b.get("id"), 0)
+                if n:
+                    b["count"] = max(0, int(b.get("count") or 0) - n)
+                    b["removed_by_bank"] = int(b.get("removed_by_bank") or 0) + n
+            dropped_total += len(gone)
+        return dropped_total
+
+    def remove_import_batch(self, batch_id: str) -> int:
+        """Undo one import as a whole.  Returns how many bookings were removed."""
+        tag = f"import:{batch_id}"
+        removed = 0
+        for acct in self.data.get("accounts", {}).values():
+            keep = [t for t in acct.get("transactions") or [] if t.get("_source") != tag]
+            removed += len(acct.get("transactions") or []) - len(keep)
+            acct["transactions"] = keep
+        self.meta["import_batches"] = [
+            b for b in self.meta.get("import_batches") or [] if b.get("id") != batch_id
+        ]
+        return removed
+
     def first_booked_date(self, key: str) -> str | None:
+        """Earliest booked date the bank delivered (imported history does not count)."""
         dates = [
             str(t.get("bookingDate") or "")
             for t in self.data.get("accounts", {}).get(key, {}).get("transactions", [])
-            if t.get("_status") == "booked" and t.get("bookingDate")
+            if t.get("_status") == "booked" and t.get("bookingDate") and not t.get("_source")
         ]
         return min(dates) if dates else None
 

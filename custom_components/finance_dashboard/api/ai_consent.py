@@ -24,6 +24,10 @@ PURPOSE_TEXTS: dict[str, dict[str, list[str]]] = {
         "pros": [f"ai.purpose.sheet_analysis.pro{i}" for i in (1, 2, 3)],
         "risks": [f"ai.purpose.sheet_analysis.risk{i}" for i in (1, 2, 3)],
     },
+    "history_import": {
+        "pros": [f"ai.purpose.history_import.pro{i}" for i in (1, 2, 3)],
+        "risks": [f"ai.purpose.history_import.risk{i}" for i in (1, 2, 3)],
+    },
 }
 
 
@@ -47,7 +51,7 @@ class FinanceDashboardAiConsentsView(HomeAssistantView):
         return self.json(await self._payload(request.app["hass"]))
 
     async def put(self, request: web.Request) -> web.Response:
-        """Body ``{"purpose": "categorize"|"sheet_analysis", "granted": bool}``."""
+        """Body ``{"purpose": "categorize"|"sheet_analysis"|"history_import", "granted": bool}``."""
         if (denied := admin_denied(self, request)) is not None:
             return denied
         try:
