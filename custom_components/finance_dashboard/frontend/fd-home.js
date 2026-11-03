@@ -243,7 +243,7 @@ input:focus-visible, select:focus-visible { outline: 2px solid var(--fd-a500); o
 .hbar > i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 5px; background: var(--bar, var(--fd-a500)); }
 .hbar > .tm { position: absolute; top: -6px; bottom: -6px; width: 2px; margin-left: -1px; background: var(--fd-t1); }
 .hbar > .tg { position: absolute; top: -8px; bottom: -8px; width: 0; border-left: 2px dashed var(--fd-t2); }
-.hbar .lbl { position: absolute; font-size: 12px; color: var(--fd-t2); white-space: nowrap; }
+.hbar .lbl { position: absolute; margin: 0; font-size: 12px; color: var(--fd-t2); white-space: nowrap; }
 .hbar .lt { top: -26px; left: clamp(52px, var(--x), calc(100% - 52px)); transform: translateX(-50%); }
 .hbar .lb { bottom: -24px; left: clamp(44px, var(--x), calc(100% - 44px)); transform: translateX(-50%); }
 .hrule { margin: 8px 0 0; font-size: 12px; color: var(--fd-t2); }
@@ -1090,18 +1090,17 @@ class FdHome extends HTMLElement {
     const infoLbl = this._flipped ? this._t("home.cycle.back") : this._t("home.cycle.info");
     const rule = this._flipped ? `<p class="hrule">${this._t(`home.cycle.rule.${cy.rule || "calendar_fallback"}`, { name: this._e(cy.anchor || "") })}</p>` : "";
     const left = Math.max(0, sr.remaining) / this._daysLeft(d);
-    const flow = d.cycle_flow || {};
     const money = (v) => this._m(v, false);
     const tile = (label, val) => `<div class="kpi"><span>${this._e(label)}</span><b>${val}</b></div>`;
     let tiles;
     if (hh) {
       const ps = (d.persons || []).slice(0, 2);
-      tiles = tile(this._t("home.hero.kpi_shared"), money(sr.kind === "pots" ? sr.spent : (flow.expenses ?? sr.spent)))
+      tiles = tile(this._t("home.hero.kpi_shared"), money(sr.spent))
         + ps.map((p) => tile(this._t("home.hero.kpi_own", { name: p.display_name || p.name }), money(p.spent))).join("")
         + (ps.length < 2 ? tile(this._t("home.cycle.per_day"), money(left)) : "");
     } else {
-      tiles = tile(this._t("home.cycle.income"), money(flow.income ?? (sr.kind === "own" ? sr.budget : 0)))
-        + tile(this._t("home.hero.kpi_spent"), money(flow.expenses ?? sr.spent))
+      tiles = tile(this._t(sr.kind === "pots" ? "home.cycle.budget" : "home.cycle.income"), money(sr.budget))
+        + tile(this._t("home.hero.kpi_spent"), money(sr.spent))
         + tile(this._t("home.hero.kpi_per_day"), money(left));
     }
     const x = `${(soll * 100).toFixed(1)}%`;

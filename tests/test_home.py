@@ -400,9 +400,3 @@ async def test_home_view_serves_recent_rows_to_admins_only(is_admin, expect) -> 
     assert resp._status == 200 and ("recent" in resp._data) is expect
 
 
-def test_cycle_flow_carries_totals_only() -> None:
-    out = _recent("household", None)
-    flow = out["cycle_flow"]
-    assert flow["income"] == 5500.0  # both April salaries
-    assert flow["expenses"] == 185.0  # 80 + 60 + 45, the pending one is not spent yet
-    assert set(flow) == {"income", "expenses"}

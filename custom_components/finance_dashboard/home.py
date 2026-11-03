@@ -785,18 +785,6 @@ def build_home(  # noqa: PLR0912, PLR0915
                                             [b for b in scope if b["owner"] == POT_OWNER_SHARED],
                                             cycle, today)
         out["reserves"] = reserves
-        out["cycle_flow"] = {  # totals only: what came in / went out in this cycle
-            "income": round(sum(a for d, a in _incomes(scope, None) if cycle[0] <= d <= cycle[1]), 2),
-            "expenses": round(
-                sum(
-                    b["amount"]
-                    for b in scope
-                    if _expense(b) and not b["pending"] and not b["in_chain"]
-                    and cycle[0] <= b["date"] <= cycle[1]
-                ),
-                2,
-            ),
-        }
         covered: bool | None = None
         if plan is not None and not plan.is_empty():
             fixed = plan.fixed_total(today.month, today.year, owner=person)

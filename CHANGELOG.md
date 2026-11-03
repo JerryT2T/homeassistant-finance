@@ -8,7 +8,7 @@ All notable changes to the Finance will be documented in this file.
 - The cycle view leads with a hero - free money until the cycle end, a verdict pill, a labelled bar (today with day count, dashed "Soll bis heute") and three tiles (income, spending, free per day; in the household view shared costs and each person's share) - and below it the latest bookings grouped by day next to "Als Nächstes" and one "Einrichten" strip instead of the separate setup cards
 - On desktop the status chip, the horizon tabs and the question count share one top row; the household view uses a neutral blue-grey, orange only ever means over budget or urgent, and purple only marks the "Nur am Desktop" chip
 - The transaction list is now reachable on phones and tablets - read-only, grouped by day, searchable; the account column shows only when the list spans several accounts, pending bookings are dashed; categorising stays on desktop
-- The home payload carries the last 14 days of bookings for administrators only (no IBAN, no purpose text) and cycle income/spending totals; other users see totals only
+- The home payload carries the last 14 days of bookings for administrators only (no IBAN, no purpose text); other users get no booking rows
 
 ### Fixed
 - No text below 12 px in the touched views
