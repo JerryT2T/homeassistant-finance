@@ -13,7 +13,7 @@ from typing import Any
 
 from homeassistant.util import dt as dt_util
 
-from ..const import CATEGORY_OTHER, DEFAULT_CATEGORIES
+from ..const import CATEGORY_OTHER, DEFAULT_CATEGORIES, DOMAIN
 from ..merchants import POINT_EVERY, _counterparty, merchant_key
 from ..points_target import EVENT_POINTS_AWARDED, async_award, person_of_user
 from ..refund_matcher import QUESTION_PREFIX, refund_questions
@@ -249,7 +249,14 @@ class QuestionsMixin:
         analysis = getattr(self, "get_refund_analysis", None)  # a host without refunds asks none
         if getattr(self, "_demo_mode", False) or analysis is None:
             return []
-        return refund_questions(self._transactions, analysis()["proposals"])
+        result = analysis()
+        labels = self._hass.data.get(DOMAIN, {}).get("_label_store")
+        return refund_questions(
+            self._transactions,
+            result["proposals"],
+            result["allocations"],
+            labels.bookings if labels else None,
+        )
 
     async def _answer_refund(
         self,
