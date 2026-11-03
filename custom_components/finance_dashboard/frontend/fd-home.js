@@ -162,7 +162,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .entry > i { flex: none; display: flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 10px; font-style: normal; background: var(--fd-a50); color: var(--fd-a700); }
 .entry > span { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .dtag { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: var(--fd-r-pill); font-size: 12px; font-weight: 500; background: var(--fd-desktop-bg); color: var(--fd-desktop); white-space: nowrap; }
-.dtag::before { content: "\\25C6"; font-size: 8px; }
+.dtag::before { content: "\\25C6"; font-size: 12px; line-height: 1; }
 .btn { min-height: var(--fd-touch); padding: 0 16px; border: 1px solid transparent; border-radius: var(--fd-r-pill); background: var(--fd-a700); color: #fff; font-weight: 500; }
 .btn.ghost { background: transparent; color: var(--fd-a700); border-color: var(--fd-a100); }
 .btn.sm { min-height: 36px; padding: 0 12px; font-size: 12px; }
@@ -231,7 +231,7 @@ input:focus-visible, select:focus-visible { outline: 2px solid var(--fd-a500); o
 .acc .row + .row { border-top: 0; }
 #cdslot:empty { display: none; }
 
-.hhchip { display: none; align-items: center; height: 36px; padding: 0 14px; border-radius: var(--fd-r-pill); font-size: 12px; font-weight: 500; background: var(--fd-household-bg); color: color-mix(in srgb, var(--fd-household) 80%, var(--fd-t1)); }
+.hhchip { display: none; align-items: center; height: 36px; padding: 0 14px; border-radius: var(--fd-r-pill); font-size: 12px; font-weight: 500; background: var(--fd-household-bg); color: var(--fd-t1); }
 .hero { padding: 16px 18px; }
 .hero-in { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-items: center; }
 .hero .hcap { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--fd-t2); }
@@ -253,6 +253,14 @@ input:focus-visible, select:focus-visible { outline: 2px solid var(--fd-a500); o
 .kpi b { display: block; font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .hl-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-items: start; }
 .hl-side { min-width: 0; }
+.more { grid-column: 1 / -1; margin-bottom: 12px; }
+.more > summary { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: var(--fd-touch); padding: 0 14px; border-radius: var(--fd-r-card); background: var(--fd-card); box-shadow: var(--fd-sh1); color: var(--fd-t1); font-weight: 500; cursor: pointer; list-style: none; }
+.more > summary::-webkit-details-marker { display: none; }
+.more > summary::after { content: "\\25B8"; color: var(--fd-t2); transition: transform .15s ease; }
+.more[open] > summary { margin-bottom: 12px; }
+.more[open] > summary::after { transform: rotate(90deg); }
+.more > summary:focus-visible { outline: 2px solid var(--fd-a500); outline-offset: 2px; }
+.more-in { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 12px; align-items: start; }
 .lday { margin: 14px 0 4px; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--fd-t3); }
 .lday:first-child { margin-top: 0; }
 .lcard { margin: 0 0 4px; padding: 2px 14px; border-radius: var(--fd-r-card); background: var(--fd-card); box-shadow: var(--fd-sh1); }
@@ -621,6 +629,8 @@ class FdHome extends HTMLElement {
     if (!side) return;
     const d = this._data;
     side.innerHTML = d && !this._err ? this._sideHtml(d) : "";
+    const more = side.querySelector("#more");
+    if (more) more.addEventListener("toggle", () => { this._moreOpen = more.open; });
     this._placeCycleDetail();
   }
 
@@ -686,7 +696,7 @@ class FdHome extends HTMLElement {
     const now = new Date();
     const hm = t.toLocaleTimeString(this._lang(), { hour: "2-digit", minute: "2-digit" });
     const sameDay = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
-    if (sameDay(t, now)) return hm;
+    if (sameDay(t, now)) return this._t("home.fresh.today", { time: hm });
     const y = new Date(now); y.setDate(now.getDate() - 1);
     if (sameDay(t, y)) return this._t("home.fresh.yesterday", { time: hm });
     return this._dm(t);
@@ -1072,8 +1082,9 @@ class FdHome extends HTMLElement {
     const cy = d.cycle || {};
     const soll = this._soll(d);
     const frac = sr.budget > 0 ? Math.min(1, Math.max(0, sr.spent / sr.budget)) : 0;
-    const vkey = sr.status === "over" ? "over" : sr.status === "knapp" ? "knapp" : "good";
-    const bar = sr.status === "over" ? "var(--fd-over)" : hh ? "var(--fd-household)" : "var(--fd-a500)";
+    const isOver = sr.status === "over" || sr.remaining < 0;
+    const vkey = isOver ? "over" : sr.status === "knapp" ? "knapp" : "good";
+    const bar = isOver ? "var(--fd-over)" : hh ? "var(--fd-household)" : "var(--fd-a500)";
     const end = cy.end ? this._day(cy.end) : "";
     const cap = this._t(hh ? "home.hero.cap_household" : "home.hero.cap", { date: this._e(end) });
     const infoLbl = this._flipped ? this._t("home.cycle.back") : this._t("home.cycle.info");
@@ -1086,7 +1097,7 @@ class FdHome extends HTMLElement {
     if (hh) {
       const ps = (d.persons || []).slice(0, 2);
       tiles = tile(this._t("home.hero.kpi_shared"), money(sr.kind === "pots" ? sr.spent : (flow.expenses ?? sr.spent)))
-        + ps.map((p) => tile(this._t("home.hero.kpi_share", { name: p.display_name || p.name }), money(p.spent))).join("")
+        + ps.map((p) => tile(this._t("home.hero.kpi_own", { name: p.display_name || p.name }), money(p.spent))).join("")
         + (ps.length < 2 ? tile(this._t("home.cycle.per_day"), money(left)) : "");
     } else {
       tiles = tile(this._t("home.cycle.income"), money(flow.income ?? (sr.kind === "own" ? sr.budget : 0)))
@@ -1095,7 +1106,7 @@ class FdHome extends HTMLElement {
     }
     const x = `${(soll * 100).toFixed(1)}%`;
     const day = this._t("home.hero.today", { n: cy.day, total: cy.days });
-    return `<section class="card hero ${this._cls(sr.status)}"><div class="hero-in"><div>
+    return `<section class="card hero ${this._cls(isOver ? "over" : sr.status)}"><div class="hero-in"><div>
       <div class="hcap"><span>${cap}</span><button class="info" data-act="flip" data-tip="${this._e(infoLbl)}" aria-label="${this._e(infoLbl)}" aria-pressed="${this._flipped}">${this._flipped ? "×" : "ⓘ"}</button></div>${rule}
       <div class="hbig"><span class="big">${money(sr.remaining)}</span><span class="vpill">${this._t("home.cycle.verdict." + vkey)}</span></div>
       ${sr.budget > 0 ? `<div class="hbar" style="--bar:${bar};--x:${x}" role="img" aria-label="${this._e(cap)}: ${money(sr.remaining)}"><i style="width:${(frac * 100).toFixed(1)}%"></i>
@@ -1220,7 +1231,9 @@ class FdHome extends HTMLElement {
 
   _sideHtml(d) {
     let h = "";
-    if (this._horizon === "cycle") h += `<div id="cdslot"></div>${this._optimise(d, false)}`;
+    if (this._horizon === "cycle") {
+      return `<div id="cdslot"></div><details class="more" id="more"${this._moreOpen ? " open" : ""}><summary>${this._t("home.more.title")}</summary><div class="more-in">${this._optimise(d, false)}${this._history(d)}${this._accounts(d)}${this._manage(d)}</div></details>`;
+    }
     else if (this._horizon === "week") h += this._adjust(d);
     else if (this._horizon === "year") h += this._optimise(d, true);
     return h + this._history(d) + this._accounts(d) + this._manage(d);

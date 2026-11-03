@@ -9,6 +9,8 @@ Changes:
 - feat(transactions): the transaction list is now reachable on phones and tablets - read-only, grouped by day, searchable; the account column shows only when the list spans several accounts, pending bookings are dashed; categorising stays on desktop
 - feat(home): the home payload carries the last 14 days of bookings for administrators only (no IBAN, no purpose text) and cycle income/spending totals; other users see totals only
 - fix(ui): no text below 12 px in the touched views
+- feat(home): on the cycle view the analysis, account and pot cards sit behind one closed disclosure on desktop, so the Einrichten strip leads
+- fix(home): a negative remainder always reads as over the frame; the household tiles name each person's own spending; the data chip says "Aktuell · heute 06:30"
 
 ## 0.38.0 — 2026-11-02
 Version: 0.38.0

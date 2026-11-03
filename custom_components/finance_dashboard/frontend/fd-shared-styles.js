@@ -234,7 +234,7 @@ export const SHARED_CSS = `
   --fd-gold: #f9a825;
   --fd-person-a: #00897b;
   --fd-person-b: #c2185b;
-  --fd-household: #546e7a;
+  --fd-household: #6f8894;
   --fd-household-bg: color-mix(in srgb, var(--fd-household) 18%, var(--fd-card));
   --fd-desktop: #7e57c2;
   --fd-desktop-bg: color-mix(in srgb, var(--fd-desktop) 14%, var(--fd-card));
