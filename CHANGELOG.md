@@ -2,6 +2,12 @@
 
 All notable changes to the Finance will be documented in this file.
 
+## [0.38.1] — 2026-11-03
+
+### Fixed
+- Assigning a refund to another expense on its card now has a search over merchant, text, amount and date, and shows at most 7 entries at a time; the expense you are looking for no longer falls off a list of the 8 newest bookings
+- The pick list only offers expenses that are not refunded in full yet, medical ones first; what you already picked stays on top while you search
+
 ## [0.38.0] — 2026-11-02
 
 ### Added

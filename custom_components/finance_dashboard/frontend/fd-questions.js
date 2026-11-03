@@ -34,6 +34,7 @@
 
 const DOMAIN = "finance_dashboard";
 const WEEK_CAP = 10;
+const RF_SHOWN = 7; // refund pick list: rows shown at once, the rest via search
 const PERSON_COLORS = ["var(--fd-person-a)", "var(--fd-person-b)", "#ef6c00", "#5e35b1", "#6d4c41"];
 
 const FB = {
@@ -118,6 +119,8 @@ const FB = {
     "questions.rf_send": "Zuordnen",
     "questions.rf_none": "Keine passenden Ausgaben gefunden.",
     "questions.rf_back": "Zurück",
+    "questions.rf_search": "Suchen: Händler, Text, Betrag, Datum",
+    "questions.rf_more": "$n weitere offene Ausgaben – über die Suche finden.",
   },
   en: {
     "questions.c_irregular": "Irregular spending",
@@ -200,6 +203,8 @@ const FB = {
     "questions.rf_send": "Assign",
     "questions.rf_none": "No matching expenses found.",
     "questions.rf_back": "Back",
+    "questions.rf_search": "Search: merchant, text, amount, date",
+    "questions.rf_more": "$n more open expenses – use the search to find them.",
   },
 };
 
@@ -266,6 +271,9 @@ button:focus-visible { outline: 2px solid var(--fd-a500); outline-offset: 2px; }
 .seg button { min-height: var(--fd-touch); padding: 0 14px; border: 1px solid var(--fd-line); border-radius: var(--fd-r-pill); background: var(--fd-card); }
 .bk .cat { width: 100%; height: auto; padding: 8px 10px; text-align: left; display: block; }
 .bk .cat[aria-pressed=true] { background: var(--fd-a100); border-color: var(--fd-a500); }
+.rfq { width: 100%; box-sizing: border-box; min-height: var(--fd-touch); margin-top: 8px; padding: 0 12px; border: 1px solid var(--fd-line); border-radius: 12px; background: var(--fd-card); color: var(--fd-t1); font: inherit; font-size: 14px; }
+.rfq:focus { outline: 2px solid var(--fd-a500); outline-offset: 1px; }
+.rfmore { margin: 8px 0 0; color: var(--fd-t3); font-size: 12px; }
 .seg button[aria-pressed=true] { background: var(--fd-a100); border-color: var(--fd-a500); font-weight: 500; }
 .seg .pd { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; }
 .foot { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; gap: 8px; color: var(--fd-t3); font-size: 12px; }
@@ -383,7 +391,7 @@ class FdQuestions extends HTMLElement {
     this._render();
   }
 
-  _resetCard() { this._reach = "merchant"; this._owner = ""; this._more = false; this._msg = ""; this._rfOther = false; this._rfPick = new Set(); }
+  _resetCard() { this._reach = "merchant"; this._owner = ""; this._more = false; this._msg = ""; this._rfOther = false; this._rfPick = new Set(); this._rfQuery = ""; }
 
   /** Refund card (#119): "does this refund belong to <expense>?" with confirm / other / no. */
   _refundCardHtml() {
@@ -394,9 +402,11 @@ class FdQuestions extends HTMLElement {
     const dis = this._busy ? "disabled" : "";
     let body;
     if (this._rfOther) {
-      const rows = [...c.proposed, ...c.others];
+      const { rows, more } = this._rfRows(c);
       body = `<div class="prompt">${tr("questions.rf_pick")}</div>
+  <input class="rfq" id="rfq" type="search" autocomplete="off" value="${escHtml(this._rfQuery || "")}" placeholder="${escHtml(tr("questions.rf_search"))}" aria-label="${escHtml(tr("questions.rf_search"))}">
   ${rows.length ? `<ul class="bk" role="group" aria-label="${tr("questions.rf_pick")}">${rows.map((b) => `<li><button class="cat" data-rfpick="${escHtml(b.id)}" aria-pressed="${this._rfPick.has(b.id)}" ${dis}>${line(b)}</button></li>`).join("")}</ul>` : `<p class="muted">${tr("questions.rf_none")}</p>`}
+  ${more ? `<p class="rfmore">${escHtml(tr("questions.rf_more", { n: more }))}</p>` : ""}
   <div class="cats"><button class="cat" data-rf="send" ${dis || !this._rfPick.size ? "disabled" : ""}>${tr("questions.rf_send")}</button>
   <button class="cat" data-rf="back" ${dis}>${tr("questions.rf_back")}</button></div>`;
     } else {
@@ -415,6 +425,19 @@ class FdQuestions extends HTMLElement {
   ${this._msg ? `<div class="msg" role="alert">${escHtml(this._msg)}</div>` : ""}
   <div class="foot"><span>${tr("questions.skip_hint")}</span><button class="ghost" data-act="skip" ${this._q.length < 2 ? "hidden" : ""}>${tr("questions.skip")}</button></div>
 </div>`;
+  }
+
+  /** Pick list of the "other expense" step: picked rows stay on top, then the search hits, RF_SHOWN at most. */
+  _rfRows(c) {
+    const { eur } = window._fd;
+    const all = [...c.proposed, ...c.others];
+    const picked = all.filter((b) => this._rfPick.has(b.id));
+    const words = (this._rfQuery || "").toLowerCase().split(/\s+/).filter(Boolean);
+    const hay = (b) => [b.party, b.description, eur(Math.abs(b.amount)), String(Math.abs(b.amount)).replace(".", ","),
+      this._fmtDay(b.date), b.date].join(" ").toLowerCase();
+    const hits = all.filter((b) => !this._rfPick.has(b.id) && words.every((w) => hay(b).includes(w)));
+    const room = Math.max(0, RF_SHOWN - picked.length);
+    return { rows: [...picked, ...hits.slice(0, room)], more: Math.max(0, hits.length - room) };
   }
 
   get _card() { return this._q[this._i]; }
@@ -663,8 +686,18 @@ class FdQuestions extends HTMLElement {
   _wireCard() {
     const card = this.shadowRoot.getElementById("card");
     if (!card) return;
+    const q = this.shadowRoot.getElementById("rfq");
+    if (q) {
+      q.oninput = () => {
+        const at = q.selectionStart;
+        this._rfQuery = q.value;
+        this._keepRender();
+        const n = this.shadowRoot.getElementById("rfq");
+        if (n) { n.focus(); n.setSelectionRange(at, at); }
+      };
+    }
     let x0 = null, dx = 0;
-    card.onpointerdown = (e) => { if (e.target.closest("button")) return; x0 = e.clientX; dx = 0; };
+    card.onpointerdown = (e) => { if (e.target.closest("button, input")) return; x0 = e.clientX; dx = 0; };
     card.onpointermove = (e) => {
       if (x0 === null) return;
       dx = e.clientX - x0;

@@ -43,6 +43,7 @@ NAME_ONLY_CAP = 0.6  # payer looks like an insurer but the text does not say "bi
 PROPOSAL_MIN = 0.35  # below: not even worth a question
 MAX_POOL = 12  # subset-sum search is bounded: C(12, k) stays small
 MAX_SUBSET = 4
+MAX_OTHERS = 200  # pick list of a refund card: searchable client-side, bounded payload
 LABEL_REFUNDABLE = "refundable"
 _EPS = 0.005
 
@@ -395,15 +396,25 @@ QUESTION_PREFIX = "refund:"
 
 
 def refund_questions(
-    txns: list[dict[str, Any]], proposals: list[dict[str, Any]]
+    txns: list[dict[str, Any]],
+    proposals: list[dict[str, Any]],
+    allocations: dict[str, dict[str, float]] | None = None,
+    labels: dict[str, list[str]] | None = None,
 ) -> list[dict[str, Any]]:
     """Cards for the question flow: "does this refund belong to that expense?" (admin only).
 
     One card per unsure match, shaped like a merchant question (``count``,
     ``total``, ``dates``) plus ``kind = "refund"``, the refund, the proposed
-    expenses and the other candidates to pick from instead.
+    expenses and the other candidates to pick from instead. ``others`` skips
+    expenses that ``allocations`` already refunded in full and lists the
+    medical ones first, then the newest; the dialog shows a few and searches
+    the rest.
     """
     by_id = {ref_id(t): t for t in txns}
+    paid: dict[str, int] = {}
+    for alloc in (allocations or {}).values():
+        for eid, amount in alloc.items():
+            paid[eid] = paid.get(eid, 0) + _cents(amount)
     out = []
     for prop in sorted(proposals, key=lambda p: -p["confidence"]):
         refund = by_id.get(prop["refund"])
@@ -411,8 +422,11 @@ def refund_questions(
             continue
         proposed = [view_row(by_id[e]) | {"refunded": prop["allocation"][e]}
                     for e in prop["allocation"] if e in by_id]
-        others = [view_row(t) for t in candidates_for(refund, txns)
-                  if ref_id(t) not in prop["allocation"]][:8]
+        pool = [t for t in candidates_for(refund, txns)
+                if ref_id(t) not in prop["allocation"]
+                and -_cents(_amount(t)) > paid.get(ref_id(t), 0)]
+        pool.sort(key=lambda t: not is_medical_expense(t, labels))  # stable: newest within each
+        others = [_short(view_row(t)) for t in pool[:MAX_OTHERS]]
         row = view_row(refund)
         out.append({
             "kind": "refund",
@@ -431,6 +445,11 @@ def refund_questions(
             "confidence": round(prop["confidence"], 2),
         })
     return out
+
+
+def _short(row: dict[str, Any]) -> dict[str, Any]:
+    """A pick-list row: the remittance text cut to what a search line needs."""
+    return row | {"description": row["description"][:120]}
 
 
 def net_refunds(
