@@ -120,3 +120,12 @@ def test_kit_references_only_existing_files(js: str) -> None:
     src = (FRONTEND_DIR / js).read_text(encoding="utf-8")
     for ref in re.findall(r'"((?:fd|finance)-[\w-]+\.js)"', src):
         assert (FRONTEND_DIR / ref).is_file(), ref
+
+
+def test_cycle_disclosure_does_not_share_the_show_more_button_class() -> None:
+    """The .more button is display:flex, which would lay an open disclosure out side by side."""
+    src = (FRONTEND_DIR / "fd-home.js").read_text(encoding="utf-8")
+    assert '<details class="moreset" id="more"' in src
+    assert '<details class="more"' not in src
+    assert ".moreset > summary" in src
+    assert ".more > summary" not in src

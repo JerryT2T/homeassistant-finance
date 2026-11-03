@@ -253,13 +253,13 @@ input:focus-visible, select:focus-visible { outline: 2px solid var(--fd-a500); o
 .kpi b { display: block; font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .hl-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-items: start; }
 .hl-side { min-width: 0; }
-.more { grid-column: 1 / -1; margin-bottom: 12px; }
-.more > summary { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: var(--fd-touch); padding: 0 14px; border-radius: var(--fd-r-card); background: var(--fd-card); box-shadow: var(--fd-sh1); color: var(--fd-t1); font-weight: 500; cursor: pointer; list-style: none; }
-.more > summary::-webkit-details-marker { display: none; }
-.more > summary::after { content: "\\25B8"; color: var(--fd-t2); transition: transform .15s ease; }
-.more[open] > summary { margin-bottom: 12px; }
-.more[open] > summary::after { transform: rotate(90deg); }
-.more > summary:focus-visible { outline: 2px solid var(--fd-a500); outline-offset: 2px; }
+.moreset { grid-column: 1 / -1; margin-bottom: 12px; }
+.moreset > summary { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: var(--fd-touch); padding: 0 14px; border-radius: var(--fd-r-card); background: var(--fd-card); box-shadow: var(--fd-sh1); color: var(--fd-t1); font-weight: 500; cursor: pointer; list-style: none; }
+.moreset > summary::-webkit-details-marker { display: none; }
+.moreset > summary::after { content: "\\25B8"; color: var(--fd-t2); transition: transform .15s ease; }
+.moreset[open] > summary { margin-bottom: 12px; }
+.moreset[open] > summary::after { transform: rotate(90deg); }
+.moreset > summary:focus-visible { outline: 2px solid var(--fd-a500); outline-offset: 2px; }
 .more-in { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 12px; align-items: start; }
 .lday { margin: 14px 0 4px; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--fd-t3); }
 .lday:first-child { margin-top: 0; }
@@ -1231,7 +1231,7 @@ class FdHome extends HTMLElement {
   _sideHtml(d) {
     let h = "";
     if (this._horizon === "cycle") {
-      return `<div id="cdslot"></div><details class="more" id="more"${this._moreOpen ? " open" : ""}><summary>${this._t("home.more.title")}</summary><div class="more-in">${this._optimise(d, false)}${this._history(d)}${this._accounts(d)}${this._manage(d)}</div></details>`;
+      return `<div id="cdslot"></div><details class="moreset" id="more"${this._moreOpen ? " open" : ""}><summary>${this._t("home.more.title")}</summary><div class="more-in">${this._optimise(d, false)}${this._history(d)}${this._accounts(d)}${this._manage(d)}</div></details>`;
     }
     else if (this._horizon === "week") h += this._adjust(d);
     else if (this._horizon === "year") h += this._optimise(d, true);
