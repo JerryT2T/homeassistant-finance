@@ -34,6 +34,8 @@ from homeassistant.helpers.storage import Store
 from .account_identity import account_key
 from .const import DOMAIN, STORAGE_VERSION
 from .labels import LabelError, booking_key, clean_ids
+from .own_accounts import is_own_name, own_account_names  # noqa: F401 - re-exported
+from .tx_dates import effective_date_str
 from .contract_kind import CATEGORY_DEFAULTS as KIND_CATEGORY_DEFAULTS
 from .contract_kind import (
     KIND_CONTRACT,
@@ -784,7 +786,7 @@ def _manual_series(
             (
                 {
                     "key": booking_key(t),
-                    "date": str(t.get("bookingDate") or ""),
+                    "date": effective_date_str(t),
                     "amount": round(float((t.get("transactionAmount") or {}).get("amount") or 0), 2),
                     "name": " ".join(str(t.get("creditorName") or t.get("debtorName") or "").split()),
                 }
@@ -1100,24 +1102,6 @@ async def async_fire_notice_due(
 # ---------------------------------------------------------------------------
 # Savings accounts
 # ---------------------------------------------------------------------------
-
-
-def is_own_name(creditor: str, own_names: set[str] | frozenset[str]) -> bool:
-    """Every word of an own name appears in the creditor ("Jeremy Tim Treder")."""
-    words = set(creditor.replace(",", " ").split())
-    return any(name and set(name.split()) <= words for name in own_names)
-
-
-def own_account_names(accounts: list[dict[str, Any]]) -> frozenset[str]:
-    """Normalised account holder names ("Jeremy Treder und X" -> both parts)."""
-    names: set[str] = set()
-    for acc in accounts or []:
-        raw = " ".join(str(acc.get("name") or acc.get("account_name") or "").lower().split())
-        for part in raw.replace(" und ", ",").replace(" & ", ",").split(","):
-            part = part.strip()
-            if len(part.split()) >= 2:  # a full name, never a bare bank or product word
-                names.add(part)
-    return frozenset(names)
 
 
 def set_account_savings(manager: Any, key: str, savings: bool) -> bool:

@@ -543,9 +543,16 @@ class EnableBankingClient:
                 if isinstance(debtor, dict)
                 else (txn.get("debtor_name") or "")
             ),
+            # Stored encrypted, masked in every API (own-account check, #171).
+            "creditorAccount": {"iban": cls._account_iban(txn.get("creditor_account"))},
+            "debtorAccount": {"iban": cls._account_iban(txn.get("debtor_account"))},
             "remittanceInformationUnstructured": cls._join_remittance(txn),
             "status": str(txn.get("status") or "").upper(),
         }
+
+    @staticmethod
+    def _account_iban(account: Any) -> str:
+        return str(account.get("iban") or "") if isinstance(account, dict) else ""
 
     @staticmethod
     def _signed_amount(amount_data: dict[str, Any], txn: dict[str, Any]) -> str:

@@ -19,6 +19,7 @@ from typing import Any
 from homeassistant.core import HomeAssistant
 
 from .const import DOMAIN
+from .tx_dates import effective_date_str
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -48,9 +49,9 @@ async def async_export_csv(
     # Filter transactions
     filtered = transactions
     if date_from:
-        filtered = [t for t in filtered if t.get("bookingDate", "") >= date_from]
+        filtered = [t for t in filtered if effective_date_str(t) >= date_from]
     if date_to:
-        filtered = [t for t in filtered if t.get("bookingDate", "") <= date_to]
+        filtered = [t for t in filtered if effective_date_str(t) <= date_to]
     if categories:
         filtered = [t for t in filtered if t.get("category", "other") in categories]
 
@@ -92,7 +93,7 @@ def _write_csv(filepath: Path, transactions: list[dict[str, Any]]) -> None:
         for txn in transactions:
             writer.writerow(
                 {
-                    "date": txn.get("bookingDate", ""),
+                    "date": effective_date_str(txn),
                     "amount": txn.get("transactionAmount", {}).get("amount", "0"),
                     "currency": txn.get("transactionAmount", {}).get("currency", "EUR"),
                     "creditor": txn.get("creditorName", ""),

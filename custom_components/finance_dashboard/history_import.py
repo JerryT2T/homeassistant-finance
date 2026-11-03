@@ -42,6 +42,7 @@ from datetime import date, datetime, timedelta
 from typing import Any
 
 from .const import DEFAULT_FETCH_DAYS
+from .tx_dates import effective_date_str
 
 MAX_FILE_BYTES = 5 * 1024 * 1024
 MAX_ROWS = 20000
@@ -695,7 +696,7 @@ def _ledger_view(tx: dict[str, Any]) -> tuple[str, float, str] | None:
         value = float(amount.get("amount"))
     except (TypeError, ValueError):
         return None
-    day = str(tx.get("bookingDate") or tx.get("valueDate") or "")[:10]
+    day = effective_date_str(tx)
     if not day:
         return None
     party = str(tx.get("creditorName") or tx.get("debtorName") or "")

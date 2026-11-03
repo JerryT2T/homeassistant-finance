@@ -110,6 +110,11 @@ const FB = {
     "questions.hist_src_ai": "KI",
     "questions.hist_empty": "Noch keine Kategorisierungen. Jede Antwort und jeder KI-Vorschlag landet hier.",
     "questions.hist_more": "Ältere ($n)",
+    "questions.own_account": "Das ist ein Konto von mir",
+    "questions.tr_title": "Eine Umbuchung oder zwei Buchungen?",
+    "questions.tr_prompt": "Ist das Geld, das zwischen deinen Konten geflossen ist?",
+    "questions.tr_confirm": "Ja, dasselbe Geld",
+    "questions.tr_no": "Nein, hat nichts miteinander zu tun",
     "questions.rf_prompt": "Gehört diese Erstattung zu dieser Ausgabe?",
     "questions.rf_paid": "Erstattet: $sum",
     "questions.rf_confirm": "Ja, passt",
@@ -194,6 +199,11 @@ const FB = {
     "questions.hist_src_ai": "AI",
     "questions.hist_empty": "No categorisations yet. Every answer and every AI suggestion shows up here.",
     "questions.hist_more": "Older ($n)",
+    "questions.own_account": "This is an account of mine",
+    "questions.tr_title": "One transfer or two bookings?",
+    "questions.tr_prompt": "Is this money moved between your accounts?",
+    "questions.tr_confirm": "Yes, same money",
+    "questions.tr_no": "No, unrelated",
     "questions.rf_prompt": "Does this refund belong to this expense?",
     "questions.rf_paid": "Refunded: $sum",
     "questions.rf_confirm": "Yes, that fits",
@@ -531,10 +541,29 @@ class FdQuestions extends HTMLElement {
 </div>`;
   }
 
+  /** Transfer card (#174): same amount on two accounts, nothing else says they belong together. */
+  _transferCardHtml() {
+    const { eur, escHtml } = window._fd;
+    const c = this._card;
+    const dis = this._busy ? "disabled" : "";
+    const line = (b) => `<li><div class="l1"><span class="flow">${escHtml(this._fmtDay(b.date))} · ${escHtml(b.account)}${b.party ? ` · ${escHtml(b.party)}` : ""}</span><b>${escHtml(eur(b.amount))}</b></div>${b.description ? `<div class="l2">${escHtml(b.description)}</div>` : ""}</li>`;
+    return `<div class="card enter" id="card">
+  <div class="cnt">${tr("questions.card_of", { n: this._i + 1, m: this._q.length })}</div>
+  <h3 class="merchant">${tr("questions.tr_title")}</h3>
+  <ul class="bk">${line(c.out)}${line(c.in)}</ul>
+  <div class="prompt">${tr("questions.tr_prompt")}</div>
+  <div class="cats"><button class="cat" data-rf="confirm" ${dis}>${tr("questions.tr_confirm")}</button>
+  <button class="cat" data-rf="no" ${dis}>${tr("questions.tr_no")}</button></div>
+  ${this._msg ? `<div class="msg" role="alert">${escHtml(this._msg)}</div>` : ""}
+  <div class="foot"><span>${tr("questions.skip_hint")}</span><button class="ghost" data-act="skip" ${this._q.length < 2 ? "hidden" : ""}>${tr("questions.skip")}</button></div>
+</div>`;
+  }
+
   _cardHtml() {
     const { eur, escHtml, CAT_LABELS } = window._fd;
     const c = this._card;
     if (c.kind === "refund") return this._refundCardHtml();
+    if (c.kind === "transfer") return this._transferCardHtml();
     if (c.type === "contract" || c.type === "price") return this._contractCardHtml(c);
     const cats = this._cats(c);
     const people = this._persons;
@@ -547,6 +576,7 @@ class FdQuestions extends HTMLElement {
   ${this._detailsHtml(c)}
   <div class="prompt">${tr("questions.prompt")}</div>
   <div class="cats">${cats.map((k, n) => this._catBtn(k, String(n + 1))).join("")}</div>
+  <button class="cat own" data-own="1" ${this._busy ? "disabled" : ""}>${tr("questions.own_account")}</button>
   <button class="more" data-act="more" aria-expanded="${this._more}">${this._more ? tr("questions.other_hide") : tr("questions.other")}</button>
   ${this._more ? `<div class="picker">${rest.map((k) => this._catBtn(k)).join("")}</div>` : ""}
   <div class="sub">${tr("questions.reach")}</div>
@@ -645,6 +675,7 @@ class FdQuestions extends HTMLElement {
     sh.addEventListener("click", (e) => {
       const t = e.target.closest("button");
       if (!t || t.disabled) return;
+      if (t.dataset.own) { this._reach = "merchant"; return this._answer("transfers"); }
       if (t.dataset.cat) return this._answer(t.dataset.cat);
       if (t.dataset.rfpick) {
         if (this._rfPick.has(t.dataset.rfpick)) this._rfPick.delete(t.dataset.rfpick); else this._rfPick.add(t.dataset.rfpick);
@@ -725,7 +756,7 @@ class FdQuestions extends HTMLElement {
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     const n = parseInt(e.key, 10);
     const c = this._card;
-    if (c.kind === "refund") return; // refund cards answer by their own buttons
+    if (c.kind === "refund" || c.kind === "transfer") return; // these answer by their own buttons
     const cats = c.type === "contract" || c.type === "price" ? this._contractOptions(c).map((o) => o[0]) : this._cats(c);
     if (n >= 1 && n <= cats.length) { e.preventDefault(); this._answer(cats[n - 1]); }
   }

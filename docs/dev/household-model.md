@@ -21,20 +21,23 @@ applying it again would flatten exactly the individual-cost differences the mode
 Additional: remainder split ("no split" or "equal distribution"); optional category-level override
 of the split (not implemented yet).
 
-## Month cycle (planned, not wired)
+## Income cycle (`cycle.py`, used by every view)
 
-Configurable per person: calendar month or salary-based cycle. Recurring transactions belong to
-their logical month (bank-day correction: rent on Feb 28 due to a weekend counts as March).
-`month_cycle.py` exists but is not wired.
+No view uses the calendar month; home, household summary, monthly summary (and with it the sensors
+and budget events) and plan vs actual use the income cycle from
+`household_summary.cycle_windows`. Asked for a month, they mean the cycle holding its 15th; the
+payload's `period` says which days that is.
 
-## Income cycle (wired: `cycle.py`, used by the home screen)
-
-The home screen does not use the calendar month; it uses the income cycle.
-
-- **Person**: from the person's earliest highest income to the next one. An income counts as
-  "the salary" from 80 % of the largest income seen; bookings within the +-5-day tolerance of each
-  other are one salary event (the earliest marks the start). Without any income: calendar month.
-  If the next salary is overdue the cycle runs on until it arrives.
+- **Person**: from one salary to the next. Candidates are credits in an income category that are
+  no refund and no own-account transfer. Per payer, amounts that come back in another month form
+  a level (the level carrying the most money, so a yearly bonus does not replace the salary);
+  credits within +-20 % of the payer's neighbouring credits are salary events, a higher one only on
+  payday (at least 25 days after the last one). A one-off credit from anyone else moves nothing.
+  Payers below 80 % of the top level are not salaries. Bookings within the +-5-day tolerance of
+  each other are one salary event (the earliest marks the start). Only when nothing recurs yet does
+  the largest credit stand in. Without any income: confirmed payday, else calendar month. If the
+  next salary is overdue the cycle runs on until it arrives. A new employer counts from its second
+  salary on.
 - **Household**: the highest income of all persons sets the start, unless another person's salary
   falls within the 7 days *before* it (1-7 days; 8 does not count, same day does not move it) -
   then that earlier salary is the start and that person is the "anchor". The rule and "ab Gehalt X"

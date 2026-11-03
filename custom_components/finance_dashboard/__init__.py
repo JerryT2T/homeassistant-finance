@@ -420,6 +420,7 @@ async def _async_register_services(hass: HomeAssistant, manager, coordinator) ->
             result = await manager.async_reprocess(force=True)
             overrides = await manager._async_load_transfer_overrides()
             manager._derive_from_ledger(overrides)
+            await manager._async_refresh_contract_categories()
         await coordinator.async_refresh()
         return result
 

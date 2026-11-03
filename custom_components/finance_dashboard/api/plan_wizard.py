@@ -19,7 +19,6 @@ from .. import savings_goals as goals_mod
 from .. import setup_wizard as wiz
 from ..const import DOMAIN
 from ..household_summary import counted_transactions
-from ..transfer_detector import get_effective_transactions
 from ._helpers import _get_manager, admin_denied
 from .setup import FinanceDashboardPlanPrefillView, _body
 
@@ -139,7 +138,7 @@ class FinanceDashboardPlanWizardIncomeSuggestionsView(HomeAssistantView):
         manager, err = _manager_or_404(self, request)
         if err:
             return err
-        txs = get_effective_transactions(manager._transactions)  # noqa: SLF001
+        txs = counted_transactions(manager._transactions, manager._accounts)  # noqa: SLF001
         return self.json({"suggestions": pw.suggest_income(txs, manager.persons)})
 
 

@@ -19,7 +19,9 @@ from aiohttp import web
 from homeassistant.components.http import HomeAssistantView
 
 from ..const import DOMAIN
+from ..counted import amount_of, is_income_line, movement_reasons
 from ..labels import booking_key
+from ..tx_dates import effective_date_str
 from ._helpers import _get_manager, visible_account_ids
 
 _LOGGER = logging.getLogger(__name__)
@@ -284,7 +286,7 @@ class FinanceDashboardTransactionsView(HomeAssistantView):
         for txn in rows:
             if account and txn.get("_account_key") != account:
                 continue
-            day = str(txn.get("bookingDate") or txn.get("valueDate") or "")
+            day = effective_date_str(txn)
             if date_from and day < date_from:
                 continue
             if date_to and day > date_to:
@@ -292,17 +294,16 @@ class FinanceDashboardTransactionsView(HomeAssistantView):
             if q and not _tx_matches(txn, q):
                 continue
             filtered.append(txn)
-        filtered.sort(
-            key=lambda t: str(t.get("bookingDate") or t.get("valueDate") or ""), reverse=True
-        )
+        filtered.sort(key=effective_date_str, reverse=True)
 
+        movement = movement_reasons(rows, manager._accounts)  # noqa: SLF001
         page = filtered[offset : offset + limit]
         resolved = await _resolve_page(request, manager, page)
         refund_state = await _refund_states(request, manager)
         sanitized = []
         for txn in page:
             entry = {
-                "date": txn.get("bookingDate") or txn.get("valueDate") or "",
+                "date": effective_date_str(txn),
                 "amount": txn.get("transactionAmount", {}).get("amount", "0"),
                 "currency": txn.get("transactionAmount", {}).get("currency", "EUR"),
                 "description": txn.get("remittanceInformationUnstructured", ""),
@@ -318,7 +319,7 @@ class FinanceDashboardTransactionsView(HomeAssistantView):
             info = resolved.get(key)
             if info:
                 entry["ledger_id"] = key
-                entry["own_category"] = entry["category"]
+                entry["own_category"] = txn.get("_own_category") or entry["category"]
                 entry.update(info)
 
             state = refund_state.get(key)
@@ -334,6 +335,12 @@ class FinanceDashboardTransactionsView(HomeAssistantView):
                 entry["transfer_confidence"] = txn.get("_transfer_confidence")
                 entry["transfer_confirmed"] = txn.get("_transfer_confirmed")
 
+            # Money moved, not spent: shown, never added up (see ``totals``)
+            reason = movement.get(id(txn))
+            entry["counted"] = reason is None
+            if reason:
+                entry["movement"] = reason
+
             # Refund metadata
             refund_id = txn.get("_refund_pair_id")
             if refund_id:
@@ -347,10 +354,24 @@ class FinanceDashboardTransactionsView(HomeAssistantView):
                 "privacy": "admin_full",
                 "transactions": sanitized,
                 "total": len(filtered),
+                "totals": _list_totals(filtered, movement),
                 "limit": limit,
                 "offset": offset,
             }
         )
+
+
+def _list_totals(rows: list[dict], movement: dict[int, str]) -> dict[str, float]:
+    """Income and expenses of the listed rows by the one counting rule."""
+    income = expenses = 0.0
+    for txn in rows:
+        if id(txn) in movement or txn.get("_status", "booked") != "booked":
+            continue
+        if is_income_line(txn):
+            income += amount_of(txn)
+        else:
+            expenses -= amount_of(txn)
+    return {"income": round(income, 2), "expenses": round(expenses, 2)}
 
 
 class FinanceDashboardTransferChainsView(HomeAssistantView):

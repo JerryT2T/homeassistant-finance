@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from custom_components.finance_dashboard.budget_plan import BudgetPlan, CostPosition
+from custom_components.finance_dashboard.const import OWNER_SHARED
 from custom_components.finance_dashboard.household_summary import (
     build_household_summary,
     counted_transactions,
@@ -61,11 +62,13 @@ def test_transfers_excluded_and_savings_rate_null_without_income():
     assert out["cycle"]["label"] == "Zyklus"
 
 
-def test_chain_with_intermediate_counts_source_once():
+def test_cascade_chain_counts_only_the_merchant_debit():
     txs = [
-        tx("a3", -39.9, 5, "HelloFresh", _transfer_chain_id="c", _transfer_role="source"),
+        tx("a3", -39.9, 5, "Savings", _transfer_chain_id="c", _transfer_role="source"),
+        tx("a1", 39.9, 5, "x", _transfer_chain_id="c", _transfer_role="intermediate"),
         tx("a1", -39.9, 5, "PayPal", _transfer_chain_id="c", _transfer_role="intermediate"),
         tx("a2", 39.9, 5, "x", _transfer_chain_id="c", _transfer_role="destination"),
+        tx("a2", -39.9, 5, "HelloFresh"),
     ]
     assert build(txs)["expenses"] == 39.9
 
@@ -213,8 +216,9 @@ def test_fixed_variable_and_owner_resolution_with_plan_and_correction():
         is_admin=True, corrections={"t4": "shared"},
     )
     by = {o["owner"]: o for o in out["owners"]}
-    assert by["shared"]["expenses"] == 24  # netflix by plan + gift by correction
-    assert by["shared"]["fixed"] == 15
+    assert by[OWNER_SHARED]["expenses"] == 24  # netflix by plan + gift by correction
+    assert by[OWNER_SHARED]["fixed"] == 15
+    assert by[OWNER_SHARED]["kind"] == "shared"
     assert by["Anna"]["expenses"] == 30 and by["Anna"]["variable"] == 30
     assert by["Max"]["fixed"] == 12
     assert out["fixed"] == 27 and out["variable"] == 39

@@ -57,9 +57,20 @@ from ..data_store import Ledger, StorageDecryptError
 from ..fetch_budget import FetchBudget
 from ..household import HouseholdMember, HouseholdModel, model_from_plan
 from ..pots import Pot, PotStore
+from ..counted import counted_transactions, is_income_line, movement_reasons, net_counted
+from ..household_summary import (
+    Classifier,
+    cycle_windows,
+    figures,
+    month_of_window,
+    plan_persons,
+    window_of_month,
+)
+from ..labels import apply_contract_categories, contract_categories
+from ..plan_match import assign_positions
+from ..tx_dates import effective_date_str, effective_day
 from ..transfer_detector import (
     apply_overrides,
-    get_effective_transactions,
 )
 from ..transfer_plan import build_transfer_plan
 from ._banks import BankMixin
@@ -68,6 +79,11 @@ from ._questions import QuestionsMixin
 from ._refresh import RefreshMixin
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _refund_allocations(manager: Any) -> dict[str, dict[str, float]]:
+    analysis = getattr(manager, "get_refund_analysis", None)  # a host without refunds has none
+    return analysis()["allocations"] if analysis is not None else {}
 
 TRANSACTION_CACHE_KEY = f"{DOMAIN}_transactions"
 TRANSACTION_CACHE_VERSION = 1
@@ -124,6 +140,7 @@ class FinanceDashboardManager(RefreshMixin, BankMixin, PersistenceMixin, Questio
         self._rate_limited_until: datetime | None = None
         self._transfer_override_store = Store(hass, 1, STORAGE_KEY_TRANSFER_OVERRIDES)
         self._transfer_overrides: dict[str, bool] = {}
+        self._contract_categories: dict[str, str] = {}
         self._memory = None  # MerchantMemory, created in async_initialize
         self._recurring_patterns: list[dict[str, Any]] = []
         self._previous_balances: dict[str, float] = {}
@@ -296,6 +313,8 @@ class FinanceDashboardManager(RefreshMixin, BankMixin, PersistenceMixin, Questio
         if legacy and ("transactions" in legacy or "tx_by_account" in legacy):
             await self._migrate_plaintext_cache(legacy)
 
+        await self._async_migrate_ledger_ids()
+
         # Processing changed since the ledger was written -> rebuild it from
         # the raw archive (no bank call).  Failure keeps the old ledger.
         try:
@@ -310,6 +329,7 @@ class FinanceDashboardManager(RefreshMixin, BankMixin, PersistenceMixin, Questio
         except Exception:
             _LOGGER.debug("Transfer overrides unavailable at startup", exc_info=True)
         self._derive_from_ledger(overrides)
+        await self._async_refresh_contract_categories()
         _LOGGER.info(
             "Loaded %d ledger transactions (last refresh: %s, balances: %d)",
             len(self._transactions),
@@ -464,55 +484,90 @@ class FinanceDashboardManager(RefreshMixin, BankMixin, PersistenceMixin, Questio
         """Synchronous alias for ``async_get_balance`` — cache only."""
         return dict(self._balances)
 
+    def _counted_view(self, *, include_pending: bool = False) -> list[dict[str, Any]]:
+        """The bookings every total is made of: counted and refunds netted (``counted.py``)."""
+        return net_counted(
+            counted_transactions(
+                self._transactions, self._accounts, include_pending=include_pending
+            ),
+            _refund_allocations(self),
+        )
+
+    def _period(
+        self,
+        txs: list[dict[str, Any]],
+        month: int | None = None,
+        year: int | None = None,
+    ) -> tuple[tuple[date, date], int, int, dict[str, Any]]:
+        """``(window, month, year, period)``: the same income cycle the panel shows.
+
+        No selection is the current cycle; a month stands for the cycle holding
+        its 15th. ``month`` / ``year`` name the plan month that goes with it.
+        """
+        now = dt_util.now()
+        if month and not 1 <= month <= 12:  # noqa: PLR2004
+            month = None
+        if month:
+            windows, rule, anchor = window_of_month(txs, month, year or now.year, self.persons)
+        else:
+            windows, rule, anchor = cycle_windows(txs, now.date(), self.persons)
+        window = windows[0]
+        label_month, label_year = month_of_window(window)
+        return (
+            window,
+            month or label_month,
+            (year or now.year) if month else label_year,
+            {
+                "start": window[0].isoformat(),
+                "end": window[1].isoformat(),
+                "rule": rule,
+                "anchor": anchor,
+            },
+        )
+
+    def _classifier(self) -> Classifier:
+        return Classifier(
+            self.budget_plan,
+            self._recurring_patterns,
+            None,
+            plan_persons(self.budget_plan, self._accounts),
+        )
+
     async def async_get_monthly_summary(
         self, month: int | None = None, year: int | None = None
     ) -> dict[str, Any]:
-        """Get monthly spending summary with category breakdown."""
-        now = datetime.now()
-        target_month = month or now.month
-        target_year = year or now.year
+        """Spending summary of an income cycle with category breakdown.
 
-        # Use effective transactions (intermediate chain legs excluded)
-        effective = await self._net_matched_refunds(get_effective_transactions(self._transactions))
+        The figures come from the function behind the household summary, so
+        sensors, automations and the panel read the same numbers (#169).
+        """
+        effective = await self._net_matched_refunds()
+        window, target_month, target_year, period = self._period(effective, month, year)
+        start, end = window
 
-        # Filter for target month
-        monthly_txns = [
-            txn
-            for txn in effective
-            if self._is_in_month(txn, target_month, target_year) and txn.get("_status") == "booked"
-        ]
+        def in_window(txn: dict[str, Any]) -> bool:
+            day = effective_day(txn)
+            return day is not None and start <= day <= end
 
-        # Count excluded transfers for transparency
-        all_monthly = [
-            txn
-            for txn in self._transactions
-            if self._is_in_month(txn, target_month, target_year) and txn.get("_status") == "booked"
-        ]
+        monthly_txns = [txn for txn in effective if in_window(txn)]
+        movement = movement_reasons(self._transactions, self._accounts)
         excluded_chain_txns = [
             txn
-            for txn in all_monthly
-            if txn.get("_transfer_role") in ("intermediate", "destination")
-            and txn.get("_transfer_confirmed") is not False
+            for txn in self._transactions
+            if id(txn) in movement and txn.get("_status", "booked") == "booked" and in_window(txn)
         ]
         excluded_amount = sum(
             abs(float(t.get("transactionAmount", {}).get("amount", 0))) for t in excluded_chain_txns
         )
 
-        # Group by category
-        category_totals: dict[str, float] = {}
-        total_income = 0.0
-        total_expenses = 0.0
+        result = figures(effective, window, self._classifier())
+        total_income = result["income"]
+        total_expenses = result["expenses"]
 
-        for txn in monthly_txns:
-            amount = float(txn.get("transactionAmount", {}).get("amount", 0))
-            category = txn.get("category", "other")
-
-            if amount > 0:
-                total_income += amount
-            else:
-                total_expenses += abs(amount)
-
-            category_totals[category] = category_totals.get(category, 0) + amount
+        # Bank sign per category: income positive, expenses negative
+        category_totals: dict[str, float] = dict(result["income_categories"])
+        for (_owner, category), spent in result["categories"].items():
+            category_totals[category] = category_totals.get(category, 0) - spent
 
         # Build household split data from per-person accounts
         # Graceful degradation: household features must never crash the coordinator
@@ -528,9 +583,8 @@ class FinanceDashboardManager(RefreshMixin, BankMixin, PersistenceMixin, Questio
         recurring_top = self._recurring_patterns[:10]
 
         # Fixed vs variable costs
-        fixed_cats = {"housing_cold", "housing_warm", "finance", "health"}
-        fixed_total = sum(abs(category_totals.get(c, 0)) for c in fixed_cats)
-        variable_total = total_expenses - fixed_total
+        fixed_total = result["fixed"]
+        variable_total = result["variable"]
 
         # Budget exceeded check — must not crash the coordinator
         try:
@@ -541,6 +595,7 @@ class FinanceDashboardManager(RefreshMixin, BankMixin, PersistenceMixin, Questio
         return {
             "month": target_month,
             "year": target_year,
+            "period": period,
             "total_income": round(total_income, 2),
             "total_expenses": round(total_expenses, 2),
             "balance": round(total_income - total_expenses, 2),
@@ -579,12 +634,33 @@ class FinanceDashboardManager(RefreshMixin, BankMixin, PersistenceMixin, Questio
             "is_refreshing": self._refresh_in_flight,
         }
 
+    def remember_contract_categories(self, contracts: list[dict[str, Any]]) -> None:
+        """Contract views changed: their categories are what the bookings count under."""
+        self._contract_categories = contract_categories(contracts)
+        apply_contract_categories(self._transactions, self._contract_categories)
+
+    async def _async_refresh_contract_categories(self) -> None:
+        """Rebuild the booking -> contract category map (cache only, #177)."""
+        from ..contracts import async_get_store, build_contracts, own_account_names
+        from ..household_summary import pending_debits
+
+        try:
+            store = await async_get_store(self._hass)
+            txns = counted_transactions(self._transactions, self._accounts)
+            txns += pending_debits(self._transactions)
+            contracts = build_contracts(txns, store, own_names=own_account_names(self._accounts))
+            await store.async_save_if_changed()
+            self.remember_contract_categories(contracts)
+        except Exception:  # noqa: BLE001 - totals fall back to the bookings' own categories
+            _LOGGER.debug("Contract categories unavailable", exc_info=True)
+
     async def async_categorize_transactions(self) -> None:
         """Re-run auto-categorization on all cached transactions."""
         if self._demo_mode or not self._categorizer:
             return
         # Categories are derived, not stored: recompute from the ledger.
         self._derive_from_ledger(self._transfer_overrides)
+        await self._async_refresh_contract_categories()
         _LOGGER.info("Re-categorized %d transactions", len(self._transactions))
 
     async def async_set_budget_limit(self, category: str, limit: float) -> None:
@@ -968,7 +1044,8 @@ class FinanceDashboardManager(RefreshMixin, BankMixin, PersistenceMixin, Questio
             include_recent=include_recent,
             accounts=self._accounts,
             persons=self.persons,
-            transactions=get_effective_transactions(self._transactions),
+            transactions=self._transactions,
+            refund_allocations=_refund_allocations(self),
             plan=self.budget_plan,
             pots=self.pots,
             recurring=self._recurring_patterns,
@@ -995,24 +1072,26 @@ class FinanceDashboardManager(RefreshMixin, BankMixin, PersistenceMixin, Questio
             cycle=cycle,
             viewer_person=person,
             is_admin=is_admin,
-            corrections=getattr(self, "_owner_corrections", None),
-            refund_allocations=self.get_refund_analysis()["allocations"],
+            refund_allocations=_refund_allocations(self),
             as_of=self._last_refresh,
+            persons=self.persons,
         )
 
-    async def _net_matched_refunds(self, txns: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """``txns`` with matched insurance refunds netted into their expenses (#119)."""
+    async def _net_matched_refunds(
+        self, txns: list[dict[str, Any]] | None = None
+    ) -> list[dict[str, Any]]:
+        """``txns`` (default: all counted) with every refund netted into its expense."""
         from ..labels import async_get_label_store
-        from ..refund_matcher import net_refunds
         from ..refund_store import async_get_refund_store
 
         try:
             await async_get_refund_store(self._hass)
             await async_get_label_store(self._hass)
-            return net_refunds(txns, self.get_refund_analysis()["allocations"])
         except Exception:  # noqa: BLE001 - the summary must not depend on the refund hint
-            _LOGGER.debug("Refund netting skipped", exc_info=True)
-            return txns
+            _LOGGER.debug("Refund inputs unavailable", exc_info=True)
+        if txns is None:
+            return self._counted_view()
+        return net_counted(txns, _refund_allocations(self))
 
     def get_refund_analysis(self) -> dict[str, Any]:
         """Refund matches (#119) from cache and the stores the API views loaded.
@@ -1025,8 +1104,9 @@ class FinanceDashboardManager(RefreshMixin, BankMixin, PersistenceMixin, Questio
         data = self._hass.data.get(DOMAIN, {})
         refunds, labels = data.get("_refund_store"), data.get("_label_store")
         try:
+            # A PayPal mirror or chain leg never counts, so it must not attract a refund.
             return analyse(
-                self._transactions,
+                counted_transactions(self._transactions, getattr(self, "_accounts", None) or []),
                 manual=refunds.manual if refunds else None,
                 labels=labels.bookings if labels else None,
             )
@@ -1168,16 +1248,19 @@ class FinanceDashboardManager(RefreshMixin, BankMixin, PersistenceMixin, Questio
         """
         from ..budget_plan import actual_amount_to_plan_sign
 
-        now = dt_util.now()
-        target_month = month or now.month
-        target_year = year or now.year
         plan = self.budget_plan
+        counted = self._counted_view()
+        window, target_month, target_year, period = self._period(counted, month, year)
+        start, end = window
 
+        # The same bookings as every other total: movement and income never
+        # reach a cost row, a credit nets inside its category.
         booked = [
             txn
-            for txn in get_effective_transactions(self._transactions)
-            if self._is_in_month(txn, target_month, target_year)
-            and txn.get("_status") == "booked"
+            for txn in counted
+            if (day := effective_day(txn)) is not None
+            and start <= day <= end
+            and not is_income_line(txn)
         ]
 
         actual_by_category: dict[str, float] = {}
@@ -1185,16 +1268,17 @@ class FinanceDashboardManager(RefreshMixin, BankMixin, PersistenceMixin, Questio
             amount = actual_amount_to_plan_sign(
                 float(txn.get("transactionAmount", {}).get("amount", 0) or 0)
             )
-            if amount <= 0:
-                continue  # income, not a cost
             category = txn.get("category", "other")
             actual_by_category[category] = round(actual_by_category.get(category, 0.0) + amount, 2)
 
         planned_by_category = plan.category_totals(target_month, target_year)
 
+        active = plan.active_positions(target_month, target_year)
+        assigned = assign_positions(booked, active, plan_persons(plan, self._accounts))
+
         positions: list[dict[str, Any]] = []
-        for position in plan.active_positions(target_month, target_year):
-            matched = self._match_transactions(position, booked)
+        for position in active:
+            matched = assigned.get(position.id, [])
             actual = round(
                 sum(
                     actual_amount_to_plan_sign(
@@ -1222,6 +1306,7 @@ class FinanceDashboardManager(RefreshMixin, BankMixin, PersistenceMixin, Questio
         return {
             "month": target_month,
             "year": target_year,
+            "period": period,
             "has_actuals": bool(booked),
             "categories": [
                 {
@@ -1343,34 +1428,6 @@ class FinanceDashboardManager(RefreshMixin, BankMixin, PersistenceMixin, Questio
             "has_plan": not plan.is_empty(),
         }
 
-    @staticmethod
-    def _match_transactions(
-        position: Any, transactions: list[dict[str, Any]]
-    ) -> list[dict[str, Any]]:
-        """Find the transactions that plausibly belong to a cost position.
-
-        Uses the distinctive words of the position name (4+ characters, so
-        "DKB Zinsen" matches on "zinsen" rather than on the ubiquitous bank
-        name). A position with no distinctive word matches nothing, which is
-        reported honestly instead of guessed.
-        """
-        tokens = [word for word in re.findall(r"[a-zäöüß]{4,}", position.name.lower())]
-        if not tokens:
-            return []
-        matches = []
-        for txn in transactions:
-            haystack = " ".join(
-                str(part).lower()
-                for part in (
-                    txn.get("remittanceInformationUnstructured", ""),
-                    (txn.get("creditorName") or ""),
-                    (txn.get("debtorName") or ""),
-                )
-            )
-            if any(token in haystack for token in tokens):
-                matches.append(txn)
-        return matches
-
     # ------------------------------------------------------------------
     # Transfer chain management
     # ------------------------------------------------------------------
@@ -1415,7 +1472,7 @@ class FinanceDashboardManager(RefreshMixin, BankMixin, PersistenceMixin, Questio
                     "role": txn.get("_transfer_role", ""),
                     "account_name": txn.get("_account_name", ""),
                     "amount": amount,
-                    "date": txn.get("bookingDate", ""),
+                    "date": effective_date_str(txn),
                     "creditor": txn.get("creditorName", ""),
                     "description": txn.get("remittanceInformationUnstructured", ""),
                 }
@@ -1606,15 +1663,3 @@ class FinanceDashboardManager(RefreshMixin, BankMixin, PersistenceMixin, Questio
                     limit=limit,
                     actual=actual,
                 )
-
-    @staticmethod
-    def _is_in_month(txn: dict[str, Any], month: int, year: int) -> bool:
-        """Check if a transaction belongs to the given month."""
-        booking_date = txn.get("bookingDate", "")
-        if not booking_date:
-            return False
-        try:
-            dt = datetime.strptime(booking_date, "%Y-%m-%d")
-            return dt.month == month and dt.year == year
-        except ValueError:
-            return False

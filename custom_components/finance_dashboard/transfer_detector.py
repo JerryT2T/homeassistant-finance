@@ -4,21 +4,29 @@ Detects when the same money flow cascades through multiple accounts:
   HelloFresh -39.90 from PayPal → PayPal -39.90 from DKB → top-up DKB from savings
 
 Without detection, this single €39.90 expense counts 3x in summaries.
-The detector links these into a chain and marks intermediate legs so
-the monthly summary counts the real expense only once.
+The detector links the money moves into a chain; none of its legs counts, the
+merchant debit is the purchase (``counted.py``).
 
 IMPORTANT: Accounts like PayPal are NOT globally marked as intermediaries.
 Only individual transactions are detected as pass-through when amount and
 timing match across accounts.
+
+A link needs evidence beyond amount and date (a linked IBAN, an account or
+holder name, a transfer keyword): an unrelated purchase and credit of the same
+amount must not hide each other (#174). Such a pair is only offered as a
+question; the answer is stored like any chain decision and links it for good.
+
+Chain ids are derived from the member bookings, so a decision survives refresh,
+reprocess and restart (#173).
 """
 
 from __future__ import annotations
 
+import hashlib
 import logging
-import uuid
+import re
 from collections import defaultdict
 from dataclasses import dataclass, field
-from datetime import datetime
 from typing import Any
 
 from .const import (
@@ -28,8 +36,13 @@ from .const import (
     TRANSFER_REFUND_WINDOW_DAYS,
     TRANSFER_TIME_WINDOW_DAYS,
 )
+from .own_accounts import OwnAccounts, normalize_iban
+from .tx_dates import effective_day
 
 _LOGGER = logging.getLogger(__name__)
+
+CHAIN_ID_PREFIX = "chain:"
+REFUND_ID_PREFIX = "refund:"
 
 
 # ---------------------------------------------------------------------------
@@ -79,10 +92,32 @@ class RefundPair:
 # ---------------------------------------------------------------------------
 
 
+def _txn_id(txn: dict[str, Any]) -> str:
+    """Identity of a booking; PayPal rows often have no transaction id.
+
+    A ledger id is unique per account only, the same fingerprint can sit on two.
+    """
+    lid = txn.get("_ledger_id")
+    if lid:
+        return f"{txn.get('_account_key') or txn.get('_account_id') or ''}|{lid}"
+    return str(txn.get("transactionId") or "")
+
+
+def stable_chain_id(members: list[dict[str, Any]]) -> str:
+    """Deterministic chain id: the same member bookings always give the same id."""
+    joined = "\n".join(sorted(_txn_id(t) for t in members))
+    return CHAIN_ID_PREFIX + hashlib.sha256(joined.encode("utf-8")).hexdigest()[:24]
+
+
+def is_stable_chain_id(chain_id: Any) -> bool:
+    return isinstance(chain_id, str) and chain_id.startswith(CHAIN_ID_PREFIX)
+
+
 def detect_transfer_chains(
     transactions: list[dict[str, Any]],
     accounts: list[dict[str, Any]],
     config: dict[str, Any] | None = None,
+    overrides: dict[str, bool] | None = None,
 ) -> tuple[list[TransferChain], list[RefundPair]]:
     """Detect cascading transfers and refunds in transaction list.
 
@@ -90,6 +125,8 @@ def detect_transfer_chains(
         transactions: All transactions (enriched with _account_id etc.)
         accounts: Account metadata list
         config: Optional overrides for tolerances/thresholds
+        overrides: Stored chain decisions; ``True`` links a pair that has no
+            evidence of its own
 
     Returns:
         Tuple of (chains, refunds)
@@ -100,7 +137,7 @@ def detect_transfer_chains(
     booked = [t for t in transactions if t.get("_status") == "booked"]
 
     # Phase A — find transfer pairs
-    pairs = _find_transfer_pairs(booked, accounts, cfg)
+    pairs, _open = _find_transfer_pairs(booked, accounts, cfg, overrides)
     _LOGGER.debug("Phase A: found %d transfer pairs", len(pairs))
 
     # Phase B — resolve cascades into chains
@@ -117,6 +154,33 @@ def detect_transfer_chains(
         len(refunds),
     )
     return chains, refunds
+
+
+def transfer_questions(
+    transactions: list[dict[str, Any]],
+    accounts: list[dict[str, Any]],
+    overrides: dict[str, bool] | None = None,
+    config: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    """Pairs that match on amount and date only and nobody decided on yet.
+
+    Each entry: ``{"id", "out", "in", "confidence"}`` with the two bookings.
+    """
+    booked = [t for t in transactions if t.get("_status") == "booked"]
+    _pairs, unanswered = _find_transfer_pairs(booked, accounts, _merge_config(config), overrides)
+    by_id = {_txn_id(t): t for t in booked}
+    out: list[dict[str, Any]] = []
+    for pair in unanswered:
+        out_txn, in_txn = by_id[pair.outgoing_txn_id], by_id[pair.incoming_txn_id]
+        out.append(
+            {
+                "id": stable_chain_id([out_txn, in_txn]),
+                "out": out_txn,
+                "in": in_txn,
+                "confidence": pair.confidence,
+            }
+        )
+    return out
 
 
 def enrich_transactions(
@@ -147,7 +211,7 @@ def enrich_transactions(
         refund_lookup[ref.refund_txn_id] = (ref.refund_id, "refund")
 
     for txn in transactions:
-        txn_id = txn.get("transactionId", "")
+        txn_id = _txn_id(txn)
 
         # Chain enrichment
         if txn_id in chain_lookup:
@@ -179,34 +243,17 @@ def enrich_transactions(
 def get_effective_transactions(
     transactions: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Filter out intermediate and destination legs of transfer chains.
+    """Filter out every leg of a transfer chain (a chain is pure movement).
 
-    Returns only the transactions that should count in summaries:
-    - Source legs of chains (the real expense/outflow)
-    - All non-chain transactions
-    - Rejected chains (user said "no") are kept as-is
-
-    Intermediate and destination legs are excluded so money isn't
-    double-counted when it cascades through accounts.
+    A rejected chain (user said "no") is kept as independent transactions. This
+    is the chain part of the one counting rule; views use
+    :func:`counted.counted_transactions`, which applies the rest as well.
     """
-    effective = []
-    for txn in transactions:
-        role = txn.get("_transfer_role")
-        confirmed = txn.get("_transfer_confirmed")
-
-        # User rejected the chain → treat as independent transaction
-        if confirmed is False:
-            effective.append(txn)
-            continue
-
-        # Intermediate or destination legs of a chain → skip
-        if role in ("intermediate", "destination"):
-            continue
-
-        # Source leg or no chain → include
-        effective.append(txn)
-
-    return effective
+    return [
+        txn
+        for txn in transactions
+        if not txn.get("_transfer_role") or txn.get("_transfer_confirmed") is False
+    ]
 
 
 def apply_overrides(
@@ -234,14 +281,18 @@ def _find_transfer_pairs(
     transactions: list[dict[str, Any]],
     accounts: list[dict[str, Any]],
     config: dict[str, Any],
-) -> list[TransferPair]:
-    """Find matching transaction pairs across different accounts."""
+    overrides: dict[str, bool] | None = None,
+) -> tuple[list[TransferPair], list[TransferPair]]:
+    """Find matching pairs across accounts: ``(linked, unanswered questions)``."""
+    decided = overrides or {}
     tolerance = config["amount_tolerance"]
     window_days = config["time_window_days"]
     auto_confidence = config["auto_confidence"]
 
     # Build account name lookup for creditor/debtor matching
     account_names = _build_account_name_set(accounts)
+    own = OwnAccounts.of(accounts)
+    ibans = {str(a.get("id")): normalize_iban(a.get("iban")) for a in accounts if a.get("id")}
 
     # Separate outgoing (negative) and incoming (positive) transactions
     outgoing = []
@@ -256,69 +307,111 @@ def _find_transfer_pairs(
     # Index incoming by amount bucket for faster lookup
     incoming_by_amount = _bucket_by_amount(incoming, tolerance)
 
-    pairs: list[TransferPair] = []
-    used_incoming: set[str] = set()
-
-    for out_txn in outgoing:
+    def best_for(
+        out_txn: dict[str, Any], used: set[str], *, want_link: bool
+    ) -> TransferPair | None:
+        """The best partner for a debit among linkable pairs, or among open questions."""
         out_amount = abs(float(out_txn["transactionAmount"]["amount"]))
-        out_date = _parse_date(out_txn.get("bookingDate", ""))
+        out_date = effective_day(out_txn)
         out_account = out_txn.get("_account_id", "")
-        out_id = out_txn.get("transactionId", "")
-
         if not out_date or not out_account:
-            continue
-
-        # Find candidate incoming transactions with similar amount
-        candidates = _get_amount_candidates(incoming_by_amount, out_amount, tolerance)
-
-        best_match: TransferPair | None = None
-        best_confidence = 0.0
-
-        for in_txn in candidates:
-            in_id = in_txn.get("transactionId", "")
-            if in_id in used_incoming:
-                continue
-
+            return None
+        best: TransferPair | None = None
+        for in_txn in _get_amount_candidates(incoming_by_amount, out_amount, tolerance):
+            in_id = _txn_id(in_txn)
             in_account = in_txn.get("_account_id", "")
-            if in_account == out_account:
-                continue  # Same account — not a transfer
-
-            in_amount = float(in_txn["transactionAmount"]["amount"])
-            in_date = _parse_date(in_txn.get("bookingDate", ""))
+            if in_id in used or in_account == out_account:
+                continue  # taken, or same account — not a transfer
+            in_date = effective_day(in_txn)
             if not in_date:
                 continue
-
             date_delta = abs((out_date - in_date).days)
             if date_delta > window_days:
                 continue
-
             confidence = _score_pair(
                 out_txn,
                 in_txn,
                 out_amount,
-                in_amount,
+                float(in_txn["transactionAmount"]["amount"]),
                 date_delta,
                 account_names,
                 tolerance,
             )
+            if confidence < auto_confidence or (best and confidence <= best.confidence):
+                continue
+            if _has_evidence(out_txn, in_txn, account_names, own, ibans):
+                decision = True
+            else:
+                decision = decided.get(stable_chain_id([out_txn, in_txn]))
+            if decision is False or (decision is True) != want_link:
+                continue
+            best = TransferPair(
+                outgoing_txn_id=_txn_id(out_txn),
+                incoming_txn_id=in_id,
+                outgoing_account_id=out_account,
+                incoming_account_id=in_account,
+                amount=out_amount,
+                confidence=confidence,
+                date_delta_days=date_delta,
+            )
+        return best
 
-            if confidence >= auto_confidence and confidence > best_confidence:
-                best_confidence = confidence
-                best_match = TransferPair(
-                    outgoing_txn_id=out_id,
-                    incoming_txn_id=in_id,
-                    outgoing_account_id=out_account,
-                    incoming_account_id=in_account,
-                    amount=out_amount,
-                    confidence=confidence,
-                    date_delta_days=date_delta,
-                )
+    # Real links first: an unproven pair must not take a credit from a proven one.
+    pairs: list[TransferPair] = []
+    used_incoming: set[str] = set()
+    linked_out: set[str] = set()
+    for out_txn in outgoing:
+        pair = best_for(out_txn, used_incoming, want_link=True)
+        if pair:
+            pairs.append(pair)
+            used_incoming.add(pair.incoming_txn_id)
+            linked_out.add(pair.outgoing_txn_id)
+    unanswered: list[TransferPair] = []
+    for out_txn in outgoing:
+        if _txn_id(out_txn) in linked_out:
+            continue
+        pair = best_for(out_txn, used_incoming, want_link=False)
+        if pair:
+            unanswered.append(pair)
+            used_incoming.add(pair.incoming_txn_id)
+    return pairs, unanswered
 
-        if best_match:
-            pairs.append(best_match)
-            used_incoming.add(best_match.incoming_txn_id)
 
-    return pairs
+def _has_evidence(
+    out_txn: dict[str, Any],
+    in_txn: dict[str, Any],
+    account_names: set[str],
+    own: OwnAccounts,
+    ibans: dict[str, str],
+) -> bool:
+    """Something beyond amount and date says the two bookings are one transfer."""
+    out_iban = ibans.get(str(out_txn.get("_account_id") or ""))
+    in_iban = ibans.get(str(in_txn.get("_account_id") or ""))
+    paid_to = normalize_iban((out_txn.get("creditorAccount") or {}).get("iban"))
+    paid_by = normalize_iban((in_txn.get("debtorAccount") or {}).get("iban"))
+    if (in_iban and paid_to == in_iban) or (out_iban and paid_by == out_iban):
+        return True
+    # One leg says "own account"; the other must not name somebody else.
+    out_own = own.matches(out_txn) or out_txn.get("category") == "transfers"
+    in_own = own.matches(in_txn) or in_txn.get("category") == "transfers"
+    if (out_own or in_own) and (out_own or not out_txn.get("creditorName")) and (
+        in_own or not in_txn.get("debtorName")
+    ):
+        return True
+    out_name = _normalize(out_txn.get("_account_name", ""))
+    in_name = _normalize(in_txn.get("_account_name", ""))
+    creditor = _normalize(out_txn.get("creditorName", ""))
+    debtor = _normalize(in_txn.get("debtorName", ""))
+    out_text = _normalize(out_txn.get("remittanceInformationUnstructured", ""))
+    in_text = _normalize(in_txn.get("remittanceInformationUnstructured", ""))
+    if _names(in_name, creditor) or _names(in_name, out_text):
+        return True
+    if _names(out_name, debtor) or _names(out_name, in_text):
+        return True
+    # A known account name on one leg, nobody else on the other.
+    out_known = any(_names(name, creditor) for name in account_names)
+    in_known = any(_names(name, debtor) for name in account_names)
+    return (out_known or in_known) and (out_known or not creditor) and (in_known or not debtor)
 
 
 def _score_pair(
@@ -358,10 +451,10 @@ def _score_pair(
     in_remittance = _normalize(in_txn.get("remittanceInformationUnstructured", ""))
 
     # Does the outgoing creditor reference the incoming account?
-    if in_account_name and (in_account_name in out_creditor or in_account_name in out_remittance):
+    if _names(in_account_name, out_creditor) or _names(in_account_name, out_remittance):
         score += 0.3
     # Does the incoming debtor reference the outgoing account?
-    elif out_account_name and (out_account_name in in_debtor or out_account_name in in_remittance):
+    elif _names(out_account_name, in_debtor) or _names(out_account_name, in_remittance):
         score += 0.3
     # Check against known account names in the system
     elif _any_account_name_match(out_creditor, in_debtor, account_names):
@@ -404,7 +497,7 @@ def _resolve_chains(
         takes_from[pair.outgoing_txn_id] = pair
 
     # Transaction lookup for account resolution
-    txn_lookup = {t.get("transactionId", ""): t for t in transactions}
+    txn_lookup = {_txn_id(t): t for t in transactions}
 
     # Find chains by following the cascade
     visited_pairs: set[int] = set()
@@ -489,8 +582,8 @@ def _find_matching_predecessor(
         # The incoming txn date should be close to outgoing txn date
         in_txn = txn_lookup.get(pair.incoming_txn_id, {})
         out_txn = txn_lookup.get(current.outgoing_txn_id, {})
-        in_date = _parse_date(in_txn.get("bookingDate", ""))
-        out_date = _parse_date(out_txn.get("bookingDate", ""))
+        in_date = effective_day(in_txn)
+        out_date = effective_day(out_txn)
         if in_date and out_date:
             if abs((in_date - out_date).days) <= TRANSFER_TIME_WINDOW_DAYS:
                 return pair
@@ -514,8 +607,8 @@ def _find_matching_successor(
             continue
         in_txn = txn_lookup.get(current.incoming_txn_id, {})
         out_txn = txn_lookup.get(pair.outgoing_txn_id, {})
-        in_date = _parse_date(in_txn.get("bookingDate", ""))
-        out_date = _parse_date(out_txn.get("bookingDate", ""))
+        in_date = effective_day(in_txn)
+        out_date = effective_day(out_txn)
         if in_date and out_date:
             if abs((in_date - out_date).days) <= TRANSFER_TIME_WINDOW_DAYS:
                 return pair
@@ -527,8 +620,6 @@ def _build_chain(
     txn_lookup: dict[str, dict[str, Any]],
 ) -> TransferChain:
     """Build a TransferChain from an ordered list of pairs."""
-    chain_id = str(uuid.uuid4())
-
     # Collect all unique transaction IDs in order
     all_txn_ids: list[str] = []
     seen: set[str] = set()
@@ -539,6 +630,8 @@ def _build_chain(
         if pair.incoming_txn_id not in seen:
             all_txn_ids.append(pair.incoming_txn_id)
             seen.add(pair.incoming_txn_id)
+
+    chain_id = stable_chain_id([txn_lookup.get(tid, {"transactionId": tid}) for tid in all_txn_ids])
 
     # Source = first outgoing, Destination = last incoming
     source_txn_id = chain_pairs[0].outgoing_txn_id
@@ -592,7 +685,7 @@ def _detect_refunds(
         if amount <= 0:
             continue
 
-        txn_id = txn.get("transactionId", "")
+        txn_id = _txn_id(txn)
         if txn_id in used:
             continue
 
@@ -610,14 +703,14 @@ def _detect_refunds(
         if not is_refund_text:
             continue
 
-        in_date = _parse_date(txn.get("bookingDate", ""))
+        in_date = effective_day(txn)
         if not in_date:
             continue
 
         # Find matching outgoing transaction
         candidates = outgoing_index.get((account, creditor), [])
         for orig in candidates:
-            orig_id = orig.get("transactionId", "")
+            orig_id = _txn_id(orig)
             if orig_id in used:
                 continue
 
@@ -625,14 +718,14 @@ def _detect_refunds(
             if abs(orig_amount - amount) > 0.01:
                 continue
 
-            orig_date = _parse_date(orig.get("bookingDate", ""))
+            orig_date = effective_day(orig)
             if not orig_date:
                 continue
 
             # Refund must come AFTER the original
             delta = (in_date - orig_date).days
             if 0 <= delta <= window_days:
-                refund_id = str(uuid.uuid4())
+                refund_id = REFUND_ID_PREFIX + stable_chain_id([orig, txn])[len(CHAIN_ID_PREFIX) :]
                 refunds.append(
                     RefundPair(
                         refund_id=refund_id,
@@ -669,16 +762,6 @@ def _merge_config(
     return defaults
 
 
-def _parse_date(date_str: str) -> datetime | None:
-    """Parse YYYY-MM-DD date string."""
-    if not date_str:
-        return None
-    try:
-        return datetime.strptime(date_str, "%Y-%m-%d")
-    except ValueError:
-        return None
-
-
 def _normalize(text: str) -> str:
     """Normalize text for comparison."""
     if not text:
@@ -701,16 +784,20 @@ def _build_account_name_set(
     return names
 
 
+def _names(name: str, text: str) -> bool:
+    """``text`` contains ``name`` as whole words: "ING" is not in "Leasing"."""
+    if not name or not text:
+        return False
+    return re.search(rf"(?<![a-z0-9äöüß]){re.escape(name)}(?![a-z0-9äöüß])", text) is not None
+
+
 def _any_account_name_match(
     creditor: str,
     debtor: str,
     account_names: set[str],
 ) -> bool:
     """Check if creditor or debtor contains any known account name."""
-    for name in account_names:
-        if name in creditor or name in debtor:
-            return True
-    return False
+    return any(_names(name, creditor) or _names(name, debtor) for name in account_names)
 
 
 def _bucket_by_amount(

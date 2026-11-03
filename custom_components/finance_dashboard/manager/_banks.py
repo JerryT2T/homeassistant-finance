@@ -25,6 +25,7 @@ from ..const import (
     LEGACY_BANK_ID,
     SUBENTRY_TYPE_BANK,
 )
+from ..tx_dates import effective_date_str
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -330,6 +331,8 @@ class BankMixin:
         ``_transactions``.
         """
         from ..account_identity import account_key
+        from ..labels import apply_contract_categories
+        from ..own_accounts import OwnAccounts
         from ..transfer_detector import (
             apply_overrides,
             detect_transfer_chains,
@@ -340,6 +343,8 @@ class BankMixin:
         uid_for_key = {account_key(a): uid for uid, a in by_uid.items()}
         categorizer = self._categorizer
         memory = getattr(self, "_memory", None)
+        if categorizer and hasattr(categorizer, "set_own_accounts"):
+            categorizer.set_own_accounts(OwnAccounts.of(self._accounts))
 
         tx_by_account: dict[str, list[dict[str, Any]]] = {}
         for akey in self._ledger.account_keys():
@@ -360,13 +365,16 @@ class BankMixin:
             tx_by_account[uid] = txs
 
         flat = [tx for txs in tx_by_account.values() for tx in txs]
-        flat.sort(key=lambda t: str(t.get("bookingDate") or ""), reverse=True)
+        flat.sort(key=effective_date_str, reverse=True)
         try:
-            chains, refunds = detect_transfer_chains(flat, self._accounts)
+            chains, refunds = detect_transfer_chains(flat, self._accounts, overrides=overrides)
             flat = enrich_transactions(flat, chains, refunds)
             apply_overrides(flat, overrides or {})
         except Exception:
             _LOGGER.exception("Transfer detection failed — using unenriched transactions")
+
+        # A contract's category is what its bookings count under (#177).
+        apply_contract_categories(flat, getattr(self, "_contract_categories", None))
 
         self._tx_by_account = tx_by_account
         self._transactions = flat

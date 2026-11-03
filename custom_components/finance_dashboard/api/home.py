@@ -24,6 +24,7 @@ from ..const import DOMAIN
 from ..home import HORIZONS, VIEWS
 from ..pots import CARRY_ACTIONS
 from ._helpers import _get_manager
+from .refunds import load_refund_inputs
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -67,6 +68,10 @@ class FinanceDashboardHomeView(HomeAssistantView):
             )
 
         person = manager.resolve_person(user)
+        try:
+            await load_refund_inputs(hass)  # manual allocations + labels (#119)
+        except Exception:  # noqa: BLE001 - the home view must not depend on the refund hint
+            _LOGGER.debug("Refund inputs unavailable", exc_info=True)
         return self.json(
             manager.get_home(
                 person=person,

@@ -82,7 +82,18 @@ returns a filter spec only; it is validated against the schema, valid parts are 
 are listed in `errors` (an unreadable answer gives `[{field: "_", reason: "unparsable"}]` and an empty
 spec). The prompt holds the question plus allowed names only. Series carry `remittance` (up to 3 recent
 purpose texts) for the search; non-admins get the reduced aggregate view without it.
-Questions (`api/questions.py`): `GET /questions` puts contract and price-change cards (#117 B/G)
+Counted figures: `/summary`, `/plan_vs_actual` and the `get_monthly_summary` service report one
+income cycle (`period: {start, end, rule, anchor}`; `month`/`year` name the plan month it goes by;
+a requested month means the cycle holding its 15th). `/transactions` returns the effective date for
+every row, `counted` and `movement` (reason) per row and `totals: {income, expenses}` over the
+filtered rows by the same rule; `category` is what the booking counts under (a contract's category
+wins, `own_category` keeps its own).
+
+Questions (`api/questions.py`): pairs of a debit and a credit that match on amount and date only
+are never linked but asked (`kind: "transfer"`, `id: "transfer:<chain id>"`, at most 5, newest
+first, `choice: confirm|no`). Answering `category: "transfers"` for a merchant marks the
+counterparty as an own account; it applies retroactively on every derive.
+`GET /questions` puts contract and price-change cards (#117 B/G)
 in front of the merchant cards (shared weekly quota); `POST /questions/answer` takes
 `{id, type: "contract"|"price", answer}` besides the merchant answer.
 

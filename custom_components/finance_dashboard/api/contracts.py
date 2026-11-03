@@ -60,6 +60,9 @@ async def _contracts_for(request: web.Request, manager):
     txns += pending_debits(manager._transactions)  # noqa: SLF001
     contracts = build_contracts(txns, store, own_names=own_account_names(manager._accounts))  # noqa: SLF001
     await store.async_save_if_changed()
+    remember = getattr(manager, "remember_contract_categories", None)
+    if remember is not None:
+        remember(contracts)
     return store, contracts
 
 

@@ -10,7 +10,7 @@ Code: `household_summary.py` (pure), `api/household.py` (view), `manager.get_hou
 
 All amounts are positive magnitudes in EUR: `surplus = income - expenses`.
 
-Not counted: own-account transfers (chains with only source+destination legs: both legs; chains with intermediate legs: only the source leg counts, once; user-rejected chains count normally), bookings categorised `transfers`, PayPal funding debits on other accounts when a PayPal account is linked (PayPal's own lines are the truth), pending lines. Refunds (`_refund_role == "refund"`) are netted against expenses, not income.
+Not counted (`counted.py`, the same for every view): every leg of a transfer chain, bookings categorised `transfers` (a booking with an own holder name or linked IBAN is categorised so), the PayPal mirror (see below), pending lines. A chain the user rejected counts as ordinary bookings. A credit in a spending category reduces that category and is no income; a refund is netted into the expense it belongs to. PayPal: with an account linked, its lines are the counted side; a bank debit that funds such a line, a top-up with its funding credit and a pay-later instalment are movement. Without a counterpart the debit is the only trace and counts.
 
 Ownership of an expense: account owner (person / `shared` / `open` = unassigned) -> matched plan position owner -> user correction (`manager._owner_corrections`: `{transactionId: owner}`; hook only, nothing writes it yet). Fixed = recurring series (negative `detect_recurring` pattern by creditor) or plan position of kind `fixed`; the rest is variable. Income is attributed to the account owner.
 

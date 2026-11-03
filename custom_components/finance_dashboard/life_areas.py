@@ -53,8 +53,14 @@ INCOME_AREAS: tuple[str, ...] = (
 OTHER = "other"
 TRANSFERS = "transfers"
 
+# Spending with no purpose of its own: how the money left, not what it bought (#172).
+CASH = "cash"
+BANK_FEES = "bank_fees"
+P2P = "p2p"
+PAYMENT_BUCKETS: tuple[str, ...] = (CASH, BANK_FEES, P2P)
+
 # Slugs the categorizer may write. Order matters nowhere but the UI.
-ALL_CATEGORIES: tuple[str, ...] = (*LIFE_AREAS, *INCOME_AREAS, OTHER, TRANSFERS)
+ALL_CATEGORIES: tuple[str, ...] = (*LIFE_AREAS, *PAYMENT_BUCKETS, *INCOME_AREAS, OTHER, TRANSFERS)
 
 # Areas whose spending is bound by a contract more often than not.
 CONTRACT_AREAS = frozenset({HOUSING_COLD, HOUSING_WARM, MEDIA, FINANCE})
@@ -68,8 +74,8 @@ def is_income(category: str | None) -> bool:
 
 
 def is_spending(category: str | None) -> bool:
-    """A life area or ``other`` - what counts as an expense."""
-    return category in LIFE_AREAS or category == OTHER
+    """A life area, a payment bucket or ``other`` - what counts as an expense."""
+    return category in LIFE_AREAS or category in PAYMENT_BUCKETS or category == OTHER
 
 
 def _words(*words: str) -> re.Pattern[str]:

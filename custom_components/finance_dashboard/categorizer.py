@@ -14,7 +14,18 @@ import re
 from typing import Any
 
 from .const import CATEGORIZATION_RULES, CATEGORY_OTHER
-from .life_areas import INCOME_REFUND, income_area_for, is_income, is_refund
+from .life_areas import (
+    BANK_FEES,
+    CASH,
+    FINANCE,
+    INCOME_REFUND,
+    P2P,
+    TRANSFERS,
+    income_area_for,
+    is_income,
+    is_refund,
+)
+from .own_accounts import OwnAccounts
 from .text_norm import is_processor_only, processor_remittance
 
 _LOGGER = logging.getLogger(__name__)
@@ -28,6 +39,9 @@ EXTRA_RULES: dict[str, list[str]] = {
     "housing_warm": [
         "vattenfall", "eon ", "e.on", "enbw", "rwe", "stadtwerke", "evm", "eprimo",
         "fernwärme", "müllabfuhr", "abfallwirtschaft",
+        "lichtblick", "naturstrom", "yello", "e wie einfach", "tibber", "octopus energy",
+        "entega", "mainova", "badenova", "energieversorg", "gasag", "energie gmbh",
+        "stromanbieter", "abschlag strom", "abschlag gas", "ewe ", "swm ",
     ],
     "media": [
         "telefónica", "telefonica", "1&1", "1und1", "congstar", "o2 ", "mobilcom",
@@ -45,7 +59,7 @@ EXTRA_RULES: dict[str, list[str]] = {
         "metzger", "fleischerei", "markthalle", "flink", "gorillas", "too good to go",
         "dm drogerie", "dm-drogerie", "dm fil", "rossmann", "müller drogerie",
         "muller drogerie", "ikea", "obi ", "bauhaus", "hornbach", "toom", "action ",
-        "tedi", "depot",
+        "tedi",
     ],
     "leisure": [
         "mcdonald", "burger king", "subway", "starbucks", "dominos", "domino's", "pizza",
@@ -70,7 +84,37 @@ EXTRA_RULES: dict[str, list[str]] = {
     ],
 }
 
+# Checked ahead of every area: what the booking *is* says more than a word in its text
+# ("Depotgebühr" is a fee, "Bargeld REWE" is cash). PayPal pay-later repays old purchases.
+PRIORITY_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    (CASH, (
+        "bargeldauszahlung", "bargeldabhebung", "bargeldauszhlg", "geldautomat", "ga-auszahlung",
+        "barauszahlung", "auszahlung bar", "atm withdrawal", "cash withdrawal", "bargeld",
+    )),
+    (BANK_FEES, (
+        "kontoführung", "kontofuehrung", "kontoentgelt", "kontogebühr", "kontogebuehr",
+        "entgeltabschluss", "abschlussentgelt", "rechnungsabschluss", "kartenentgelt",
+        "kartengebühr", "kartengebuehr", "jahresentgelt", "jahresgebühr", "depotgebühr",
+        "depotgebuehr", "depotentgelt", "überziehungszinsen", "ueberziehungszinsen", "dispozinsen",
+        "bankgebühr", "bankgebuehr",
+    )),
+    (FINANCE, (
+        "pay later", "paylater", "pay in 3", "pay in 30", "später bezahlen", "spaeter bezahlen",
+        "wertpapier", "sparplan", "etf", "fondssparplan", "trade republic", "scalable capital",
+        "depotübertrag", "depot übertrag", "wertpapierdepot", "aktienkauf",
+    )),
+)
+# Evaluated after every area: says only how the money moved, so any real purpose wins.
+FALLBACK_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    (P2P, ("wero", "paypal an freunde", "an freunde", "dauerauftrag", "geldgeschenk")),
+)
+
 _WORD_MAX = 3  # keywords this short (after stripping) are whole words ("gez" never hits "gezahlt")
+# Also words inside surnames and street names: "Huber", "Bahnhofstraße".
+_WHOLE_WORD = frozenset({
+    "uber", "bahn", "bolt", "lime", "shell", "aral", "esso", "ergo", "wolt", "sixt", "tier",
+    "tedi", "toom", "steam", "stream", "apollo", "joyn", "evm", "adobe", "bargeld", "wero",
+})
 
 
 def _kw_match(keyword: str, haystack: str) -> bool:
@@ -78,7 +122,7 @@ def _kw_match(keyword: str, haystack: str) -> bool:
     kw = keyword.lower().strip()
     if not kw:
         return False
-    if len(kw) <= _WORD_MAX:
+    if len(kw) <= _WORD_MAX or kw in _WHOLE_WORD:
         tail = "(?![a-z0-9äöüß])"
         return re.search(rf"(?<![a-z0-9äöüß]){re.escape(kw)}{tail}", haystack) is not None
     return kw in haystack
@@ -98,6 +142,7 @@ class TransactionCategorizer:
         (one-off booking answers, then learned merchants) outrank keywords.
         """
         self._memory = memory
+        self._own: OwnAccounts | None = None
         self._rules = {k: list(v) for k, v in CATEGORIZATION_RULES.items()}
         if custom_rules:
             for category, keywords in custom_rules.items():
@@ -106,6 +151,10 @@ class TransactionCategorizer:
         for category, keywords in EXTRA_RULES.items():
             merged = self._rules.get(category, [])
             self._rules[category] = merged + [k for k in keywords if k not in merged]
+
+    def set_own_accounts(self, own: OwnAccounts | None) -> None:
+        """The household's accounts: a booking with them is a transfer (#171)."""
+        self._own = own
 
     def categorize(self, transaction: dict[str, Any]) -> str:
         """Categorize a single transaction.
@@ -124,13 +173,15 @@ class TransactionCategorizer:
     def resolve(self, transaction: dict[str, Any]) -> tuple[str, str | None]:
         """Run the chain; returns ``(category, owner_override)``.
 
-        Order: user corrections / merchant memory -> keyword rules -> income
-        fallback (positive amount) -> ``other``.
+        Order: user corrections / merchant memory -> own account -> keyword
+        rules -> income fallback (positive amount) -> ``other``.
         """
         if self._memory is not None:
             rule = self._memory.resolve(transaction)
             if rule and rule.get("category"):
                 return str(rule["category"]), rule.get("owner") or None
+        if self._own is not None and self._own.matches(transaction):
+            return TRANSFERS, None
         return self._by_keywords(transaction), None
 
     def _by_keywords(self, transaction: dict[str, Any]) -> str:
@@ -146,6 +197,11 @@ class TransactionCategorizer:
         # Check amount direction for income detection
         amount = float(transaction.get("transactionAmount", {}).get("amount", 0))
 
+        if amount < 0:
+            for category, keywords in PRIORITY_RULES:
+                if any(_kw_match(k, search_lower) for k in keywords):
+                    return category
+
         # Money coming in: income rules first, then a refund, only then the
         # areas (a shop's credit nets in its area). Income rules never match
         # money going out ("Zinsen" on a loan is a cost).
@@ -160,6 +216,11 @@ class TransactionCategorizer:
                 continue
             for keyword in keywords:
                 if _kw_match(keyword, search_lower):
+                    return category
+
+        if amount < 0:
+            for category, keywords in FALLBACK_RULES:
+                if any(_kw_match(k, search_lower) for k in keywords):
                     return category
 
         # Fallback: positive amounts without category -> an income area
@@ -200,7 +261,11 @@ class TransactionCategorizer:
     def _extract_searchable_text(
         transaction: dict[str, Any],
     ) -> str:
-        """Extract all searchable text fields from a transaction."""
+        """Extract all searchable text fields from a transaction.
+
+        Only the counterparty's name is searched. The other side is usually
+        the holder, and a surname must not tag every booking of an account.
+        """
         parts = []
 
         # Remittance information (payment reference)
@@ -212,15 +277,19 @@ class TransactionCategorizer:
         if remittance_array:
             parts.extend(remittance_array)
 
-        # Creditor (who receives money)
-        creditor = transaction.get("creditorName", "")
-        if creditor:
-            parts.append(creditor)
-
-        # Debtor (who sends money)
-        debtor = transaction.get("debtorName", "")
-        if debtor:
-            parts.append(debtor)
+        try:
+            amount = float((transaction.get("transactionAmount") or {}).get("amount", 0) or 0)
+        except (TypeError, ValueError):
+            amount = 0.0
+        # Creditor (who receives money) of a debit, debtor (who sends money) of a credit;
+        # a credit whose bank names only the creditor keeps that name.
+        name = (
+            transaction.get("creditorName", "")
+            if amount <= 0
+            else transaction.get("debtorName") or transaction.get("creditorName", "")
+        )
+        if name:
+            parts.append(name)
 
         # Additional info
         additional = transaction.get("additionalInformation", "")

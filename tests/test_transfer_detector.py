@@ -230,14 +230,13 @@ class TestOverride:
         assert "out-1" in effective_ids
         assert "in-1" in effective_ids
 
-    def test_confirmed_chain_excludes_destination(self):
-        """With no override (None), destination leg must be excluded from effective."""
+    def test_unrejected_chain_is_pure_movement(self):
+        """With no override (None), no leg of a chain counts (#166)."""
         txns, _chains = self._setup()
         # No override applied — default None
         effective = get_effective_transactions(txns)
         effective_ids = {t["transactionId"] for t in effective}
-        # source must be counted, destination must be excluded
-        assert "out-1" in effective_ids
+        assert "out-1" not in effective_ids
         assert "in-1" not in effective_ids
 
 

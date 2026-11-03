@@ -35,7 +35,7 @@ from typing import Any
 
 from .labels import booking_key
 from .life_areas import INSURER
-from .tx_dates import effective_day
+from .tx_dates import cited_days, effective_day
 
 WINDOW_DAYS = 56  # up to 8 weeks between the bill and the refund
 CONFIDENT = 0.7  # at or above: applied without asking
@@ -146,13 +146,7 @@ def _cents(value: float) -> int:
 
 def _days(txn: dict[str, Any]) -> set[date]:
     """Every date the bill might be cited by: booking, value and transaction date."""
-    out: set[date] = set()
-    for field in ("bookingDate", "valueDate", "transactionDate"):
-        try:
-            out.add(date.fromisoformat(str(txn.get(field))[:10]))
-        except (TypeError, ValueError):
-            continue
-    return out
+    return cited_days(txn)
 
 
 def is_refund_source(txn: dict[str, Any]) -> bool:

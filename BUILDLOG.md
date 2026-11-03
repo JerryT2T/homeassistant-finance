@@ -1,5 +1,25 @@
 # Build Log
 
+## 0.40.0 — 2026-11-04
+Version: 0.40.0
+Branch: claude/funny-shaw-dd8159
+Changes:
+- fix(numbers): every view now counts the same bookings by one rule - monthly summary, sensors, plan vs actual, home, household summary, notifications, contracts and the wizards show the same total for the same period (#166)
+- fix(transfers): money moved between your own accounts no longer counts as spending, however many accounts it crosses; the merchant's debit is the purchase and counts once (#166)
+- fix(transfers): a payment to or from your own name or a linked IBAN is a transfer, not "other", and a withdrawal from your savings is neither income nor a salary; mark any other counterparty as "this is an account of mine" once and it applies to all past and future bookings (#171)
+- fix(transfers): a purchase and an unrelated credit of the same amount on two accounts are no longer linked silently; such a pair is asked once as a question (#174)
+- fix(transfers): a confirmed or rejected transfer stays decided after a refresh, a reprocess and a restart (#173)
+- fix(paypal): a PayPal purchase counts once, on the PayPal line with the real merchant; the bank debit, top-ups and pay-later instalments are marked as transfers in the list (#167)
+- fix(dates): PayPal and pending rows carry their date everywhere - the list shows and filters it, they land in the right cycle and in contract detection, and two equal monthly PayPal payments stay two bookings (#168)
+- fix(period): the monthly summary, sensors, budget events and plan vs actual use the same income cycle as the panel, so income is never zero right after payday; a selected month means the cycle holding its 15th (#169)
+- fix(refunds): refunds and settlement credits reduce the cost they belong to in every view and are no income; plan vs actual category and position totals agree, and fixed costs have one definition (#170)
+- fix(cycle): cycles start on the real payday even after a large one-off credit: the salary is what recurs per payer, a bonus on payday still opens the cycle, a mid-cycle one does not (#176)
+- fix(categories): "Huber" is no Uber, "Bahnhofstraße" no train, "Depotgebühr" no groceries; the holder's own name never decides a category; more energy suppliers are recognised (#172)
+- feat(categories): cash withdrawals, bank fees and person-to-person payments get their own categories (#172)
+- fix(owners): saved owner corrections now reach the household totals and the split; a booking matches at most one plan position, the most specific, and a position named after a person no longer claims that person's debits (#175)
+- fix(categories): a contract's category is now what its bookings count under in every total, the same one the list shows (#177)
+- refactor(cycle): the unused month_cycle.py is gone (#169)
+
 ## 0.39.0 — 2026-11-03
 Version: 0.39.0
 Branch: feat/home-hero-ledger

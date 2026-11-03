@@ -20,6 +20,7 @@ from .budget_plan import actual_amount_to_plan_sign
 from .const import CATEGORY_OTHER
 from .recurring import IRREGULAR_INTERVALS, STATUS_ENDED, detect_series
 from .spreadsheet_import import categorize_position, parse_workbook
+from .tx_dates import effective_date_str
 
 MAX_SHEET_NAMES = 200
 MIN_TOKEN = 4
@@ -73,7 +74,7 @@ def category_monthly(transactions: list[dict[str, Any]]) -> dict[str, float]:
         if tx.get("_status") != "booked":
             continue
         cat = tx.get("category")
-        day = str(tx.get("bookingDate") or "")[:7]
+        day = effective_date_str(tx)[:7]
         if not cat or cat == CATEGORY_OTHER or len(day) != 7:  # noqa: PLR2004
             continue
         try:
@@ -150,10 +151,12 @@ async def async_sheet_ideas(
 ) -> dict[str, Any]:
     """Ideas for a workbook. Cache only; AI only with ``sheet_analysis`` consent."""
     from . import ai_consent, ai_provider
-    from .transfer_detector import get_effective_transactions
+    from .counted import counted_transactions
 
     names = await hass.async_add_executor_job(sheet_position_names, workbook)
-    txns = get_effective_transactions(getattr(manager, "_transactions", None) or [])
+    txns = counted_transactions(
+        getattr(manager, "_transactions", None) or [], getattr(manager, "_accounts", None) or []
+    )
     series = detect_series(txns, today=today)
     ideas = match_locally(names, series, category_monthly(txns))
 
