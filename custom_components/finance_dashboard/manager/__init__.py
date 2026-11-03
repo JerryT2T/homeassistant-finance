@@ -949,6 +949,7 @@ class FinanceDashboardManager(RefreshMixin, BankMixin, PersistenceMixin, Questio
         horizon: str,
         demo: bool = False,
         include_questions: bool = False,
+        include_recent: bool = False,
     ) -> dict[str, Any]:
         """Home-screen payload from cached data. Never contacts a bank."""
         from ..home import build_home
@@ -957,11 +958,14 @@ class FinanceDashboardManager(RefreshMixin, BankMixin, PersistenceMixin, Questio
         if demo or self._demo_mode:
             from ..demo import generate_demo_home
 
-            return generate_demo_home(person=person, view=view, horizon=horizon, now=now)
+            return generate_demo_home(
+                person=person, view=view, horizon=horizon, now=now, include_recent=include_recent
+            )
         banks = self.get_bank_status()
         return build_home(
             **(self._question_kwargs() if hasattr(self, "_question_kwargs") else {}),
             include_questions=include_questions,
+            include_recent=include_recent,
             accounts=self._accounts,
             persons=self.persons,
             transactions=get_effective_transactions(self._transactions),

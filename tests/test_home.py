@@ -332,3 +332,71 @@ def test_confirmed_payday_anchors_cycle_without_salary_bookings() -> None:
     )
     assert out["cycle"]["rule"] == "payday_confirmed"
     assert out["cycle"]["start"].endswith("-25")
+
+
+# --- recent bookings for the cycle ledger (admin only) -------------------------
+
+
+def _recent(view: str, person: str | None, **kw) -> dict:
+    return build_home(
+        accounts=ACCOUNTS, transactions=TXS, plan=BudgetPlan(), pots=POTS, recurring=[],
+        banks=[], as_of=NOW, now=NOW, person=person, view=view, horizon=kw.pop("horizon", "cycle"),
+        **kw,
+    )
+
+
+def test_recent_absent_unless_requested_or_not_cycle() -> None:
+    assert "recent" not in _recent("person", "Anna")
+    assert "recent" not in _recent("person", "Anna", horizon="week", include_recent=True)
+
+
+def test_recent_person_view_is_own_bookings_newest_first_and_sanitised() -> None:
+    tx = _tx("a1", -9.99, "media", 15, "Stream Co", status="pending")
+    tx["creditorAccount"] = {"iban": "DE00123456780000001234"}
+    tx["remittanceInformationUnstructured"] = "Customer 4711 secret text"
+    out = build_home(
+        accounts=ACCOUNTS, transactions=[*TXS, tx], plan=BudgetPlan(), pots=POTS, recurring=[],
+        banks=[], as_of=NOW, now=NOW, person="Anna", view="person", horizon="cycle",
+        include_recent=True,
+    )
+    rows = out["recent"]
+    # newest first, the pending booking (dated today) on top; the April salary is inside the window too
+    assert [r["label"] for r in rows][:2] == ["Stream Co", "Secret Hobby Shop"]
+    assert {r["owner"] for r in rows} == {"Anna"}
+    assert rows[0]["pending"] is True and rows[0]["amount"] == -9.99
+    assert set(rows[0]) == {"date", "label", "category", "amount", "pending", "owner"}
+    blob = str(rows)
+    assert "1234" not in blob and "secret text" not in blob and "Max Garage" not in blob
+
+
+def test_recent_household_view_has_shared_bookings_only() -> None:
+    rows = _recent("household", None, include_recent=True)["recent"]
+    assert {r["label"] for r in rows} == {"Pending Market", "Shared Market"}
+    assert all(r["owner"] == "shared" for r in rows)
+
+
+def test_recent_window_is_fourteen_days() -> None:
+    old = _tx("a3", -5.0, "food", 1, "Old Shop")  # 14 days before the 15th -> still in, day 0 -> out
+    older = _tx("a3", -5.0, "food", 1, "Older Shop", month=3)
+    rows = build_home(
+        accounts=ACCOUNTS, transactions=[old, older], plan=BudgetPlan(), pots=POTS, recurring=[],
+        banks=[], as_of=NOW, now=NOW, person=None, view="household", horizon="cycle",
+        include_recent=True,
+    )["recent"]
+    assert [r["label"] for r in rows] == ["Old Shop"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("is_admin", "expect"), [(True, True), (False, False)])
+async def test_home_view_serves_recent_rows_to_admins_only(is_admin, expect) -> None:
+    from custom_components.finance_dashboard.api import FinanceDashboardHomeView
+
+    mgr = _manager()
+    view = FinanceDashboardHomeView()
+    view.json = _Json().json
+    user = SimpleNamespace(id="u-anna", name="a", is_admin=is_admin)
+    with patch("custom_components.finance_dashboard.api.home._get_manager", return_value=mgr):
+        resp = await view.get(_request(user, {"horizon": "cycle", "view": "person"}))
+    assert resp._status == 200 and ("recent" in resp._data) is expect
+
+

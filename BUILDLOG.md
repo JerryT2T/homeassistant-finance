@@ -1,5 +1,17 @@
 # Build Log
 
+## 0.39.0 — 2026-11-03
+Version: 0.39.0
+Branch: feat/home-hero-ledger
+Changes:
+- feat(home): the cycle view leads with a hero - free money until the cycle end, a verdict pill, a labelled bar (today with day count, dashed "Soll bis heute") and three tiles (income, spending, free per day; in the household view shared costs and each person's share) - and below it the latest bookings grouped by day next to "Als Nächstes" and one "Einrichten" strip instead of the separate setup cards
+- feat(home): on desktop the status chip, the horizon tabs and the question count share one top row; the household view uses a neutral blue-grey, orange only ever means over budget or urgent, and purple only marks the "Nur am Desktop" chip
+- feat(transactions): the transaction list is now reachable on phones and tablets - read-only, grouped by day, searchable; the account column shows only when the list spans several accounts, pending bookings are dashed; categorising stays on desktop
+- feat(home): the home payload carries the last 14 days of bookings for administrators only (no IBAN, no purpose text); other users get no booking rows
+- fix(ui): no text below 12 px in the touched views
+- feat(home): on the cycle view the analysis, account and pot cards sit behind one closed disclosure on desktop, so the Einrichten strip leads
+- fix(home): a negative remainder always reads as over the frame; the household tiles name each person's own spending; the data chip says "Aktuell · heute 06:30"
+
 ## 0.38.1 — 2026-11-03
 Version: 0.38.1
 Branch: claude/card-assignment-expense-filter-970d6a

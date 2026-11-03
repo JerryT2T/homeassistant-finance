@@ -1,9 +1,10 @@
 /**
- * fd-transactions — the transaction list (desktop only, a subpage).
+ * fd-transactions — the transaction list (a subpage; read-only below 1024 px).
  *
  * Extracted from fd-overview's transactions section (search, account filter, rows,
- * paging). Spec: docs/dev/ui-concept-gap.md § 1.6 / G19, VR-later 5. There is no mobile
- * entry: below 1024 px the page says it is a desktop view instead of loading ~650 rows.
+ * paging). Spec: docs/dev/ui-concept-gap.md § 1.6 / G19, parity P10 (H1 redesign): day-grouped
+ * like the home ledger, searchable on every width. Below 1024 px the list is read-only; the booking
+ * dialog (labels, refunds, contract) and thus categorising stays desktop.
  *
  *   <fd-transactions>   property: hass (required); attribute `embedded` = no own header
  *
@@ -93,7 +94,7 @@ button, input, select { font: inherit; color: inherit; }
 button { cursor: pointer; }
 button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--fd-a500); outline-offset: 2px; }
 .card { margin: 0 0 12px; padding: 12px 14px; border-radius: var(--fd-r-card); background: var(--fd-card); box-shadow: var(--fd-sh1); min-width: 0; }
-.muted { color: var(--fd-t2); font-size: 11.5px; }
+.muted { color: var(--fd-t2); font-size: 12px; }
 .empty { padding: 24px 12px; text-align: center; color: var(--fd-t2); }
 .empty .btn { margin-top: 10px; }
 .btn { display: inline-flex; align-items: center; justify-content: center; min-height: var(--fd-touch); padding: 0 16px; border: 1px solid transparent; border-radius: var(--fd-r-pill); background: var(--fd-a700); color: #fff; font-weight: 500; }
@@ -108,27 +109,32 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .row .l { min-width: 0; }
 .row .p { font-weight: 500; overflow-wrap: anywhere; }
 .row .d { color: var(--fd-t2); font-size: 12px; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.row .m { grid-column: 1 / -1; min-width: 0; color: var(--fd-t2); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row .m { grid-column: 1 / -1; min-width: 0; color: var(--fd-t2); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .row .a { grid-column: 2; grid-row: 1; flex: none; text-align: right; white-space: nowrap; font-weight: 500; font-variant-numeric: tabular-nums; }
 .row .a.in { color: var(--fd-ok); }
-.row .ac::before { content: " · "; white-space: pre; }
-.chip { display: inline-flex; padding: 0 8px; border-radius: var(--fd-r-pill); font-size: 10.5px; font-weight: 500; background: var(--fd-sunk); color: var(--fd-t2); white-space: nowrap; }
+.chip { display: inline-flex; padding: 0 8px; border-radius: var(--fd-r-pill); font-size: 12px; font-weight: 500; background: var(--fd-sunk); color: var(--fd-t2); white-space: nowrap; }
 @container tx (min-width: 720px) {
-  .row { grid-template-columns: 92px minmax(0, 1fr) minmax(0, 200px) auto; align-items: start; gap: 12px; }
+  .row { grid-template-columns: minmax(0, 1fr) minmax(0, 200px) auto; align-items: start; gap: 12px; }
+  .row.noac { grid-template-columns: minmax(0, 1fr) auto; }
   .row .m { display: contents; }
-  .row .m .dt { grid-column: 1; grid-row: 1; }
-  .row .l { grid-column: 2; grid-row: 1; }
-  .row .ac::before { content: none; }
-  .row .m .ac { grid-column: 3; grid-row: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .row .a { grid-column: 4; grid-row: 1; }
-  .row .lb { grid-column: 2 / -1; grid-row: 2; }
+  .row .l { grid-column: 1; grid-row: 1; }
+  .row .m .ac { grid-column: 2; grid-row: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row .a { grid-column: 3; grid-row: 1; }
+  .row.noac .a { grid-column: 2; }
+  .row .lb { grid-column: 1 / -1; grid-row: 2; }
 }
+.day { margin: 14px 0 2px; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--fd-t3); }
+.day:first-child { margin-top: 0; }
+.day + .row { border-top: 0; }
+.row.pend .p { font-style: italic; }
+.row.pend .a { color: var(--fd-t2); }
+.chip.pend { background: transparent; border: 1px dashed var(--fd-t3); }
 .pager { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; padding-top: 8px; border-top: 1px solid var(--fd-line); }
 .pager .btns { display: flex; gap: 6px; }
 .row[data-i] { cursor: pointer; border-radius: 8px; }
 .row[data-i]:hover { background: var(--fd-sunk); }
 .row[data-i]:focus-visible { outline: 2px solid var(--fd-a500); outline-offset: -2px; }
-.row .cat { color: var(--fd-t2); font-size: 11.5px; overflow-wrap: anywhere; }
+.row .cat { color: var(--fd-t2); font-size: 12px; overflow-wrap: anywhere; }
 .row .cat i { font-style: normal; opacity: .8; }
 .row .lb { grid-column: 1 / -1; min-width: 0; }
 .row .lb:empty { display: none; }
@@ -148,9 +154,6 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .acts { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 16px; }
 .err { margin-top: 8px; color: var(--fd-over); font-size: 12px; }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
-.wide { display: none; }
-.narrow { display: block; }
-@media (min-width: 1024px) { .wide { display: block; } .narrow { display: none; } }
 `;
 
 class FdTransactions extends HTMLElement {
@@ -169,7 +172,7 @@ class FdTransactions extends HTMLElement {
     this._seq = 0;
     this._built = false;
     this._mq = typeof matchMedia === "function" ? matchMedia(DESKTOP) : null;
-    this._onMq = () => { if (this._mq.matches && this._status === "idle") this.reload(); };
+    this._onMq = () => { if (this._status === "ok") this._paintList(); };
   }
 
   set hass(h) {
@@ -193,7 +196,6 @@ class FdTransactions extends HTMLElement {
     if (!this._hass) return;
     await window._fd.t("tx.title");
     if (!this._built) { this._built = true; this._render(); }
-    if (!this._desktop) return; // desktop-only: no 650-row fetch on a phone
     if (!this._isAdmin) { this._status = "admin"; this._render(); return; }
     try {
       const balances = await this._hass.callApi("GET", `${DOMAIN}/balances`);
@@ -241,8 +243,7 @@ class FdTransactions extends HTMLElement {
     if (this._status === "admin") {
       inner = `<div class="card"><div class="empty">${e(tr("tx.admin_only"))}</div></div>`;
     } else {
-      inner = `<div class="narrow card"><div class="empty">${e(tr("tx.desktop_only"))}</div></div>
-<div class="wide card">
+      inner = `<div class="card">
   <div class="filters">
     <label class="sr" for="q">${e(tr("tx.search_label"))}</label>
     <input id="q" type="search" placeholder="${e(tr("tx.search"))}" autocomplete="off" value="${e(this._q)}">
@@ -289,20 +290,28 @@ class FdTransactions extends HTMLElement {
       catch (_) { return `${x.amount} ${x.currency || ""}`; }
     };
     const { catLabel, labelChips } = window._fd;
+    const multi = new Set(t.items.map((x) => x.account_name || "")).size > 1; // account column only when it differs
+    const today = new Date();
+    const yest = new Date(today); yest.setDate(today.getDate() - 1);
+    const same = (iso, d) => String(iso).slice(0, 10) === `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    const dayName = (iso) => (same(iso, today) ? tr("home.ledger.today") : same(iso, yest) ? tr("home.ledger.yesterday") : fmtDate(iso));
+    let lastDay = null;
     const rows = t.items.map((x, idx) => {
       const n = parseFloat(x.amount);
       const party = x.creditor || x.debtor || "";
-      const pend = x.status && x.status !== "booked" ? ` <span class="chip">${e(tr("tx.pending"))}</span>` : "";
+      const pend = x.status && x.status !== "booked" ? ` <span class="chip pend">${e(tr("tx.pending"))}</span>` : "";
       const cat = x.category ? `<div class="cat">${e(catLabel(x.category))}${x.category_source === "contract" ? ` <i>· ${e(tr("tx.from_contract"))}</i>` : ""}</div>` : "";
       const rs = x.refund_state ? `<span class="chip">${e(tr(`rf.state.${x.refund_state.state}`))}</span>` : "";
       const chips = labelChips(x.labels_inherited, this._labels, "inherited") + labelChips(x.labels_own, this._labels, "own") + labelChips(x.labels_auto, this._labels, "auto") + rs;
-      const open = this._isAdmin && x.ledger_id
+      const open = this._isAdmin && this._desktop && x.ledger_id
         ? ` data-i="${idx}" role="button" tabindex="0" aria-label="${e(tr("tx.open_booking") + ": " + (party || x.description || ""))}"` : "";
-      return `<div class="row"${open}>
+      const dh = x.date !== lastDay ? `<div class="day">${e(dayName(x.date))}</div>` : "";
+      lastDay = x.date;
+      return `${dh}<div class="row${multi ? "" : " noac"}${x.status && x.status !== "booked" ? " pend" : ""}"${open}>
   <div class="l"><div class="p">${e(party)}${pend}</div><div class="d">${e(x.description)}</div>${cat}</div>
   <div class="a ${n > 0 ? "in" : ""}">${e(fmtAmt(x))}</div>
   <div class="lb"><div class="lcs">${chips}</div></div>
-  <div class="m"><span class="dt">${e(fmtDate(x.date))}</span><span class="ac">${e(x.account_name || "")}</span></div>
+  ${multi ? `<div class="m"><span class="ac">${e(x.account_name || "")}</span></div>` : ""}
 </div>`;
     });
     const from = t.offset + 1;

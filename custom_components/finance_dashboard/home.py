@@ -59,6 +59,8 @@ FRESH_SECONDS = 6 * 3600
 NEXT_TOP_N = 3
 YEAR_CYCLES = 12
 DID_YOU_KNOW_MIN_SHARE = 0.30
+RECENT_DAYS = 14
+RECENT_MAX = 30
 
 _SKIP_CATEGORIES = {"income", "income_work", "income_state", "income_capital", "income_refund", "income_private", "transfers"}
 
@@ -258,6 +260,31 @@ def _pot_bookings(pot: Pot, bookings: list[dict[str, Any]]) -> list[dict[str, An
         if b["owner"] == pot.owner
         and _expense_or_upcoming(b)
         and pot_accepts_account(pot, b.get("account_key"))
+    ]
+
+
+def _recent(bookings: list[dict[str, Any]], today: date) -> list[dict[str, Any]]:
+    """Newest bookings of the last RECENT_DAYS for the cycle ledger.
+
+    Sanitised like ``/transactions``: no IBAN, no remittance text, bank sign
+    (debit negative). The caller decides who may see them (admin only).
+    """
+    since = today - timedelta(days=RECENT_DAYS)
+    rows = sorted(
+        (b for b in bookings if since <= b["date"] <= today),
+        key=lambda b: (b["date"], not b["pending"]),
+        reverse=True,
+    )
+    return [
+        {
+            "date": b["date"].isoformat(),
+            "label": b["label"] or b["display"] or b["counterparty"],
+            "category": b["category"],
+            "amount": round(b["bank_amount"], 2),
+            "pending": bool(b["pending"]),
+            "owner": b["owner"],
+        }
+        for b in rows[:RECENT_MAX]
     ]
 
 
@@ -513,6 +540,7 @@ def build_home(  # noqa: PLR0912, PLR0915
     week_answered: int = 0,
     suggest: Any = None,
     include_questions: bool = False,
+    include_recent: bool = False,
 ) -> dict[str, Any]:
     """Assemble the home contract. ``view`` degrades to household without a person."""
     today = now.date()
@@ -718,6 +746,10 @@ def build_home(  # noqa: PLR0912, PLR0915
             "amount": round(b["amount"], 2),
             "pending": bool(b["pending"]),
         }
+
+    if include_recent and horizon == "cycle":
+        out["recent"] = _recent(scope if view == "person" else
+                                [b for b in scope if b["owner"] == POT_OWNER_SHARED], today)
 
     if horizon == "today":
         spent_today = sum(
