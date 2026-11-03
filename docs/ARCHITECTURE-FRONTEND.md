@@ -21,7 +21,7 @@ finance-dashboard-panel            shell: fd-home + subpage router + toast host
  '-- subpage (one at a time, #viewSub)
       |-- fd-subpage-header + fd-freshness       Datenstand
       |-- fd-subpage-header + fd-settings mode=page section=…   Einstellungen
-      |-- fd-transactions          (own header) desktop-only transaction list
+      |-- fd-transactions          (own header) transaction list (read-only on phones and tablets, categorising on desktop)
       |-- fd-questions             (own header) Fragen / flash cards
       |-- fd-contracts             (own header) Verträge
       |-- fd-benchmark             (own header) Vergleich
