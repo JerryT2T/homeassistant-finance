@@ -41,7 +41,8 @@ const CSS = `
 :host { display: block; }
 .root { container: home / inline-size; position: relative; min-width: 0; color: var(--fd-t1); font-size: 13px; line-height: 1.4; }
 button { font: inherit; color: inherit; cursor: pointer; }
-.top { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 6px; padding: 4px 0 8px; }
+.top { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); grid-template-areas: "tl tc tr" "seg seg seg"; align-items: center; gap: 6px; padding: 4px 0 0; }
+.tl { grid-area: tl; } .tc { grid-area: tc; } .tr { grid-area: tr; } .top > .seg { grid-area: seg; }
 .tl, .tr { display: flex; align-items: center; gap: 2px; min-width: 0; }
 .tr { justify-content: flex-end; }
 .tc { min-width: 0; display: flex; justify-content: center; }
@@ -58,9 +59,10 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .pill i { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--fd-attn); box-shadow: 0 0 0 3px color-mix(in srgb, var(--fd-attn) 24%, transparent); }
 .pill span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .ask { position: relative; width: var(--fd-touch); height: var(--fd-touch); }
+.ask .qt { display: none; }
 .ask .ring { display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; box-sizing: border-box; padding: 3px; border-radius: 50%; background: conic-gradient(var(--fd-gold) 0 var(--p, 0%), var(--fd-sunk) 0); }
 .ask .ring span { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; border-radius: 50%; font-size: 15px; background: var(--fd-card); color: var(--fd-gold); }
-.ask b { position: absolute; top: 0; right: 0; min-width: 18px; height: 18px; padding: 0 5px; box-sizing: border-box; border-radius: 9px; font-size: 11px; line-height: 18px; text-align: center; background: var(--fd-a700); color: #fff; }
+.ask b { position: absolute; top: 0; right: 0; min-width: 18px; height: 18px; padding: 0 5px; box-sizing: border-box; border-radius: 9px; font-size: 12px; line-height: 18px; text-align: center; background: var(--fd-a700); color: #fff; }
 .gear svg { width: 22px; height: 22px; fill: var(--fd-t2); }
 .gear:hover svg { fill: var(--fd-a700); }
 .tr [data-tip]::after { left: auto; right: 0; transform: none; }
@@ -71,7 +73,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .alert + .alert { margin-top: 6px; }
 .seg { display: flex; gap: 2px; margin: 0 0 12px; border-bottom: 1px solid var(--fd-line); }
 .seg button { flex: 1 1 0; min-width: 0; min-height: var(--fd-touch); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0; padding: 4px 2px; border: 0; border-bottom: 3px solid transparent; margin-bottom: -1px; background: transparent; color: var(--fd-t2); font-size: 14px; line-height: 1.2; }
-.seg button small { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10.5px; color: var(--fd-t3); }
+.seg button small { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--fd-t3); }
 .seg button[aria-selected="true"] { color: var(--fd-a900); font-weight: 500; border-bottom-color: var(--fd-a500); }
 .seg button[aria-selected="true"] small { color: var(--fd-t2); font-weight: 400; }
 .seg .wide { display: none; }
@@ -87,12 +89,12 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .card { margin: 0 0 12px; padding: 12px 14px; border-radius: var(--fd-r-card); background: var(--fd-card); box-shadow: var(--fd-sh1); min-width: 0; }
 .h { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0 0 8px; font-size: 14px; font-weight: 500; }
 .h > span { min-width: 0; }
-.h .sub { flex: none; font-size: 11.5px; font-weight: 400; color: var(--fd-t2); }
-.muted { color: var(--fd-t2); font-size: 11.5px; }
+.h .sub { flex: none; font-size: 12px; font-weight: 400; color: var(--fd-t2); }
+.muted { color: var(--fd-t2); font-size: 12px; }
 .st-ok { --c: var(--fd-ok); --cbg: var(--fd-ok-bg); --cfg: color-mix(in srgb, var(--fd-ok) 72%, var(--fd-t1)); }
 .st-near { --c: var(--fd-near); --cbg: var(--fd-near-bg); --cfg: color-mix(in srgb, var(--fd-near) 72%, var(--fd-t1)); }
 .st-over { --c: var(--fd-over); --cbg: var(--fd-over-bg); --cfg: color-mix(in srgb, var(--fd-over) 72%, var(--fd-t1)); }
-.chip { display: inline-flex; align-items: center; gap: 4px; padding: 1px 9px; border-radius: var(--fd-r-pill); font-size: 11.5px; font-weight: 500; white-space: nowrap; background: var(--cbg); color: var(--cfg); }
+.chip { display: inline-flex; align-items: center; gap: 4px; padding: 1px 9px; border-radius: var(--fd-r-pill); font-size: 12px; font-weight: 500; white-space: nowrap; background: var(--cbg); color: var(--cfg); }
 .big { font-size: 40px; font-weight: 500; line-height: 1.05; color: var(--cfg, var(--fd-t1)); overflow-wrap: anywhere; }
 .cap { margin-top: 4px; font-size: 12.5px; color: var(--fd-t2); }
 .meter { position: relative; height: 12px; margin: 14px 0 6px; border-radius: 6px; background: var(--fd-sunk); overflow: hidden; }
@@ -113,17 +115,17 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .carry b { flex: none; padding: 3px 9px; border-radius: var(--fd-r-pill); background: var(--fd-card); }
 .chart { position: relative; height: 130px; border-radius: 10px; background: var(--fd-sunk); }
 .chart svg { position: absolute; inset: 0; width: 100%; height: 100%; }
-.days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; margin-top: 6px; text-align: center; font-size: 11px; color: var(--fd-t2); }
+.days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; margin-top: 6px; text-align: center; font-size: 12px; color: var(--fd-t2); }
 .days b { display: block; font-weight: 500; color: var(--fd-t1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .days .today { color: var(--fd-a900); font-weight: 600; }
-.legend { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 8px; font-size: 11px; color: var(--fd-t2); }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 8px; font-size: 12px; color: var(--fd-t2); }
 .legend i { display: inline-block; width: 14px; height: 8px; margin-right: 4px; border-radius: 2px; background: var(--fd-ok); vertical-align: 0; }
 .legend i.l1 { height: 0; border-top: 2px solid var(--fd-a900); border-radius: 0; background: none; vertical-align: 3px; }
 .legend i.l2 { height: 0; border-top: 1px dashed var(--fd-t3); border-radius: 0; background: none; vertical-align: 3px; }
 .tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
 .tiles.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .tile { min-width: 0; padding: 8px 10px; border-radius: 10px; background: var(--fd-sunk); }
-.tile span { display: block; font-size: 11px; color: var(--fd-t2); overflow-wrap: anywhere; }
+.tile span { display: block; font-size: 12px; color: var(--fd-t2); overflow-wrap: anywhere; }
 .tile b { display: block; font-size: 17px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .nx { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 2px 10px; padding: 7px 0; }
 .nx + .nx { border-top: 1px solid var(--fd-line); }
@@ -134,23 +136,23 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .row + .row { border-top: 1px solid var(--fd-line); }
 .row > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .row .amt { flex: none; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.tag { padding: 0 7px; border: 1px dashed var(--fd-t3); border-radius: var(--fd-r-pill); font-size: 10.5px; color: var(--fd-t2); white-space: nowrap; }
+.tag { padding: 0 7px; border: 1px dashed var(--fd-t3); border-radius: var(--fd-r-pill); font-size: 12px; color: var(--fd-t2); white-space: nowrap; }
 .more { display: flex; align-items: center; width: 100%; min-height: var(--fd-touch); margin-top: 2px; padding: 0; border: 0; border-top: 1px solid var(--fd-line); background: transparent; color: var(--fd-a700); text-align: left; }
 .link { min-height: var(--fd-touch); padding: 0 4px; border: 0; background: transparent; color: var(--fd-a700); font-weight: 500; text-decoration: underline; text-underline-offset: 2px; }
 .tank { position: relative; height: 96px; margin-top: 10px; border-radius: 12px; background: var(--fd-a50); overflow: hidden; }
 .tank > i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--c); opacity: .85; }
 .tank > b { position: absolute; top: 0; bottom: 0; width: 0; border-left: 2px dashed var(--fd-a900); }
 .tank > .ta { position: absolute; right: 14px; bottom: 10px; max-width: calc(100% - 28px); text-align: right; font-size: 28px; font-weight: 500; line-height: 1.05; color: var(--fd-t1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tank > .ta small { display: block; font-size: 11px; font-weight: 400; color: var(--fd-t2); }
+.tank > .ta small { display: block; font-size: 12px; font-weight: 400; color: var(--fd-t2); }
 .flip { animation: flipin .28s ease-out; }
 @keyframes flipin { from { opacity: 0; transform: rotateY(60deg); } }
 .info { flex: none; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; width: var(--fd-touch); height: var(--fd-touch); margin: -10px 0 -10px -6px; border: 0; border-radius: 50%; background: transparent; color: var(--fd-a700); font-size: 15px; vertical-align: middle; }
 .verdict { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
 .verdict .chip { padding: 3px 12px; font-size: 14px; }
 .know { display: flex; gap: 10px; align-items: flex-start; border-left: 4px solid var(--fd-a500); }
-.know b { display: block; margin-bottom: 2px; font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--fd-a700); }
+.know b { display: block; margin-bottom: 2px; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--fd-a700); }
 .cyc { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 4px; }
-.cyc span { display: flex; align-items: flex-end; justify-content: center; height: 36px; padding-bottom: 2px; border-radius: 6px; font-size: 10px; color: #fff; background: var(--c, var(--fd-sunk)); overflow: hidden; }
+.cyc span { display: flex; align-items: flex-end; justify-content: center; height: 36px; padding-bottom: 2px; border-radius: 6px; font-size: 12px; color: #fff; background: var(--c, var(--fd-sunk)); overflow: hidden; }
 .cyc span.run { background: repeating-linear-gradient(135deg, var(--fd-near) 0 4px, color-mix(in srgb, var(--fd-near) 60%, #fff) 4px 8px); }
 .cyc span.fut { background: var(--fd-sunk); color: var(--fd-t3); }
 .cmp { height: 8px; margin: 4px 0; border-radius: 4px; background: var(--fd-sunk); overflow: hidden; }
@@ -159,14 +161,14 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .entry { display: flex; align-items: center; gap: 10px; width: 100%; min-height: var(--fd-touch); margin: 0 0 12px; padding: 10px 14px; border: 0; border-radius: var(--fd-r-card); background: var(--fd-card); box-shadow: var(--fd-sh1); text-align: left; }
 .entry > i { flex: none; display: flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 10px; font-style: normal; background: var(--fd-a50); color: var(--fd-a700); }
 .entry > span { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.dtag { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: var(--fd-r-pill); font-size: 10.5px; font-weight: 500; background: var(--fd-desktop-bg); color: var(--fd-desktop); white-space: nowrap; }
+.dtag { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: var(--fd-r-pill); font-size: 12px; font-weight: 500; background: var(--fd-desktop-bg); color: var(--fd-desktop); white-space: nowrap; }
 .dtag::before { content: "\\25C6"; font-size: 8px; }
 .btn { min-height: var(--fd-touch); padding: 0 16px; border: 1px solid transparent; border-radius: var(--fd-r-pill); background: var(--fd-a700); color: #fff; font-weight: 500; }
 .btn.ghost { background: transparent; color: var(--fd-a700); border-color: var(--fd-a100); }
 .btn.sm { min-height: 36px; padding: 0 12px; font-size: 12px; }
 .btn.danger { background: transparent; color: var(--fd-over); border-color: var(--fd-over-bg); }
-.btn.dsk { background: var(--fd-desktop); color: #fff; }
-.btn.dsk.ghost { background: transparent; color: var(--fd-desktop); border: 1px dashed var(--fd-desktop); }
+.btn.dsk { background: var(--fd-a700); color: #fff; }
+.btn.dsk.ghost { background: transparent; color: var(--fd-a700); border: 1px solid var(--fd-a100); }
 .btn:disabled { opacity: .5; cursor: not-allowed; }
 .setup h3 { margin: 0 0 6px; font-size: 16px; font-weight: 600; }
 .acts { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 12px; }
@@ -180,7 +182,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .toggle button > i { flex: none; display: flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 50%; font-style: normal; font-size: 13px; font-weight: 600; background: color-mix(in srgb, var(--pc) 16%, var(--fd-card)); color: var(--pc); }
 .toggle button > span { display: flex; flex-direction: column; min-width: 0; line-height: 1.15; }
 .toggle button b { max-width: 12ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
-.toggle button small { font-size: 10.5px; white-space: nowrap; opacity: .85; }
+.toggle button small { font-size: 12px; white-space: nowrap; opacity: .85; }
 .toggle button[aria-checked="true"] { background: var(--pc); color: #fff; }
 .toggle button[aria-checked="true"] > i { background: #fff; color: var(--pc); }
 .toggle [data-tip]::after { top: auto; bottom: calc(100% + 10px); }
@@ -200,7 +202,7 @@ input:focus-visible, select:focus-visible { outline: 2px solid var(--fd-a500); o
 .mg > span { min-width: 0; display: flex; flex-direction: column; }
 .mg > span b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
 .mg .btns { display: flex; gap: 6px; flex: none; }
-.sug { padding: 8px 10px; border: 1px dashed var(--fd-desktop); border-radius: 10px; background: var(--fd-desktop-bg); }
+.sug { padding: 8px 10px; border: 1px dashed var(--fd-a300); border-radius: 10px; background: var(--fd-a50); }
 .sug + .sug { margin-top: 6px; }
 .hrow { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 4px 10px; padding: 8px 0; }
 .hrow + .hrow { border-top: 1px solid var(--fd-line); }
@@ -228,6 +230,52 @@ input:focus-visible, select:focus-visible { outline: 2px solid var(--fd-a500); o
 .acc .row { padding: 4px 0 4px 18px; font-size: 12px; }
 .acc .row + .row { border-top: 0; }
 #cdslot:empty { display: none; }
+
+.hhchip { display: none; align-items: center; height: 36px; padding: 0 14px; border-radius: var(--fd-r-pill); font-size: 12px; font-weight: 500; background: var(--fd-household-bg); color: color-mix(in srgb, var(--fd-household) 80%, var(--fd-t1)); }
+.hero { padding: 16px 18px; }
+.hero-in { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-items: center; }
+.hero .hcap { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--fd-t2); }
+.hero .hcap .info { margin: -12px 0 -12px -2px; }
+.hero .hbig { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.hero .big { font-size: 32px; font-weight: 700; line-height: 1.1; color: var(--fd-t1); }
+.vpill { display: inline-flex; align-items: center; padding: 3px 12px; border-radius: var(--fd-r-pill); font-size: 12px; font-weight: 600; background: var(--cbg); color: var(--cfg); white-space: nowrap; }
+.hbar { position: relative; height: 10px; margin: 32px 0 28px; border-radius: 5px; background: var(--fd-sunk); }
+.hbar > i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 5px; background: var(--bar, var(--fd-a500)); }
+.hbar > .tm { position: absolute; top: -6px; bottom: -6px; width: 2px; margin-left: -1px; background: var(--fd-t1); }
+.hbar > .tg { position: absolute; top: -8px; bottom: -8px; width: 0; border-left: 2px dashed var(--fd-t2); }
+.hbar .lbl { position: absolute; font-size: 12px; color: var(--fd-t2); white-space: nowrap; }
+.hbar .lt { top: -26px; left: clamp(52px, var(--x), calc(100% - 52px)); transform: translateX(-50%); }
+.hbar .lb { bottom: -24px; left: clamp(44px, var(--x), calc(100% - 44px)); transform: translateX(-50%); }
+.hrule { margin: 8px 0 0; font-size: 12px; color: var(--fd-t2); }
+.kpis { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.kpi { min-width: 0; padding: 8px 10px; border-radius: 10px; background: var(--fd-sunk); }
+.kpi span { display: block; font-size: 12px; color: var(--fd-t2); overflow-wrap: anywhere; }
+.kpi b { display: block; font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hl-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-items: start; }
+.hl-side { min-width: 0; }
+.lday { margin: 14px 0 4px; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--fd-t3); }
+.lday:first-child { margin-top: 0; }
+.lcard { margin: 0 0 4px; padding: 2px 14px; border-radius: var(--fd-r-card); background: var(--fd-card); box-shadow: var(--fd-sh1); }
+.lrow { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 9px 0; }
+.lrow + .lrow { border-top: 1px solid var(--fd-line); }
+.lrow > span:first-child { min-width: 0; overflow-wrap: anywhere; }
+.lrow .lc2 { color: var(--fd-t2); font-size: 12px; }
+.lrow .tag { margin-left: 6px; font-size: 12px; }
+.lrow .amt { flex: none; min-width: 84px; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.lrow .amt.in { color: var(--fd-ok); }
+.lmore { display: flex; align-items: center; justify-content: center; width: 100%; min-height: var(--fd-touch); border: 0; background: transparent; color: var(--fd-a700); font-weight: 500; }
+.strip { display: flex; align-items: center; gap: 10px; margin: 0 0 12px; padding: 11px 14px; border: 1px dashed var(--fd-line); border-radius: 12px; color: var(--fd-t2); }
+.strip > span:first-child { flex: 1; min-width: 0; }
+.strip .btn { min-height: 36px; background: transparent; color: var(--fd-a700); border-color: var(--fd-a500); }
+.hl .side { margin-top: 4px; }
+@container home (min-width: 640px) {
+  .hero-in { grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 18px; }
+  .hl-grid { grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); }
+}
+@container home (max-width: 639px) {
+  .hero .big { font-size: 28px; }
+  .strip:not(.blocker) { display: none; }
+}
 @container home (min-width: 760px) {
   .layout { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(280px, 1fr); gap: 16px; align-items: start; }
   .side { display: block; min-width: 0; padding-bottom: 88px; }
@@ -236,6 +284,25 @@ input:focus-visible, select:focus-visible { outline: 2px solid var(--fd-a500); o
   .fresh .t { display: inline; }
   .seg .wide { display: inline; }
   .seg .narrow { display: none; }
+  .layout.hl { display: block; }
+  .layout.hl .side { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 12px; align-items: start; }
+  .layout.hl .side #cdslot { grid-column: 1 / -1; }
+  .top { grid-template-columns: auto auto minmax(0, 1fr) auto; grid-template-areas: "tl seg tc tr"; gap: 10px; padding-bottom: 12px; }
+  .tc { justify-content: flex-end; }
+  .top > .seg { margin: 0; padding: 4px; gap: 4px; border: 0; border-radius: var(--fd-r-pill); background: var(--fd-sunk); width: max-content; }
+  .top > .seg button { flex: none; flex-direction: row; min-height: 36px; padding: 0 16px; margin: 0; border: 0; border-radius: var(--fd-r-pill); font-size: 13px; }
+  .top > .seg button small { display: none; }
+  .top > .seg button[aria-selected="true"] { background: var(--fd-a700); color: #fff; }
+  .fresh { background: var(--cbg, var(--fd-sunk)); color: var(--cfg, var(--fd-t2)); min-height: 36px; }
+  .fresh i { background: transparent; color: inherit; }
+  .fresh .t, .fresh .tm { color: inherit; }
+  .fresh.ok { --cbg: var(--fd-ok-bg); --cfg: color-mix(in srgb, var(--fd-ok) 72%, var(--fd-t1)); }
+  .fresh.stale { --cbg: var(--fd-near-bg); --cfg: color-mix(in srgb, var(--fd-near) 72%, var(--fd-t1)); }
+  .fresh.error { --cbg: var(--fd-over-bg); --cfg: color-mix(in srgb, var(--fd-over) 72%, var(--fd-t1)); }
+  .ask { width: auto; height: 36px; padding: 0 14px; border-radius: var(--fd-r-pill); background: var(--fd-sunk); }
+  .ask .ring, .ask b { display: none; }
+  .hhchip { display: inline-flex; }
+  .ask .qt { display: inline; font-size: 12px; font-weight: 500; color: var(--fd-t2); }
 }
 `;
 
@@ -448,10 +515,10 @@ class FdHome extends HTMLElement {
     const sh = this.shadowRoot;
     sh.innerHTML = `<style>${window._fd.SHARED_CSS}${CSS}</style>
 <div class="root" id="root">
-  <div class="top"><div class="tl"><slot name="menu"></slot><span id="fresh"></span></div><div class="tc" id="center"></div><div class="tr" id="right"></div></div>
+  <div class="top"><div class="tl"><slot name="menu"></slot><span id="fresh"></span></div><div class="tc" id="center"></div><div class="tr" id="right"></div>
+    <div class="seg" id="seg" role="tablist" aria-label="${this._t("home.h.label")}"></div></div>
   <div id="panels"></div>
-  <div class="seg" id="seg" role="tablist" aria-label="${this._t("home.h.label")}"></div>
-  <div class="layout">
+  <div class="layout" id="layout">
     <div class="main" id="main" role="tabpanel" aria-live="polite"></div>
     <aside class="side" id="side" aria-label="${this._t("home.desk.side")}"></aside>
   </div>
@@ -535,6 +602,7 @@ class FdHome extends HTMLElement {
     sh.getElementById("right").innerHTML = this._rightHtml();
     sh.getElementById("panels").innerHTML = this._panelsHtml();
     sh.getElementById("seg").innerHTML = this._segHtml();
+    sh.getElementById("layout").classList.toggle("hl", this._horizon === "cycle" && !!d && !this._err);
     const main = sh.getElementById("main");
     main.classList.remove("slide-l", "slide-r");
     if (dir) { void main.offsetWidth; main.classList.add("slide-" + dir); }
@@ -607,7 +675,7 @@ class FdHome extends HTMLElement {
     const time = this._freshTime(fr.as_of);
     const word = this._t("home.fresh." + st);
     const aria = time ? `${word} · ${time} – ${this._t("home.fresh.open")}` : `${word} – ${this._t("home.fresh.open")}`;
-    return `<button class="ib fresh ${st}" data-act="fresh" aria-label="${this._e(aria)}" data-tip="${this._e(this._t("home.fresh.open"))}"><i aria-hidden="true">${icon}</i><span class="t">${this._e(word)}${time ? " ·" : ""}</span>${time ? `<span class="tm">${this._e(time)}</span>` : ""}</button>`;
+    return `<button class="ib fresh ${st === "fresh" ? "ok" : st}" data-act="fresh" aria-label="${this._e(aria)}" data-tip="${this._e(this._t("home.fresh.open"))}"><i aria-hidden="true">${icon}</i><span class="t">${this._e(word)}${time ? " ·" : ""}</span>${time ? `<span class="tm">${this._e(time)}</span>` : ""}</button>`;
   }
 
   /** "06:30" today, "gestern 06:30", else "28.10." */
@@ -635,8 +703,9 @@ class FdHome extends HTMLElement {
     const q = (this._data && this._data.questions_open) || 0;
     const star = q ? this._t("home.star", { n: q }) : this._t("home.star.none");
     const gear = this._t("home.settings");
-    return `<button class="ib ask" data-act="ask" data-tip="${this._e(star)}" aria-label="${this._e(star)}">
-    <span class="ring" style="--p:${q ? 86 : 100}%"><span>★</span></span>${q ? `<b>${Math.min(q, 10)}</b>` : ""}</button>
+    const hhc = this._view === "household" ? `<span class="hhchip">${this._t("home.view.household")}</span>` : "";
+    return `${hhc}<button class="ib ask" data-act="ask" data-tip="${this._e(star)}" aria-label="${this._e(star)}">
+    <span class="ring" style="--p:${q ? 86 : 100}%"><span>★</span></span>${q ? `<b>${Math.min(q, 10)}</b>` : ""}<span class="qt">${this._e(q ? this._plural("home.top.questions", q) : this._t("home.top.questions_none"))}</span></button>
   <button class="ib gear" data-act="settings" data-tip="${this._e(gear)}" aria-label="${this._e(gear)}">${GEAR}</button>`;
   }
 
@@ -679,7 +748,7 @@ class FdHome extends HTMLElement {
   // ---- bodies -----------------------------------------------------------
   _body(d) {
     let h = "";
-    if (this._horizon !== "year") h += this._setupCard(d);
+    if (this._horizon !== "year" && this._horizon !== "cycle") h += this._setupCard(d);
     switch (this._horizon) {
       case "today": return h + this._today(d);
       case "week": return h + this._week(d);
@@ -988,9 +1057,110 @@ class FdHome extends HTMLElement {
   }
 
   _cycle_(d) {
-    // Order (VR-impl): top card → Wusstest du schon → Als Nächstes → Rücklagen.
-    // fd-cycle-detail sits right under the top card on mobile (side column on desktop).
-    return this._cycleBlock(d) + (this._wide ? "" : `<div id="cdslot"></div>`) + this._fixed(d) + this._dyk(d) + this._next(d) + this._reserves(d);
+    // H1 · Held oben, Kassenbuch darunter: hero, then ledger | Als Nächstes + Einrichten.
+    // fd-cycle-detail sits under the grid on mobile (desktop: analysis cards below, see _sideHtml).
+    return this._hero(d) + this._fixed(d)
+      + `<div class="hl-grid"><div class="hl-main">${this._ledger(d)}</div><div class="hl-side">${this._next(d)}${this._strip(d)}</div></div>`
+      + (this._wide ? "" : `<div id="cdslot"></div>`);
+  }
+
+  /** The cycle's verdict: free money, pill, labelled bar (today + Soll) and three KPI tiles. */
+  _hero(d) {
+    const sr = this._spielraum(d);
+    if (sr.kind === "loading" || sr.kind === "none") return this._srEmpty(sr);
+    const hh = d.view === "household";
+    const cy = d.cycle || {};
+    const soll = this._soll(d);
+    const frac = sr.budget > 0 ? Math.min(1, Math.max(0, sr.spent / sr.budget)) : 0;
+    const vkey = sr.status === "over" ? "over" : sr.status === "knapp" ? "knapp" : "good";
+    const bar = sr.status === "over" ? "var(--fd-over)" : hh ? "var(--fd-household)" : "var(--fd-a500)";
+    const end = cy.end ? this._day(cy.end) : "";
+    const cap = this._t(hh ? "home.hero.cap_household" : "home.hero.cap", { date: this._e(end) });
+    const infoLbl = this._flipped ? this._t("home.cycle.back") : this._t("home.cycle.info");
+    const rule = this._flipped ? `<p class="hrule">${this._t(`home.cycle.rule.${cy.rule || "calendar_fallback"}`, { name: this._e(cy.anchor || "") })}</p>` : "";
+    const left = Math.max(0, sr.remaining) / this._daysLeft(d);
+    const flow = d.cycle_flow || {};
+    const money = (v) => this._m(v, false);
+    const tile = (label, val) => `<div class="kpi"><span>${this._e(label)}</span><b>${val}</b></div>`;
+    let tiles;
+    if (hh) {
+      const ps = (d.persons || []).slice(0, 2);
+      tiles = tile(this._t("home.hero.kpi_shared"), money(sr.kind === "pots" ? sr.spent : (flow.expenses ?? sr.spent)))
+        + ps.map((p) => tile(this._t("home.hero.kpi_share", { name: p.display_name || p.name }), money(p.spent))).join("")
+        + (ps.length < 2 ? tile(this._t("home.cycle.per_day"), money(left)) : "");
+    } else {
+      tiles = tile(this._t("home.cycle.income"), money(flow.income ?? (sr.kind === "own" ? sr.budget : 0)))
+        + tile(this._t("home.hero.kpi_spent"), money(flow.expenses ?? sr.spent))
+        + tile(this._t("home.hero.kpi_per_day"), money(left));
+    }
+    const x = `${(soll * 100).toFixed(1)}%`;
+    const day = this._t("home.hero.today", { n: cy.day, total: cy.days });
+    return `<section class="card hero ${this._cls(sr.status)}"><div class="hero-in"><div>
+      <div class="hcap"><span>${cap}</span><button class="info" data-act="flip" data-tip="${this._e(infoLbl)}" aria-label="${this._e(infoLbl)}" aria-pressed="${this._flipped}">${this._flipped ? "×" : "ⓘ"}</button></div>${rule}
+      <div class="hbig"><span class="big">${money(sr.remaining)}</span><span class="vpill">${this._t("home.cycle.verdict." + vkey)}</span></div>
+      ${sr.budget > 0 ? `<div class="hbar" style="--bar:${bar};--x:${x}" role="img" aria-label="${this._e(cap)}: ${money(sr.remaining)}"><i style="width:${(frac * 100).toFixed(1)}%"></i>
+        <b class="tm" style="left:${x}" aria-hidden="true"></b><b class="tg" style="left:${x}" aria-hidden="true"></b>
+        <span class="lbl lt">${this._e(day)}</span><span class="lbl lb">${this._t("home.hero.target")}</span></div>` : ""}
+      ${this._srNote(sr)}</div>
+      <div class="kpis">${tiles}</div></div></section>`;
+  }
+
+  /** Recent bookings by day (admin only: the API sends no rows to anyone else). */
+  _ledger(d) {
+    const head = `<div class="h"><span>${this._t("home.ledger.title")}</span></div>`;
+    if (d.recent === undefined || !this._isAdmin) {
+      return `<section class="card">${head}<div class="muted">${this._t(this._isAdmin ? "home.ledger.none" : "home.ledger.admin_only")}</div></section>`;
+    }
+    if (!d.recent.length) return `<section class="card">${head}<div class="muted">${this._t("home.ledger.none")}</div></section>`;
+    const now = new Date();
+    const key = (dt) => `${dt.getFullYear()}-${dt.getMonth()}-${dt.getDate()}`;
+    const yest = new Date(now); yest.setDate(now.getDate() - 1);
+    const dayName = (iso) => {
+      const dt = this._date(iso);
+      if (key(dt) === key(now)) return this._t("home.ledger.today");
+      if (key(dt) === key(yest)) return this._t("home.ledger.yesterday");
+      return `${this._wd(iso)}, ${this._day(iso)}`;
+    };
+    const cat = (window._fd.catLabel || ((k) => k));
+    const groups = [];
+    for (const r of d.recent.slice(0, 12)) {
+      const g = groups[groups.length - 1];
+      if (g && g.date === r.date) g.rows.push(r); else groups.push({ date: r.date, rows: [r] });
+    }
+    const amt = (v) => `${v > 0 ? "+" : ""}${this._m(v, true)}`.replace("-", "−");
+    return groups.map((g) => `<div class="lday">${this._e(dayName(g.date))}</div><div class="lcard">${g.rows.map((r) => `
+      <div class="lrow"><span>${this._e(r.label)}${r.category ? ` <span class="lc2">· ${this._e(cat(r.category))}</span>` : ""}${r.pending ? `<span class="tag">${this._t("home.pending")}</span>` : ""}</span>
+        <span class="amt${r.amount > 0 ? " in" : ""}">${amt(r.amount)}</span></div>`).join("")}</div>`).join("")
+      + `<button class="lmore" data-act="nav" data-target="transactions">${this._t("home.ledger.all")} ▸</button>`;
+  }
+
+  /** What is still open to set up (blockers first). One strip instead of the pot / suggestion / accounts cards. */
+  _todos(d) {
+    const st = d.setup || {};
+    const admin = this._isAdmin;
+    const out = [];
+    if (admin && this._wizard === undefined) this._loadWizard();
+    if (admin && this._wizard && !this._wizard.completed) out.push({ act: "wizard", blocker: true });
+    if (!this._demo && st.accounts_total === 0) out.push({ act: "connect", blocker: true });
+    else if (admin && (st.persons === 0 || (st.accounts_total || 0) > (st.accounts_assigned || 0))) out.push({ act: "assign" });
+    if (!(d.pots || []).length && !(d.reserves || []).length) out.push({ act: "addpot" });
+    return out;
+  }
+
+  _strip(d) {
+    const todos = this._todos(d);
+    if (!todos.length) return "";
+    return `<div class="strip${todos.some((x) => x.blocker) ? " blocker" : ""}"><span>⚑ ${this._t("home.strip.title", { n: todos.length })}</span>
+      <button class="btn sm" data-act="setupopen">${this._t("home.strip.open")}</button></div>`;
+  }
+
+  _openSetup() {
+    const first = this._todos(this._data || {})[0];
+    if (!first) return;
+    if (first.act === "wizard") this._nav("setup");
+    else if (first.act === "connect") window._fd.navigate(window._fd.INTEGRATION_PATH);
+    else if (first.act === "assign") this._nav("settings", { section: "accounts" });
+    else this._openSheet(null);
   }
 
   _year(d) {
@@ -1358,6 +1528,7 @@ class FdHome extends HTMLElement {
       case "more": this._moreNext = !this._moreNext; this._paint(); break;
       case "addpot": this._openSheet(null); break;
       case "wizard": this._nav("setup"); break;
+      case "setupopen": this._openSetup(); break;
       case "planwizard": this.dispatchEvent(new CustomEvent("fd-open-plan-wizard", { bubbles: true, composed: true })); break;
       case "editpot": this._openSheet(pot(t.dataset.id)); break;
       case "delpot": this._confirmId = t.dataset.id; this._paintSide(); break;

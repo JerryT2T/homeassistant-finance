@@ -60,11 +60,21 @@ class FinanceDashboardHomeView(HomeAssistantView):
             person = None
             if view == "person":
                 person = "Anna"  # demo has no HA-user mapping
-            return self.json(generate_demo_home(person=person, view=view, horizon=horizon))
+            return self.json(
+                generate_demo_home(
+                    person=person, view=view, horizon=horizon, include_recent=_is_admin(request)
+                )
+            )
 
         person = manager.resolve_person(user)
         return self.json(
-            manager.get_home(person=person, view=view, horizon=horizon, demo=want_demo)
+            manager.get_home(
+                person=person,
+                view=view,
+                horizon=horizon,
+                demo=want_demo,
+                include_recent=_is_admin(request),  # individual bookings: admin only
+            )
         )
 
 

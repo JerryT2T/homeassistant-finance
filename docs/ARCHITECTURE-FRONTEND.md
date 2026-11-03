@@ -54,7 +54,7 @@ Horizons (person view = own items only; household view = shared pots + persons a
 |---|---|
 | Heute | coloured "noch frei" figure (no status chip), meter of what is left, today's spend, per day; "Deine/Gemeinsame Töpfe" with "+" and up to two suggestion chips when empty; persons totals in the household view |
 | Woche | verdict band, carry-over "+x € aus KW nn mitgenommen", day bars vs. the Soll line, thin dashed zero-carry line, day amounts for past days only, "wird diese Woche noch abgebucht" |
-| Zyklus | tank with Soll-Linie (info button flips the card to the cycle rule), fd-cycle-detail strip (mobile), Fixkosten gedeckt or "Plan fehlt → Plan anlegen", Wusstest du schon, Als Nächstes (top 3 + mehr), Rücklagen |
+| Zyklus | **hero** (free money until cycle end, verdict pill, labelled bar with today marker and dashed Soll, three KPI tiles; household: shared costs + shares, neutral blue-grey; ⓘ flips to the cycle rule), Fixkosten gedeckt or "Plan fehlt", then two columns: **ledger** of the last 14 days by day (`recent` in `/home`, admin only; link "Alle Buchungen" to fd-transactions) and Als Nächstes (top 3 + mehr) + one **Einrichten · N offen** strip (hidden on phones unless a blocker) replacing the setup cards; fd-cycle-detail under the grid (mobile) or in the desktop cards below |
 | Jahr | Jan–Dec status squares of the calendar year ("keine Daten" for empty months), vs. Vorjahr, entries Verträge · Vergleich · Haushaltsplan |
 
 **Spielraum without pots** (spec § 1.4): with no pot budget the screen never collapses to "Noch keine Töpfe".

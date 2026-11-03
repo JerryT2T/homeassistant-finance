@@ -773,7 +773,12 @@ _DEMO_HOME_SPENDING: list[tuple[str, str, str, float, int]] = [
 
 
 def generate_demo_home(
-    *, person: str | None, view: str, horizon: str, now: datetime | None = None
+    *,
+    person: str | None,
+    view: str,
+    horizon: str,
+    now: datetime | None = None,
+    include_recent: bool = False,
 ) -> dict[str, Any]:
     """Home contract built from invented data - same shape as the live one.
 
@@ -840,6 +845,7 @@ def generate_demo_home(
         person=person if view == "person" else None,
         view=view,
         horizon=horizon,
+        include_recent=include_recent,
     )
     # Demo has no HA-user mapping: always expose a person so the frontend can
     # switch back from the household view, and show a covered-costs verdict.

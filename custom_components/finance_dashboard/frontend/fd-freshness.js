@@ -402,7 +402,7 @@ class FdFreshness extends HTMLElement {
     let h = `<div class="card"><h3>${tr("fr.as_of")}</h3><p class="say">${escHtml(say)}</p>
   <div class="facts">${facts.map(([l, v]) => `<div><div class="lab">${escHtml(l)}</div><div class="v">${escHtml(v)}</div></div>`).join("")}</div>
   ${admin ? `<div class="acts"><button class="btn" data-act="import" data-tip="${escHtml(tr("fr.import_tip"))}">${tr("fr.import")}</button><button class="btn ghost" data-act="reprocess" data-tip="${escHtml(tr("fr.reprocess_tip"))}">${tr("fr.reprocess")}</button>
-    <button class="btn ghost dsk-only" data-act="tx">${tr("fr.tx.link")}</button></div>` : ""}</div>`;
+    <button class="btn ghost" data-act="tx">${tr("fr.tx.link")}</button></div>` : ""}</div>`;
     h += this._banksCard();
     if (!admin) return h + `<div class="card"><div class="empty">${tr("fr.nonadmin")}</div></div>`;
     h += this._aiCard();

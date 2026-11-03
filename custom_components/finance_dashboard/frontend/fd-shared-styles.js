@@ -153,8 +153,24 @@ export const MONTH_NAMES = [
  * CSS custom properties and base styles shared across all dashboard components.
  * Components include this via: `<style>${window._fd.SHARED_CSS}${LOCAL_CSS}</style>` in their shadow root.
  */
+/**
+ * Colour roles (parity P8, concept 'Feste Rollen'). One colour, one job; the base is
+ * always the Home Assistant theme (--primary-color etc.), never a hard-coded palette.
+ *
+ *   role                    token                      used for
+ *   ----------------------  -------------------------  --------------------------------------------
+ *   accent                  --fd-a500 / --fd-a700      primary actions (.btn), selected tab, bar fill
+ *   good                    --fd-ok / --fd-ok-bg       on-plan verdict, credits, 'Aktuell' chip
+ *   near                    --fd-near / --fd-near-bg   tight verdict ('knapp'), stale data
+ *   over / urgent           --fd-over / --fd-over-bg   ONLY over budget and urgent (orange, never decoration)
+ *   desktop-only            --fd-desktop(-bg)          ONLY the 'Nur am Desktop' chip (.dtag), never a button
+ *   household               --fd-household(-bg)        neutral blue-grey: household chip, bar fill, toggle
+ *   person A / B            --fd-person-a / -b         person toggle and account dots
+ *
+ * Type floor (parity P11): no text below 12px; captions use --fd-t2.
+ */
 export const SHARED_CSS = `
-.lc { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; padding: 0 8px; border: 1px solid transparent; border-radius: var(--fd-r-pill); font-size: 10.5px; font-weight: 500; line-height: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lc { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; padding: 0 8px; border: 1px solid transparent; border-radius: var(--fd-r-pill); font-size: 12px; font-weight: 500; line-height: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .lc-own { background: var(--fd-a50); color: var(--fd-a900); }
 .lc-inherited { background: var(--fd-sunk); color: var(--fd-t2); }
 .lc-inherited .lc-pre { opacity: .75; font-weight: 400; }
@@ -218,7 +234,8 @@ export const SHARED_CSS = `
   --fd-gold: #f9a825;
   --fd-person-a: #00897b;
   --fd-person-b: #c2185b;
-  --fd-household: #0277bd;
+  --fd-household: #546e7a;
+  --fd-household-bg: color-mix(in srgb, var(--fd-household) 18%, var(--fd-card));
   --fd-desktop: #7e57c2;
   --fd-desktop-bg: color-mix(in srgb, var(--fd-desktop) 14%, var(--fd-card));
   --fd-r-card: 14px;
@@ -278,7 +295,7 @@ a:focus:not(:focus-visible),
   content: attr(data-tip) attr(data-tip-info);
   position: absolute; left: 50%; top: calc(100% + 6px); transform: translateX(-50%);
   z-index: 30; width: max-content; max-width: 240px; padding: 5px 9px;
-  border-radius: 8px; font-size: 11.5px; font-weight: 400; line-height: 1.3;
+  border-radius: 8px; font-size: 12px; font-weight: 400; line-height: 1.3;
   white-space: normal; text-align: left; pointer-events: none;
   background: var(--fd-card); color: var(--fd-t1);
   border: 1px solid var(--fd-line); border-left: 3px solid var(--fd-a500);
