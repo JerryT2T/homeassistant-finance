@@ -328,3 +328,23 @@ def test_answer_confirm_no_and_other():
     assert m.get_refund_analysis()["allocations"][refund["transactionId"]] == {
         other["transactionId"]: 60.0
     }
+
+
+def test_refund_question_offers_only_open_expenses_medical_first():
+    bill = row(date(2026, 5, 3), -100, "Praxis Dr. Muster")
+    other = row(date(2026, 5, 10), -60, "Apotheke A")
+    paid = row(date(2026, 5, 5), -40, "Zahnarzt Dr. Beispiel")
+    paid_back = row(date(2026, 5, 15), 40, "Kranken AG", "KV-LSTG. 05.05.2026")
+    shop = row(date(2026, 5, 20), -25, "Supermarkt", "x" * 300)
+    refund = row(date(2026, 5, 30), 60, "AOK Krankenkasse")
+    m = _Mgr([bill, other, paid, paid_back, shop, refund])
+    (q,) = m.get_refund_questions()
+    assert [p["id"] for p in q["proposed"]] == [other["transactionId"]]
+    # the bill a refund already covered in full is no candidate; medical before the newer shop
+    assert [o["id"] for o in q["others"]] == [bill["transactionId"], shop["transactionId"]]
+    assert len(q["others"][1]["description"]) == 120
+    # a non-medical expense from the search list can be picked
+    _answer(m, question_id=q["id"], choice="other", expenses=[shop["transactionId"]])
+    assert m.get_refund_analysis()["allocations"][refund["transactionId"]] == {
+        shop["transactionId"]: 25.0
+    }

@@ -12,6 +12,13 @@ Changes:
 - feat(home): on the cycle view the analysis, account and pot cards sit behind one closed disclosure on desktop, so the Einrichten strip leads
 - fix(home): a negative remainder always reads as over the frame; the household tiles name each person's own spending; the data chip says "Aktuell · heute 06:30"
 
+## 0.38.1 — 2026-11-03
+Version: 0.38.1
+Branch: claude/card-assignment-expense-filter-970d6a
+Changes:
+- fix(questions): assigning a refund to another expense on its card now has a search over merchant, text, amount and date, and shows at most 7 entries at a time; the expense you are looking for no longer falls off a list of the 8 newest bookings
+- fix(questions): the pick list only offers expenses that are not refunded in full yet, medical ones first; what you already picked stays on top while you search
+
 ## 0.38.0 — 2026-11-02
 Version: 0.38.0
 Branch: claude/reverent-merkle-1b5657
