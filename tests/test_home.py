@@ -360,7 +360,9 @@ def test_recent_person_view_is_own_bookings_newest_first_and_sanitised() -> None
         include_recent=True,
     )
     rows = out["recent"]
-    assert [r["label"] for r in rows] == ["Stream Co", "Secret Hobby Shop"]
+    # newest first, the pending booking (dated today) on top; the April salary is inside the window too
+    assert [r["label"] for r in rows][:2] == ["Stream Co", "Secret Hobby Shop"]
+    assert {r["owner"] for r in rows} == {"Anna"}
     assert rows[0]["pending"] is True and rows[0]["amount"] == -9.99
     assert set(rows[0]) == {"date", "label", "category", "amount", "pending", "owner"}
     blob = str(rows)
