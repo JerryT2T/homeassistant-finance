@@ -134,7 +134,7 @@ def monthly_validity(
     for key, acct in accounts.items():
         booked = []
         for t in acct.get("transactions") or []:
-            d = _day(t.get("bookingDate"))
+            d = effective_day(t)
             if d and t.get("_status", "booked") == "booked":
                 booked.append((d, _amount(t)))
         points = _booked_points(acct.get("balances") or [])

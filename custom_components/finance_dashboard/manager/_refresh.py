@@ -445,6 +445,7 @@ class RefreshMixin:
         overrides = await self._async_load_transfer_overrides()
         old_ids = {t.get("_ledger_id") for t in self._transactions}
         all_transactions = self._derive_from_ledger(overrides)
+        await self._async_refresh_contract_categories()
         if accounts_hit > 0:
             self.schedule_ai_categorization()
         new_txns = [

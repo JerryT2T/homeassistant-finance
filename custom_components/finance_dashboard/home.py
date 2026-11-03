@@ -27,8 +27,16 @@ from datetime import date, datetime, timedelta
 from typing import Any
 
 from .budget_plan import BudgetPlan, actual_amount_to_plan_sign
-from .const import POSITION_KIND_FIXED
+from .const import OWNER_SHARED, POSITION_KIND_FIXED
 from .contracts import is_own_name, own_account_names
+from .counted import (
+    counted_transactions,
+    income_payer,
+    is_income_line,
+    is_salary_candidate,
+    net_counted,
+)
+from .household_summary import plan_persons
 from .cycle import (
     calendar_cycle,
     cycle_windows,
@@ -38,6 +46,7 @@ from .cycle import (
     salary_starts,
 )
 from .merchants import display_name, merchant_key
+from .plan_match import best_position, resolve_owner
 from .pots import (
     POT_KIND_RESERVE,
     POT_KIND_SPEND,
@@ -52,6 +61,7 @@ from .pots import (
     week_status,
 )
 from .questions import merchant_history, select_questions  # noqa: E402
+from .tx_dates import effective_day
 
 HORIZONS = ("today", "week", "cycle", "year")
 VIEWS = ("person", "household")
@@ -61,6 +71,7 @@ YEAR_CYCLES = 12
 DID_YOU_KNOW_MIN_SHARE = 0.30
 RECENT_DAYS = 14
 RECENT_MAX = 30
+OWNER_OPEN = "open"
 
 _SKIP_CATEGORIES = {"income", "income_work", "income_state", "income_capital", "income_refund", "income_private", "transfers"}
 
@@ -139,32 +150,41 @@ def _to_date(value: Any) -> date | None:
         return None
 
 
-def _booking(tx: dict[str, Any], today: date) -> dict[str, Any] | None:
+def _booking(
+    tx: dict[str, Any],
+    today: date,
+    plan: BudgetPlan | None = None,
+    plan_people: list[str] | None = None,
+) -> dict[str, Any] | None:
     """Transaction -> internal booking (plan sign) or None when not usable."""
     try:
         amount = float((tx.get("transactionAmount") or {}).get("amount", 0) or 0)
     except (TypeError, ValueError):
         return None
-    day = (
-        _to_date(tx.get("bookingDate"))
-        or _to_date(tx.get("valueDate"))
-        or _to_date(tx.get("transactionDate"))
-    )
+    day = effective_day(tx)
     if day is None:
         return None
     pending = tx.get("_status") == "pending"
-    owner = (
-        POT_OWNER_SHARED
-        if tx.get("_account_type") == "shared"
-        else str(tx.get("_account_person") or "") or POT_OWNER_SHARED
-    )
-    # A learned merchant owner (user answer) overrides the account default.
-    owner = str(tx.get("_owner_override") or owner)
+    income = is_income_line(tx)
+    if income:  # income belongs to the account it landed on
+        owner = (
+            POT_OWNER_SHARED
+            if tx.get("_account_type") == "shared"
+            else str(tx.get("_account_person") or "") or POT_OWNER_SHARED
+        )
+    else:  # the one chain: account default -> plan position -> user correction
+        position = None
+        if plan is not None:
+            position = best_position(tx, plan.active_positions(day.month, day.year), plan_people)
+        owner = resolve_owner(tx, position)
+        owner = POT_OWNER_SHARED if owner in (OWNER_OPEN, OWNER_SHARED) else owner
     return {
         "lid": str(tx.get("_ledger_id") or ""),
         "merchant": merchant_key(tx),
         "display": display_name(tx),
-        "in_chain": bool(tx.get("_transfer_chain_id")),
+        "is_income": income,
+        "salary": is_salary_candidate(tx),
+        "payer": income_payer(tx),
         "date": max(day, today) if pending else day,
         "amount": actual_amount_to_plan_sign(amount),
         "bank_amount": amount,
@@ -205,15 +225,26 @@ def _incomes(bookings: list[dict[str, Any]], owner: str | None) -> list[tuple[da
     return [
         (b["date"], b["bank_amount"])
         for b in bookings
-        if b["bank_amount"] > 0
-        and not b["pending"]
-        and b["category"] != "transfers"
-        and (owner is None or b["owner"] == owner)
+        if b["is_income"] and not b["pending"] and (owner is None or b["owner"] == owner)
+    ]
+
+
+def _salaries(bookings: list[dict[str, Any]], owner: str | None) -> list[tuple[date, float, str]]:
+    """The credits that may open a cycle, with their payer (``cycle.salary_starts``)."""
+    return [
+        (b["date"], b["bank_amount"], b["payer"])
+        for b in bookings
+        if b["salary"] and not b["pending"] and (owner is None or b["owner"] == owner)
     ]
 
 
 def _expense(b: dict[str, Any]) -> bool:
-    return b["bank_amount"] < 0 and b["category"] not in _SKIP_CATEGORIES
+    """Spending; a credit in a spending category comes out negative and nets."""
+    return (
+        not b.get("is_income", b["bank_amount"] > 0)
+        and b["bank_amount"] != 0
+        and b["category"] not in _SKIP_CATEGORIES
+    )
 
 
 def _upcoming_recurring(
@@ -464,7 +495,7 @@ def _person_budget(
         return sum(
             b["amount"]
             for b in scope
-            if b["owner"] == person and _expense(b) and not b["pending"] and not b["in_chain"]
+            if b["owner"] == person and _expense(b) and not b["pending"]
             and b["category"] not in skip_always | skip and start <= b["date"] <= end
         )
 
@@ -541,9 +572,14 @@ def build_home(  # noqa: PLR0912, PLR0915
     suggest: Any = None,
     include_questions: bool = False,
     include_recent: bool = False,
+    refund_allocations: dict[str, dict[str, float]] | None = None,
 ) -> dict[str, Any]:
     """Assemble the home contract. ``view`` degrades to household without a person."""
     today = now.date()
+    transactions = net_counted(
+        counted_transactions(transactions, accounts, include_pending=True), refund_allocations
+    )
+    plan_people = plan_persons(plan, accounts)
     user_mapped = bool(person)
     persons_cfg = persons
     banks = banks or []
@@ -553,7 +589,7 @@ def build_home(  # noqa: PLR0912, PLR0915
     if view != "person" or not person:
         view, person = "household", None
 
-    all_bookings = [b for tx in transactions if (b := _booking(tx, today))]
+    all_bookings = [b for tx in transactions if (b := _booking(tx, today, plan, plan_people))]
     scope_owner = person  # None = whole household
     scope = [b for b in all_bookings if scope_owner is None or b["owner"] == scope_owner]
 
@@ -563,14 +599,14 @@ def build_home(  # noqa: PLR0912, PLR0915
     anchor: str | None
     by_person: dict[str, list] = defaultdict(list)
     if view == "person":
-        incomes = _incomes(all_bookings, person)
+        incomes = _salaries(all_bookings, person)
         starts = salary_starts(incomes)
         anchor = person if starts else None
         rule = "person_highest_income" if starts else "calendar_fallback"
     else:
         for b in all_bookings:
             if b["owner"] != POT_OWNER_SHARED:
-                by_person[b["owner"]].extend(_incomes([b], b["owner"]))
+                by_person[b["owner"]].extend(_salaries([b], b["owner"]))
         _s, _e, anchor = household_cycle(dict(by_person), today)
         starts = [s for s, _ in household_starts(dict(by_person))]
         rule = "household_7_day" if starts else "calendar_fallback"
@@ -659,8 +695,8 @@ def build_home(  # noqa: PLR0912, PLR0915
          "date": b["date"], "lid": b["lid"], "account": b["account"],
          "counterparty": b["counterparty"], "counter_iban": b["counter_iban"], "text": b["text"]}
         for b in scope
-        if _expense(b) and not b["pending"] and b["category"] == "other"
-        and not b["in_chain"] and cycle[0] <= b["date"] <= cycle[1]
+        if _expense(b) and b["bank_amount"] < 0 and not b["pending"] and b["category"] == "other"
+        and cycle[0] <= b["date"] <= cycle[1]
         and not is_own_name(str(b["counterparty"]).lower(), own_names)
     ]
     questions, questions_total = select_questions(
@@ -692,6 +728,18 @@ def build_home(  # noqa: PLR0912, PLR0915
         "status": head["status"],
         "remaining": head["balance"],
         "pots": pot_rows,
+        # The scope's totals of the cycle, by the rule every other view uses.
+        "totals": {
+            "income": round(sum(a for d, a in _incomes(scope, None) if start <= d <= end), 2),
+            "expenses": round(
+                sum(
+                    b["amount"]
+                    for b in scope
+                    if _expense(b) and not b["pending"] and start <= b["date"] <= end
+                ),
+                2,
+            ),
+        },
     }
 
     if include_questions:
@@ -721,13 +769,13 @@ def build_home(  # noqa: PLR0912, PLR0915
     for tx in transactions:  # newest first: first hit is the latest
         name = str(tx.get("creditorName") or "").strip().lower()
         if name and name not in owner_by_creditor:
-            b = _booking(tx, today)
+            b = _booking(tx, today, plan, plan_people)
             if b:
                 owner_by_creditor[name] = b["owner"]
     future = [
         b
         for b in all_bookings
-        if b["pending"] and _expense(b) and (scope_owner is None or b["owner"] == scope_owner)
+        if b["pending"] and _expense(b) and b["bank_amount"] < 0 and (scope_owner is None or b["owner"] == scope_owner)
     ]
     future += [
         r

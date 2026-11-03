@@ -53,7 +53,8 @@ from .setup_wizard import (
     person_payday,
     tx_owner,
 )
-from .transfer_detector import get_effective_transactions
+from .counted import counted_transactions
+from .tx_dates import effective_date_str
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -79,7 +80,7 @@ def _tx_id(tx: dict[str, Any]) -> str:
         str(x)
         for x in (
             tx.get("_account_key"),
-            tx.get("bookingDate"),
+            effective_date_str(tx),
             tx.get("transactionAmount"),
             merchant_of(tx),
             str(tx.get("remittanceInformationUnstructured") or "")[:30],
@@ -330,7 +331,11 @@ async def _run(hass: HomeAssistant, manager: Any, now: datetime | None) -> None:
         return
     now = now or dt_util.now()
     today = now.date()
-    transactions = get_effective_transactions(manager._transactions)  # noqa: SLF001
+    transactions = counted_transactions(
+        manager._transactions,  # noqa: SLF001
+        getattr(manager, "_accounts", None) or [],
+        include_pending=True,
+    )
     found = detect_all(transactions, manager.persons, today, settings)
     if settings.get("consent_expiring"):
         found += consent_exceptions(manager.get_bank_status(), today)
@@ -347,7 +352,6 @@ async def _run(hass: HomeAssistant, manager: Any, now: datetime | None) -> None:
 
     # Contract notice deadlines ≤30 days away (fires once per deadline).
     from .contracts import async_fire_notice_due, own_account_names
-    from .household_summary import counted_transactions
 
     accounts = getattr(manager, "_accounts", []) or []
     await async_fire_notice_due(

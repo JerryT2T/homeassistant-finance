@@ -190,6 +190,14 @@ class MerchantMemory:
             rule["owner"] = owner
         bookings[ledger_id] = rule
 
+    def rename_bookings(self, renames: dict[str, str]) -> bool:
+        """One-off answers follow a booking whose ledger id changed."""
+        bookings = self._data["bookings"]
+        moved = [lid for lid in bookings if lid in renames]
+        for lid in moved:
+            bookings[renames[lid]] = bookings.pop(lid)
+        return bool(moved)
+
     def forget_merchant(self, key: str) -> bool:
         return self._data["merchants"].pop(key, None) is not None
 

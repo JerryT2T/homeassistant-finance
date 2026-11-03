@@ -4,28 +4,15 @@ Pure assembly from cached data - no I/O, no clock, never a bank call.
 
 What is counted (and what is not):
 
-- **Own-account transfers** are not income and not expenses. A transfer chain
-  with only a source and a destination leg (money moved between the user's own
-  accounts) is dropped completely. A chain with intermediate legs is a real
-  purchase routed through own accounts (shop <- PayPal <- DKB <- savings): its
-  source leg is the one real expense and counts once, the rest is dropped
-  (same rule as ``get_effective_transactions``). A chain the user rejected is
-  counted as ordinary bookings. Bookings categorised ``transfers`` are dropped.
-- **PayPal mirror**: when a PayPal account is linked, its dated lines are the
-  truth, so a debit on another account to PayPal that a PayPal line of the
-  same amount (within a few days) shows is a funding and is dropped. Without
-  such a line - PayPal not linked, or its lines carry no date - the debit is
-  the only trace of the purchase and counts. Dates come from
-  ``tx_dates.effective_day`` (PayPal lines often carry only a transaction date).
-- **Refunds** (``_refund_role == "refund"``) are netted against expenses, they
-  are not income.
-- **Insurance refunds** matched to their expenses (``refund_matcher``, #119) are
-  netted into the *expense's* cycle, category and owner and leave income.
-- Only booked lines count; pending ones are ignored.
+- What counts is decided by :mod:`counted` for every view alike: own-account
+  transfers, PayPal mirrors and pending lines do not. Refunds are netted into
+  the expense they belong to and are no income.
+- A credit in a spending category (a shop's or utility's credit) reduces that
+  category's expenses.
 
 Ownership of an expense resolves in the fixed chain: the account's owner is the
 default, a matched plan position overrides it, a user correction overrides
-both. Fixed = the booking belongs to a recurring series or a plan position of
+both (:mod:`plan_match`). Fixed = the booking belongs to a recurring series or a plan position of
 kind ``fixed``; everything else is variable.
 
 Sign convention: every figure in this payload is a positive magnitude
@@ -39,22 +26,29 @@ as totals only (``restricted: true``) and their categories are left out.
 from __future__ import annotations
 
 import calendar
-import re
 from collections import defaultdict
 from datetime import date, datetime, timedelta
 from typing import Any
 
 from .budget_plan import BudgetPlan
 from .const import OWNER_SHARED, POSITION_KIND_FIXED
+from .counted import (
+    amount_of,
+    counted_transactions,
+    income_payer,
+    is_income_line,
+    is_salary_candidate,
+    net_counted,
+    paypal_account_ids,
+)
 from .cycle import calendar_cycle, household_cycle, household_starts
-from .refund_matcher import net_refunds
-from .text_norm import canonical_name, processor_merchant_text
+from .plan_match import best_position, resolve_owner
 from .tx_dates import effective_day
 
 CYCLES = ("current", "previous")
+MONTH_ANCHOR_DAY = 15
 OWNER_OPEN = "open"
-_TOKEN_RE = re.compile(r"[a-zäöüß]{4,}")
-_SKIP_CATEGORIES = {"transfers"}
+__all__ = ["counted_transactions", "paypal_account_ids"]  # the shared rule, re-exported
 
 
 # ---------------------------------------------------------------------------
@@ -62,11 +56,7 @@ _SKIP_CATEGORIES = {"transfers"}
 # ---------------------------------------------------------------------------
 
 
-def _amount(tx: dict[str, Any]) -> float:
-    try:
-        return float((tx.get("transactionAmount") or {}).get("amount", 0) or 0)
-    except (TypeError, ValueError):
-        return 0.0
+_amount = amount_of
 
 
 def _day(tx: dict[str, Any]) -> date | None:
@@ -75,26 +65,6 @@ def _day(tx: dict[str, Any]) -> date | None:
 
 def _name(tx: dict[str, Any]) -> str:
     return " ".join(str(tx.get("creditorName") or tx.get("debtorName") or "").lower().split())
-
-
-def _haystack(tx: dict[str, Any]) -> str:
-    return " ".join(
-        str(tx.get(k) or "").lower()
-        for k in ("remittanceInformationUnstructured", "creditorName", "debtorName")
-    )
-
-
-def _is_paypal(text: str) -> bool:
-    return "paypal" in text.lower()
-
-
-def paypal_account_ids(accounts: list[dict[str, Any]]) -> set[str]:
-    """Uids of linked accounts that are PayPal accounts."""
-    return {
-        str(a.get("id"))
-        for a in accounts or []
-        if a.get("id") and _is_paypal(f"{a.get('institution', '')} {a.get('name', '')}")
-    }
 
 
 def owner_of(tx: dict[str, Any]) -> str:
@@ -118,108 +88,6 @@ def pending_debits(transactions: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return out
 
 
-def counted_transactions(
-    transactions: list[dict[str, Any]], accounts: list[dict[str, Any]]
-) -> list[dict[str, Any]]:
-    """Booked transactions that are real income / expense (see module doc)."""
-    booked = [t for t in transactions if t.get("_status", "booked") == "booked"]
-    has_intermediate = {
-        t.get("_transfer_chain_id")
-        for t in booked
-        if t.get("_transfer_role") == "intermediate" and t.get("_transfer_confirmed") is not False
-    }
-    pp_ids = paypal_account_ids(accounts)
-    mirrors = _paypal_mirrors(booked, pp_ids)
-    out: list[dict[str, Any]] = []
-    for tx in booked:
-        if _day(tx) is None:
-            continue
-        chain = tx.get("_transfer_chain_id")
-        if chain and tx.get("_transfer_confirmed") is not False:
-            real_purchase = tx.get("_transfer_role") == "source" and chain in has_intermediate
-            if not real_purchase:
-                continue
-        elif str(tx.get("category") or "") in _SKIP_CATEGORIES:
-            continue
-        if id(tx) in mirrors:
-            continue
-        out.append(tx)
-    return out
-
-
-PAYPAL_MIRROR_DAYS = 5
-
-
-def _paypal_mirrors(booked: list[dict[str, Any]], pp_ids: set[str]) -> set[int]:
-    """Lines that only move money between a bank account and PayPal.
-
-    A debit on another account to PayPal funds a purchase that PayPal's own
-    line shows, or tops up the PayPal balance (PayPal then shows a funding
-    credit). The debit is dropped only when such a dated PayPal line exists
-    (same amount, within ``PAYPAL_MIRROR_DAYS``, each line used once); a
-    matched funding credit is dropped with it, it is no income. Without a
-    counterpart - PayPal not linked, or its lines carry no date - the debit
-    is the only trace of the purchase and counts.
-    """
-    if not pp_ids:
-        return set()
-    purchases: dict[int, list[dict[str, Any]]] = defaultdict(list)
-    credits: dict[int, list[dict[str, Any]]] = defaultdict(list)
-    for tx in booked:
-        if _day(tx) is None or str(tx.get("_account_id") or "") not in pp_ids:
-            continue
-        cents = round(_amount(tx) * 100)
-        if cents < 0:
-            purchases[cents].append(tx)
-        elif cents > 0:
-            credits[-cents].append(tx)
-    mirrors: set[int] = set()
-    debits = sorted(
-        (
-            tx
-            for tx in booked
-            if _amount(tx) < 0
-            and _day(tx) is not None
-            and str(tx.get("_account_id") or "") not in pp_ids
-            and _is_paypal(f"{tx.get('creditorName', '')} {tx.get('debtorName', '')}")
-        ),
-        key=_day,
-    )
-
-    def near(day: date, other: date) -> int | None:
-        gap = abs((other - day).days)
-        return gap if gap <= PAYPAL_MIRROR_DAYS else None
-
-    for tx in debits:
-        day, cents = _day(tx), round(_amount(tx) * 100)
-        funding = [c for c in credits.get(cents, []) if near(day, _day(c)) is not None]
-        if funding:
-            credit = min(funding, key=lambda c: near(day, _day(c)))
-            credits[cents].remove(credit)
-            mirrors.add(id(credit))
-        merchant = canonical_name(
-            processor_merchant_text(str(tx.get("remittanceInformationUnstructured") or ""))
-        )
-        bought = [
-            p
-            for p in purchases.get(cents, [])
-            if near(day, _day(p)) is not None and _same_merchant(merchant, p)
-        ]
-        if bought:
-            purchases[cents].remove(min(bought, key=lambda p: near(day, _day(p))))
-        if funding or bought:
-            mirrors.add(id(tx))
-    return mirrors
-
-
-def _same_merchant(merchant: str, line: dict[str, Any]) -> bool:
-    """The bank debit names no merchant, or the PayPal line's payee shares a word with it."""
-    if not merchant:
-        return True
-    payee = canonical_name(str(line.get("creditorName") or line.get("debtorName") or ""))
-    return not payee or bool(set(merchant.split()) & set(payee.split()))
-
-
 # ---------------------------------------------------------------------------
 # cycle windows
 # ---------------------------------------------------------------------------
@@ -229,23 +97,56 @@ def _prev_month_window(start: date) -> tuple[date, date]:
     return calendar_cycle(start - timedelta(days=1))
 
 
-def cycle_windows(
-    transactions: list[dict[str, Any]], today: date
-) -> tuple[list[tuple[date, date] | None], str, str | None]:
-    """``([current, previous, before], rule, anchor)`` windows (None = unknown)."""
-    by_person: dict[str, list[tuple[date, float]]] = defaultdict(list)
+def person_incomes(transactions: list[dict[str, Any]]) -> dict[str, list[tuple]]:
+    """Per person the credits that may open a cycle: ``(day, amount, payer)``."""
+    by_person: dict[str, list[tuple]] = defaultdict(list)
     for tx in transactions:
-        amount, day = _amount(tx), _day(tx)
-        if amount > 0 and day and owner_of(tx) not in (OWNER_SHARED, OWNER_OPEN):
-            if tx.get("_refund_role") != "refund":
-                by_person[owner_of(tx)].append((day, amount))
-    starts = [s for s, _ in household_starts(dict(by_person))]
-    if not starts:
+        day = _day(tx)
+        if (
+            day
+            and tx.get("_status", "booked") == "booked"
+            and is_salary_candidate(tx)
+            and owner_of(tx) not in (OWNER_SHARED, OWNER_OPEN)
+        ):
+            by_person[owner_of(tx)].append((day, _amount(tx), income_payer(tx)))
+    return dict(by_person)
+
+
+def _payday_windows(
+    persons: list[dict[str, Any]] | None, today: date
+) -> list[tuple[date, date]] | None:
+    """Current and earlier cycles from a payday confirmed in the setup wizard."""
+    from .setup_wizard import payday_cycle, person_payday
+
+    days = [d for p in persons or [] if (d := person_payday(p))]
+    if not days:
+        return None
+    cur = payday_cycle(min(days), today)
+    prev = payday_cycle(min(days), cur[0] - timedelta(days=1))
+    return [cur, prev, payday_cycle(min(days), prev[0] - timedelta(days=1))]
+
+
+def cycle_windows(
+    transactions: list[dict[str, Any]],
+    today: date,
+    persons: list[dict[str, Any]] | None = None,
+) -> tuple[list[tuple[date, date] | None], str, str | None]:
+    """``([current, previous, before], rule, anchor)`` windows (None = unknown).
+
+    ``today`` selects the cycle: any day inside it. ``transactions`` are the
+    counted ones, so every view derives the same windows.
+    """
+    by_person = person_incomes(transactions)
+    starts = [s for s, _ in household_starts(by_person)]
+    ordered = sorted(starts)
+    if not starts or today < ordered[0]:  # before the first known salary, too
+        confirmed = _payday_windows(persons, today) if not starts else None
+        if confirmed:
+            return list(confirmed), "payday_confirmed", None
         cur = calendar_cycle(today)
         prev = _prev_month_window(cur[0])
         return [cur, prev, _prev_month_window(prev[0])], "calendar_fallback", None
-    start, end, anchor = household_cycle(dict(by_person), today)
-    ordered = sorted(starts)
+    start, end, anchor = household_cycle(by_person, today)
     idx = ordered.index(start)
     windows: list[tuple[date, date] | None] = [(start, end)]
     for back in (1, 2):
@@ -254,74 +155,103 @@ def cycle_windows(
     return windows, "household_7_day", anchor
 
 
+def window_of_month(
+    transactions: list[dict[str, Any]],
+    month: int,
+    year: int,
+    persons: list[dict[str, Any]] | None = None,
+) -> tuple[list[tuple[date, date] | None], str, str | None]:
+    """The cycle a month name stands for: the one holding the 15th.
+
+    A salary on the 29th opens "next month's" cycle, one on the 1st its own, so
+    a month selection means the same period as the panel in both cases.
+    """
+    return cycle_windows(transactions, date(year, month, MONTH_ANCHOR_DAY), persons)
+
+
+def month_of_window(window: tuple[date, date]) -> tuple[int, int]:
+    """``(month, year)`` a cycle goes by: the first 15th inside it, else its middle."""
+    start, end = window
+    anchor = start.replace(day=MONTH_ANCHOR_DAY)
+    if anchor < start:
+        anchor = (start.replace(day=1) + timedelta(days=32)).replace(day=MONTH_ANCHOR_DAY)
+    if anchor > end:
+        anchor = start + (end - start) / 2
+    return anchor.month, anchor.year
+
+
 # ---------------------------------------------------------------------------
 # classification + figures
 # ---------------------------------------------------------------------------
 
 
-class _Classifier:
+class Classifier:
     """Owner + fixed/variable for expenses."""
 
     def __init__(
         self,
         plan: BudgetPlan | None,
         recurring: list[dict[str, Any]] | None,
-        corrections: dict[str, str] | None,
+        corrections: dict[str, str] | None = None,
+        persons: list[str] | None = None,
     ) -> None:
         self.plan = plan
         self.corrections = corrections or {}
+        self.persons = persons
         self.recurring_names = {
             " ".join(str(p.get("creditor") or "").lower().split())
             for p in recurring or []
             if float(p.get("average_amount", 0) or 0) < 0
         } - {""}
 
-    def _position(self, tx: dict[str, Any], on: date):
-        if self.plan is None:
-            return None
-        hay = _haystack(tx)
-        for pos in self.plan.active_positions(on.month, on.year):
-            tokens = _TOKEN_RE.findall(pos.name.lower())
-            if tokens and any(t in hay for t in tokens):
-                return pos
-        return None
-
     def classify(self, tx: dict[str, Any], on: date) -> tuple[str, bool]:
         """``(owner, is_fixed)``: account default -> plan match -> correction."""
-        owner = owner_of(tx)
-        pos = self._position(tx, on)
-        fixed = _name(tx) in self.recurring_names
-        if pos is not None:
-            owner = pos.owner or OWNER_SHARED
-            fixed = fixed or pos.kind == POSITION_KIND_FIXED
-        corrected = self.corrections.get(str(tx.get("transactionId") or ""))
-        if corrected:
-            owner = corrected
-        return owner, fixed
+        pos = None
+        if self.plan is not None:
+            pos = best_position(tx, self.plan.active_positions(on.month, on.year), self.persons)
+        fixed = _name(tx) in self.recurring_names or (
+            pos is not None and pos.kind == POSITION_KIND_FIXED
+        )
+        correction = self.corrections.get(str(tx.get("transactionId") or ""))
+        return resolve_owner(tx, pos, correction), fixed
 
 
-def _figures(
-    txs: list[dict[str, Any]], window: tuple[date, date], clf: _Classifier
+def plan_persons(plan: BudgetPlan | None, accounts: list[dict[str, Any]] | None) -> list[str]:
+    """Names a position may be named after without being about that person."""
+    names = {str(a.get("person") or "") for a in accounts or []}
+    names |= {str(n) for n in (plan.persons if plan is not None else [])}
+    return sorted(names - {""})
+
+
+def figures(
+    txs: list[dict[str, Any]], window: tuple[date, date], clf: Classifier
 ) -> dict[str, Any]:
+    """Income, expenses, fixed costs and per-owner / per-category splits of a period.
+
+    ``txs`` are counted and netted (:mod:`counted`). The one place these totals
+    are computed, for the household summary and the monthly summary alike.
+    """
     start, end = window
     income = expenses = fixed = 0.0
     owners: dict[str, dict[str, float]] = defaultdict(
         lambda: {"income": 0.0, "expenses": 0.0, "fixed": 0.0, "variable": 0.0}
     )
     cats: dict[tuple[str, str], float] = defaultdict(float)
+    income_cats: dict[str, float] = defaultdict(float)
     income_names: set[str] = set()
     for tx in txs:
         day = _day(tx)
         if day is None or not start <= day <= end:
             continue
         amount = _amount(tx)
-        owner, is_fixed = clf.classify(tx, day)
-        if amount > 0 and tx.get("_refund_role") != "refund":
+        if is_income_line(tx):
             income += amount
             owners[owner_of(tx)]["income"] += amount
             income_names.add(_name(tx))
+            income_cats[str(tx.get("category") or "other")] += amount
             continue
-        spent = -amount  # a refund comes out negative -> netted against expenses
+        owner, is_fixed = clf.classify(tx, day)
+        spent = -amount  # a credit comes out negative -> netted against expenses
         expenses += spent
         owners[owner]["expenses"] += spent
         owners[owner]["fixed" if is_fixed else "variable"] += spent
@@ -335,6 +265,7 @@ def _figures(
         "variable": expenses - fixed,
         "owners": owners,
         "categories": cats,
+        "income_categories": income_cats,
         "income_names": income_names,
     }
 
@@ -398,16 +329,15 @@ def build_household_summary(  # noqa: PLR0914
     corrections: dict[str, str] | None = None,
     refund_allocations: dict[str, dict[str, float]] | None = None,
     as_of: datetime | None = None,
+    persons: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Assemble the ``household_summary`` contract (docs/dev/contracts/household-summary.md)."""
     today = now.date()
     if cycle not in CYCLES:
         cycle = "current"
-    txs = counted_transactions(transactions, accounts)
-    if refund_allocations:
-        txs = net_refunds(txs, refund_allocations)  # #119: into the expense's cycle
-    windows, rule, anchor = cycle_windows(txs, today)
-    clf = _Classifier(plan, recurring, corrections)
+    txs = net_counted(counted_transactions(transactions, accounts), refund_allocations)
+    windows, rule, anchor = cycle_windows(txs, today, persons)
+    clf = Classifier(plan, recurring, corrections, plan_persons(plan, accounts))
 
     sel = 0 if cycle == "current" else 1
     window = windows[sel]
@@ -415,8 +345,8 @@ def build_household_summary(  # noqa: PLR0914
     if window is None:  # defensive: previous cycle unknown
         window = windows[0]
     start, end = window  # type: ignore[misc]
-    cur = _figures(txs, window, clf)  # type: ignore[arg-type]
-    prev = _figures(txs, comp_window, clf) if comp_window else None
+    cur = figures(txs, window, clf)  # type: ignore[arg-type]
+    prev = figures(txs, comp_window, clf) if comp_window else None
 
     days = (end - start).days + 1
     day = min(days, max(1, (today - start).days + 1)) if cycle == "current" else days

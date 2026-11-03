@@ -19,11 +19,17 @@ from __future__ import annotations
 import hashlib
 import logging
 from collections.abc import Awaitable, Callable
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from homeassistant.helpers.storage import Store
 
+from .tx_dates import (
+    effective_date_str,
+    effective_day,
+    fingerprint_date,
+    only_transaction_date,
+)
 from .const import (
     DEFAULT_RAW_RETENTION_DAYS,
     LEDGER_STORAGE_MINOR_VERSION,
@@ -40,8 +46,8 @@ _LOGGER = logging.getLogger(__name__)
 MigrateFunc = Callable[[int, int, Any], Awaitable[Any]]
 
 # Keys that are derived (from rules / user settings), never ledger data.
-_DERIVED_PREFIXES = ("_account_", "_transfer")
-_DERIVED_KEYS = ("category",)
+_DERIVED_PREFIXES = ("_account_", "_transfer", "_refund_")
+_DERIVED_KEYS = ("category", "_own_category", "_owner_override", "_net_expense")
 PENDING_MATCH_DAYS = 3
 SHORT_ANSWER_DAYS = 31
 _STRING_FIELDS = (
@@ -148,9 +154,9 @@ def _counterparty(tx: dict[str, Any]) -> str:
 def fingerprint(tx: dict[str, Any], *, with_date: bool = True) -> str:
     """Stable hash of what makes a transaction itself.
 
-    (booking_date, amount, currency, counterparty, remittance).  Without the
-    date it is the key pending→booked matching uses, since a pending entry's
-    date is a guess.
+    (date, amount, currency, counterparty, remittance).  Without the date it
+    is the key pending→booked matching uses, since a pending entry's date is a
+    guess.
     """
     amount = tx.get("transactionAmount") or {}
     try:
@@ -158,7 +164,7 @@ def fingerprint(tx: dict[str, Any], *, with_date: bool = True) -> str:
     except (TypeError, ValueError):
         amt = "0.00"
     parts = [
-        str(tx.get("bookingDate") or tx.get("valueDate") or "") if with_date else "",
+        fingerprint_date(tx) if with_date else "",
         amt,
         _norm(amount.get("currency")),
         _counterparty(tx),
@@ -174,17 +180,21 @@ def _parse_date(value: Any):
         return None
 
 
-def is_pending_match(pending: dict[str, Any], booked: dict[str, Any]) -> bool:
+def is_pending_match(
+    pending: dict[str, Any], booked: dict[str, Any], *, today: date | None = None
+) -> bool:
     """Whether a booked transaction is the settled form of a pending one.
 
-    Same fingerprint minus date, dates within ±3 days.
+    Same fingerprint minus date, dates within ±3 days.  A pending row without
+    any date is dated by the fetch (``today``): it must not swallow a booked
+    row of the same payee and amount from months ago.
     """
     if fingerprint(pending, with_date=False) != fingerprint(booked, with_date=False):
         return False
-    d1 = _parse_date(pending.get("bookingDate") or pending.get("valueDate"))
-    d2 = _parse_date(booked.get("bookingDate") or booked.get("valueDate"))
+    d1 = effective_day(pending) or today
+    d2 = effective_day(booked)
     if d1 is None or d2 is None:
-        return True
+        return False
     return abs((d1 - d2).days) <= PENDING_MATCH_DAYS
 
 
@@ -199,7 +209,7 @@ def reported_from(date_from: str | None, booked: list[dict[str, Any]]) -> str | 
     full span and with it reversal detection.  An empty answer covers the
     whole requested window.
     """
-    dates = [str(t.get("bookingDate"))[:10] for t in booked if t.get("bookingDate")]
+    dates = [d for t in booked if (d := effective_date_str(t))]
     if not dates:
         return date_from
     earliest = min(dates)
@@ -246,14 +256,14 @@ def _covered_imports(txs: list[dict[str, Any]]) -> set[int]:
     for t in txs:
         if t.get("_source") or t.get("_status") != "booked":
             continue
-        cents, party, day = _amount_cents(t), _counterparty(t), _parse_date(t.get("bookingDate"))
+        cents, party, day = _amount_cents(t), _counterparty(t), effective_day(t)
         if cents is not None and party and day:
             bank.setdefault((cents, party), []).append(day)
     gone: set[int] = set()
     for t in txs:
         if not t.get("_source"):
             continue
-        cents, party, day = _amount_cents(t), _counterparty(t), _parse_date(t.get("bookingDate"))
+        cents, party, day = _amount_cents(t), _counterparty(t), effective_day(t)
         days = bank.get((cents, party)) if cents is not None and party and day else None
         if not days:
             continue
@@ -334,12 +344,17 @@ class Ledger:
 
     def last_booked_date(self, key: str) -> str | None:
         """Latest booked date the bank delivered (imported history does not count)."""
-        dates = [
-            str(t.get("bookingDate") or "")
-            for t in self.data.get("accounts", {}).get(key, {}).get("transactions", [])
-            if t.get("_status") == "booked" and t.get("bookingDate") and not t.get("_source")
-        ]
+        # A value date in the future must not push the next fetch window past it.
+        today = datetime.now(UTC).date().isoformat()
+        dates = [d for d in self._bank_dates(key) if d <= today]
         return max(dates) if dates else None
+
+    def _bank_dates(self, key: str) -> list[str]:
+        return [
+            day
+            for t in self.data.get("accounts", {}).get(key, {}).get("transactions", [])
+            if t.get("_status") == "booked" and not t.get("_source") and (day := effective_date_str(t))
+        ]
 
     # -- mutation ----------------------------------------------------------
 
@@ -405,6 +420,7 @@ class Ledger:
         fresh_pending = prepare(pending, "pending")
         fresh_ids = {t["_ledger_id"] for t in fresh_booked}
         authoritative_from = reported_from(date_from, fresh_booked)
+        earliest_fresh = min((d for t in fresh_booked if (d := effective_date_str(t))), default="")
 
         kept: list[dict[str, Any]] = []
         for tx in acct["transactions"]:
@@ -415,17 +431,23 @@ class Ledger:
             if tx.get("_source"):
                 kept.append(tx)  # imported history is never a reversal candidate (#121)
                 continue
-            bdate = str(tx.get("bookingDate") or "")
+            bdate = effective_date_str(tx)
+            if only_transaction_date(tx) and (not earliest_fresh or bdate < earliest_fresh):
+                kept.append(tx)  # such a source answers thinly: absence below its answer is no proof
+                continue
             if not truncated and authoritative_from and bdate and bdate >= authoritative_from:
                 continue
             kept.append(tx)
 
         new = [t for t in fresh_booked if t["_ledger_id"] not in existing]
+        fetched_on = datetime.now(UTC).date()
         fresh_pending = [
-            p for p in fresh_pending if not any(is_pending_match(p, b) for b in fresh_booked)
+            p
+            for p in fresh_pending
+            if not any(is_pending_match(p, b, today=fetched_on) for b in fresh_booked)
         ]
         merged = kept + fresh_booked + fresh_pending
-        merged.sort(key=lambda t: str(t.get("bookingDate") or ""), reverse=True)
+        merged.sort(key=effective_date_str, reverse=True)
         acct["transactions"] = merged
         self.reconcile_imports(key)
         return new
@@ -450,7 +472,7 @@ class Ledger:
         have = {t.get("_ledger_id") for t in acct["transactions"]}
         fresh = [t for t in txs if t.get("_ledger_id") not in have]
         acct["transactions"] = sorted(
-            acct["transactions"] + fresh, key=lambda t: str(t.get("bookingDate") or ""), reverse=True
+            acct["transactions"] + fresh, key=effective_date_str, reverse=True
         )
         batches = self.meta.setdefault("import_batches", [])
         batches.append({**info, "id": batch_id, "account_key": key, "count": len(fresh)})
@@ -502,13 +524,40 @@ class Ledger:
         ]
         return removed
 
+    def migrate_fingerprint_ids(self) -> dict[str, dict[str, str]]:
+        """Give rows with only a transaction date their new identity (#168).
+
+        Their fingerprint used to carry no date at all, so equal payments
+        collapsed into one row.  ``{account key: {old id: new id}}``; whatever
+        stores a booking by its ledger id follows the map, or a one-off answer
+        on such a row would be lost.  Idempotent: a new id maps to itself and
+        is not reported.
+        """
+        renames: dict[str, dict[str, str]] = {}
+        for key, acct in self.data.get("accounts", {}).items():
+            txs = acct.get("transactions") or []
+            taken = {t.get("_ledger_id") for t in txs}
+            for tx in txs:
+                lid = str(tx.get("_ledger_id") or "")
+                if not lid.startswith("fp:") or tx.get("transactionId") or tx.get("_source"):
+                    continue
+                if not only_transaction_date(tx):
+                    continue
+                base = f"fp:{fingerprint(tx)}"
+                if lid == base or lid.startswith(f"{base}#"):
+                    continue
+                new, n = base, 0
+                while new in taken:
+                    n += 1
+                    new = f"{base}#{n}"
+                taken.add(new)
+                renames.setdefault(key, {})[lid] = new
+                tx["_ledger_id"] = new
+        return renames
+
     def first_booked_date(self, key: str) -> str | None:
         """Earliest booked date the bank delivered (imported history does not count)."""
-        dates = [
-            str(t.get("bookingDate") or "")
-            for t in self.data.get("accounts", {}).get(key, {}).get("transactions", [])
-            if t.get("_status") == "booked" and t.get("bookingDate") and not t.get("_source")
-        ]
+        dates = self._bank_dates(key)
         return min(dates) if dates else None
 
     def add_balances(self, key: str, balances: list[dict[str, Any]], at: str) -> None:

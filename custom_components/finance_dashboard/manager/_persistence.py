@@ -15,7 +15,20 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     pass
 
+from ..transfer_detector import is_stable_chain_id
+
 _LOGGER = logging.getLogger(__name__)
+
+
+LID_RENAMES_META = "lid_renames"
+
+
+def _rename_keys(mapping: dict[str, Any], renames: dict[str, str]) -> bool:
+    """Move the entries of ``mapping`` to their new keys; True when one moved."""
+    moved = [k for k in mapping if k in renames]
+    for key in moved:
+        mapping[renames[key]] = mapping.pop(key)
+    return bool(moved)
 
 
 class PersistenceMixin:
@@ -167,6 +180,7 @@ class PersistenceMixin:
             result = await self.async_reprocess(force=True)
             overrides = await self._async_load_transfer_overrides()
             derived = self._derive_from_ledger(overrides)
+            await self._async_refresh_contract_categories()
             try:
                 from ..recurring import detect_recurring
 
@@ -204,6 +218,7 @@ class PersistenceMixin:
     async def _after_ledger_edit(self) -> None:
         overrides = await self._async_load_transfer_overrides()
         derived = self._derive_from_ledger(overrides)
+        await self._async_refresh_contract_categories()
         try:
             from ..recurring import detect_recurring
 
@@ -279,9 +294,72 @@ class PersistenceMixin:
         """Load user overrides for transfer chains from storage."""
         data = await self._transfer_override_store.async_load()
         if data and isinstance(data, dict):
-            self._transfer_overrides = data
-            return data
+            # Chain ids used to be random per derive, so an old id points at
+            # nothing any more and no decision can be recovered from it.
+            kept = {k: v for k, v in data.items() if is_stable_chain_id(k)}
+            if len(kept) != len(data):
+                _LOGGER.info("Dropped %d stale transfer decisions", len(data) - len(kept))
+                await self._transfer_override_store.async_save(kept)
+            self._transfer_overrides = kept
+            return kept
         return {}
+
+    async def _async_migrate_ledger_ids(self) -> None:
+        """New identity for rows with only a transaction date, and whatever points at them.
+
+        The renames stay in the ledger's meta until every store has followed, so
+        a failure or a crash halfway is picked up at the next start.
+        """
+        migrate = getattr(self._ledger, "migrate_fingerprint_ids", None)
+        if migrate is None or not self._ledger_writable:
+            return
+        fresh = migrate()
+        meta = self._ledger.meta
+        pending: dict[str, dict[str, str]] = meta.get(LID_RENAMES_META) or {}
+        for akey, ids in fresh.items():
+            pending.setdefault(akey, {}).update(ids)
+        if not pending:
+            return
+        if fresh:
+            meta[LID_RENAMES_META] = pending
+            await self._ledger.async_save()
+        try:
+            await self._async_rename_booking_refs(pending)
+        except Exception:  # noqa: BLE001 - retried at the next start, must not stop this one
+            _LOGGER.warning("Booking references not migrated, retrying at next start", exc_info=True)
+            return
+        meta.pop(LID_RENAMES_META, None)
+        await self._ledger.async_save()
+
+    async def _async_rename_booking_refs(self, renames: dict[str, dict[str, str]]) -> None:
+        """One-off answers, labels, manual refunds and assignments follow a new ledger id."""
+        from ..contracts import async_get_store
+        from ..labels import async_get_label_store
+        from ..refund_store import async_get_refund_store
+
+        by_key = {
+            f"{akey}|{old}": f"{akey}|{new}"
+            for akey, ids in renames.items()
+            for old, new in ids.items()
+        }
+        raw = {old: new for ids in renames.values() for old, new in ids.items()}
+        memory = getattr(self, "_memory", None)
+        if memory is not None and memory.rename_bookings(raw):
+            await memory.async_save()
+        labels = await async_get_label_store(self._hass)
+        if _rename_keys(labels.bookings, by_key):
+            await labels.async_save()
+        refunds = await async_get_refund_store(self._hass)
+        changed = _rename_keys(refunds.manual, by_key)
+        for key, expenses in refunds.manual.items():
+            moved = [by_key.get(e, e) for e in expenses]
+            changed = changed or moved != expenses
+            refunds.manual[key] = moved
+        if changed:
+            await refunds.async_save()
+        structure = (await async_get_store(self._hass)).structure
+        if _rename_keys(structure.assignments, by_key):
+            await structure.async_save()
 
     def _raise_storage_corrupt_issue(self, storage_key: str, error_class: str) -> None:
         """Raise a Repair issue for a corrupt .storage/ file (R8).

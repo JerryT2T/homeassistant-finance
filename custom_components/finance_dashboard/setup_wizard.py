@@ -26,8 +26,10 @@ from homeassistant.helpers.storage import Store
 
 from . import plan_wizard
 from .const import CATEGORY_OTHER, CATEGORY_TRANSFERS, DOMAIN, INCOME_CATEGORIES
+from .counted import income_payer, is_salary_candidate
 from .cycle import cycle_windows, salary_starts
 from .recurring import detect_recurring
+from .tx_dates import effective_day
 
 STORAGE_KEY = f"{DOMAIN}.setup_wizard"
 STORAGE_VERSION = 1
@@ -283,12 +285,7 @@ def amount_of(tx: dict[str, Any]) -> float:
         return 0.0
 
 
-def day_of(tx: dict[str, Any]) -> date | None:
-    raw = str(tx.get("bookingDate") or tx.get("valueDate") or "")[:10]
-    try:
-        return date.fromisoformat(raw)
-    except ValueError:
-        return None
+day_of = effective_day
 
 
 def tx_owner(tx: dict[str, Any]) -> str:
@@ -340,10 +337,10 @@ def suggest_paydays(
 
 def _history_windows(transactions: list[dict[str, Any]], today: date) -> list[tuple[date, date]]:
     incomes = [
-        (d, a)
+        (d, a, income_payer(t))
         for t in transactions
         if (a := amount_of(t)) > 0
-        and t.get("category") != CATEGORY_TRANSFERS
+        and is_salary_candidate(t)
         and t.get("_status", "booked") == "booked"
         and (d := day_of(t)) is not None
     ]

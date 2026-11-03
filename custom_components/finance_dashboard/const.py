@@ -4,7 +4,7 @@ DOMAIN = "finance_dashboard"
 PLATFORMS = ["sensor", "number", "select"]
 
 # Version — must match manifest.json and companion config.yaml
-VERSION = "0.39.0"
+VERSION = "0.40.0"
 
 # Panel
 PANEL_URL_PATH = "finance-dashboard"
@@ -59,7 +59,7 @@ STORAGE_KEY_LEDGER_BACKUP = f"{DOMAIN}_ledger_backup_v"  # + previous version
 # Bump it whenever that logic changes: on the next start the ledger is rebuilt
 # from the raw archive and the previous ledger is kept as a backup store.
 # 2: explicit nulls from the bank (booking_date, names) normalise to "".
-PROCESSING_VERSION = 2
+PROCESSING_VERSION = 3
 
 # Per-bank fetch budget.  The 4/day cap is the bank's and applies only to
 # background (non-PSU) access; the scheduled daily refresh may use one slot.

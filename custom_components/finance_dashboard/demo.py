@@ -14,6 +14,7 @@ from datetime import datetime
 from typing import Any
 
 from .life_areas import migrate_slug
+from .tx_dates import effective_date_str
 
 # ---------------------------------------------------------------------------
 # Demo bank accounts
@@ -623,7 +624,7 @@ def _build_transactions(
         )
 
     # Sort newest first
-    transactions.sort(key=lambda t: t["bookingDate"], reverse=True)
+    transactions.sort(key=effective_date_str, reverse=True)
     return transactions
 
 
@@ -828,8 +829,8 @@ def generate_demo_home(
         _tx("demo-sparkasse-anna", "Streamingdienst", "subscriptions", -9.99, today, pending=True)
     )
     # Salaries dated in the future would distort the cycle: keep history only.
-    txs = [t for t in txs if t["_status"] == "pending" or t["bookingDate"] <= today.isoformat()]
-    txs.sort(key=lambda t: t["bookingDate"], reverse=True)
+    txs = [t for t in txs if t["_status"] == "pending" or effective_date_str(t) <= today.isoformat()]
+    txs.sort(key=effective_date_str, reverse=True)
 
     if view == "person" and person not in {"Anna", "Max"}:
         person = "Anna"

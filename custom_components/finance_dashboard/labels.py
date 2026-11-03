@@ -24,6 +24,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
 
 from .const import DOMAIN, STORAGE_VERSION
+from .life_areas import OTHER, TRANSFERS, is_income
 
 STORAGE_KEY_LABELS = f"{DOMAIN}_labels"
 MAX_CUSTOM = 100
@@ -251,6 +252,38 @@ async def async_get_label_store(hass: HomeAssistant) -> LabelStore:
     return store
 
 
+def contract_categories(contracts: list[dict[str, Any]]) -> dict[str, str]:
+    """Booking key -> the category of the contract the booking belongs to."""
+    out: dict[str, str] = {}
+    for item in contracts:
+        # An uncertain detection or an unplaced contract passes nothing on.
+        if item.get("candidate") or item.get("category") in (None, "", OTHER):
+            continue
+        for lid in item.get("ledger_ids") or []:
+            out[lid] = str(item["category"])
+    return out
+
+
+def apply_contract_categories(
+    transactions: list[dict[str, Any]], categories: dict[str, str] | None
+) -> None:
+    """Make a contract's category the one a booking counts under, in place.
+
+    The list has always shown it; now every total uses it too (#177). The
+    booking's own category stays in ``_own_category``, and a booking that left
+    its contract gets it back.
+    """
+    categories = categories or {}
+    for txn in transactions:
+        own = txn.get("_own_category") or txn.get("category")
+        category = categories.get(booking_key(txn) or "")
+        if category and category != own and own != TRANSFERS and not is_income(own):
+            txn["_own_category"] = own
+            txn["category"] = category
+        elif txn.get("_own_category"):
+            txn["category"] = txn.pop("_own_category")
+
+
 def resolve_bookings(
     transactions: list[dict[str, Any]],
     contracts: list[dict[str, Any]],
@@ -282,10 +315,12 @@ def resolve_bookings(
         if not lid:
             continue
         link = by_ledger.get(lid)
+        own = txn.get("_own_category") or txn.get("category", "other")
         out[lid] = {
             "contract_id": link["contract_id"] if link else None,
             "contract_name": link["contract_name"] if link else None,
-            "category": link["category"] if link else txn.get("category", "other"),
+            # The same choice as apply_contract_categories: this is where the amount counts.
+            "category": link["category"] if link and link["category"] != OTHER else own,
             "category_source": "contract" if link else "own",
             "labels_inherited": link["inherited"] if link else [],
             "labels_own": list(booking_labels.get(lid) or []),

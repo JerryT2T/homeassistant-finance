@@ -214,7 +214,7 @@ grouped fixed / regular like `contract_totals`. The filter is kept per user in l
 (`contract_filter.py`, `frontend/fd-contract-filter.js`); change both and the shared fixture together.
 
 ## Notice event hook for the setup agent
-`await contracts.async_fire_notice_due(hass, get_effective_transactions(manager._transactions))` - call from the daily
+`await contracts.async_fire_notice_due(hass, counted_transactions(manager._transactions, manager._accounts))` - call from the daily
 refresh path after the ledger update. Fires `finance_dashboard_notice_due` (`series_id, creditor, deadline, effective_end, days_left, owner`; no amount)
 for deadlines 0..30 days away, once per contract per deadline (markers persisted in the contract store). Returns the count.
 

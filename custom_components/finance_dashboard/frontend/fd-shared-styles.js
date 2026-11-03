@@ -58,6 +58,9 @@ export const CAT_COLORS = {
   income_private: "#6ee7b7",
   other: "#6b7280",
   transfers: "#9ca3af",
+  cash: "#a3a380",
+  bank_fees: "#b08968",
+  p2p: "#7f9cf5",
 };
 
 /** Built-in de/en labels, used until locales/*.json (keys cat.<slug>) are loaded. */
@@ -66,6 +69,7 @@ const CAT_LABEL_FB = {
     housing_cold: "Wohnen kalt", housing_warm: "Wohnen warm", groceries: "Lebensmittel & Haushalt",
     mobility: "Mobilität", health: "Gesundheit & Absicherung", leisure: "Freizeit",
     media: "Medien & Kommunikation", finance: "Finanzen & Verpflichtungen",
+    cash: "Bargeld", bank_fees: "Bankgebühren", p2p: "An Privatpersonen",
     income_work: "Lohn & Gehalt", income_state: "Staatliche Leistungen", income_capital: "Kapitalerträge",
     income_refund: "Erstattungen", income_private: "Von Privatpersonen", other: "Sonstiges", transfers: "Umbuchung",
   },
@@ -73,6 +77,7 @@ const CAT_LABEL_FB = {
     housing_cold: "Housing (cold)", housing_warm: "Housing (warm)", groceries: "Groceries & household",
     mobility: "Mobility", health: "Health & protection", leisure: "Leisure",
     media: "Media & communication", finance: "Finance & obligations",
+    cash: "Cash", bank_fees: "Bank fees", p2p: "To private persons",
     income_work: "Salary & wages", income_state: "State benefits", income_capital: "Capital income",
     income_refund: "Refunds", income_private: "From private persons", other: "Other", transfers: "Transfer",
   },
@@ -133,7 +138,7 @@ export function isIncomeCat(slug) {
 /** Category icons (emoji, decorative). */
 export const CAT_ICONS = {
   housing_cold: "🏠", housing_warm: "🔥", groceries: "🛒", mobility: "🚗", health: "💊",
-  leisure: "🎭", media: "📱", finance: "🏦",
+  leisure: "🎭", media: "📱", finance: "🏦", cash: "💵", bank_fees: "🧾", p2p: "🤝",
   income_work: "💶", income_state: "🏛️", income_capital: "📈", income_refund: "↩️", income_private: "🎁",
   other: "❓", transfers: "↔️",
 };

@@ -19,6 +19,8 @@ A secure Home Assistant integration (HACS only) for personal finance management.
 - The **actual** is live bank data.
 Ownership resolves in a fixed chain: the account's owner (person or shared) is only the *default*; a matched plan position overrides it, and a user correction (one-off or saved as a rule) overrides both — a shared subscription can be billed onward, and one person's contract can be paid from the joint account. Sign conventions are opposite on the two sides (plan: expense positive; bank: expense negative); convert with `actual_amount_to_plan_sign`.
 
+**Hard rule — one counting rule**: Every total reads the same bookings: `counted.counted_transactions` (no chain leg, no `transfers`, no PayPal mirror, booked and dated), then `counted.net_counted` (refunds netted into the expense's category). Period figures come from `household_summary.figures` inside the window from `household_summary.cycle_windows`. A view must not filter bookings or pick a period by itself: five rules for one ledger is what showed saving as spending. Dates go through `tx_dates` (a test forbids a direct `bookingDate` read), owners through `plan_match.resolve_owner`, a chain's id is a hash of its member bookings.
+
 ## Security Model
 
 **CRITICAL — banking-grade:**

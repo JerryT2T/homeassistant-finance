@@ -20,6 +20,7 @@ custom_components/finance_dashboard/
 ├── coordinator.py         # DataUpdateCoordinator, cache-only reads
 ├── entity.py, sensor.py, button.py, number.py, select.py   # Entities and devices
 ├── diagnostics.py, repairs.py, events.py, panel.py
+├── counted.py (the one counting rule), own_accounts.py, plan_match.py, tx_dates.py
 ├── categorizer.py, recurring.py, transfer_detector.py
 ├── budget_plan.py, spreadsheet_import.py, sheet_source.py, transfer_plan.py, household.py, benchmark.py
 ├── api/                   # HTTP views: data, plan, refresh, demo, _helpers

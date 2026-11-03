@@ -30,7 +30,6 @@ from ..contracts import build_contracts, own_account_names
 from ..household_summary import counted_transactions, pending_debits
 from ..merchants import POINT_EVERY
 from ..pots import Pot
-from ..transfer_detector import get_effective_transactions
 from ._helpers import _get_manager, admin_denied
 
 
@@ -201,7 +200,7 @@ class FinanceDashboardPaydaySuggestionsView(HomeAssistantView):
         manager = _get_manager(request.app["hass"])
         if not manager:
             return self.json({"error": "Not configured"}, status_code=404)
-        txs = get_effective_transactions(manager._transactions)  # noqa: SLF001
+        txs = counted_transactions(manager._transactions, manager._accounts)  # noqa: SLF001
         return self.json({"suggestions": wiz.suggest_paydays(txs, manager.persons)})
 
 
@@ -216,7 +215,7 @@ class FinanceDashboardPotSuggestionsView(HomeAssistantView):
         manager = _get_manager(request.app["hass"])
         if not manager:
             return self.json({"error": "Not configured"}, status_code=404)
-        txs = get_effective_transactions(manager._transactions)  # noqa: SLF001
+        txs = counted_transactions(manager._transactions, manager._accounts)  # noqa: SLF001
         today = dt_util.now().date()
         return self.json({"suggestions": wiz.suggest_pots(txs, manager.pots, today)})
 

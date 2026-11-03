@@ -21,6 +21,7 @@ from typing import Any
 
 from .budget_plan import actual_amount_to_plan_sign
 from .const import OWNER_SHARED
+from .counted import is_income_line
 
 STEPS = ("income", "fixed", "pots", "goals", "result")
 SKIPPABLE = {"fixed", "pots", "goals"}
@@ -305,7 +306,7 @@ def history_averages(
             continue
         for i, (s, e) in enumerate(cycles):
             if s <= day <= e:
-                if bank > 0 and tx.get("_refund_role") != "refund":
+                if is_income_line(tx):
                     income[i] += bank
                 else:
                     spent[i] += actual_amount_to_plan_sign(bank)

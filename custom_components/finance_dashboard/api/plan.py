@@ -37,6 +37,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from ..const import DOMAIN, OWNER_SHARED
 from ..sheet_source import SheetSourceError, decode_upload, fetch_google_sheet
 from ._helpers import _get_manager, admin_denied
+from .refunds import load_refund_inputs
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -133,6 +134,7 @@ class FinanceDashboardPlanVsActualView(HomeAssistantView):
             return self.json({"error": "Not configured"}, status_code=404)
 
         month, year = _month_year(request)
+        await load_refund_inputs(hass)  # manual allocations + labels (#119)
         result = manager.get_plan_vs_actual(month, year)
 
         if not _is_admin(request):

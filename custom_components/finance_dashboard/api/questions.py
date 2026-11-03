@@ -67,8 +67,8 @@ async def _with_contract_questions(request: web.Request, manager, data: dict) ->
         contracts, today=dt_util.now().date(), limit=min(MAX_CONTRACT_QUESTIONS, left)
     )
     rest = list(data.get("questions") or [])
-    refunds = [q for q in rest if q.get("kind") == "refund"]
-    merchants = [q for q in rest if q.get("kind") != "refund"]
+    refunds = [q for q in rest if q.get("kind") in ("refund", "transfer")]
+    merchants = [q for q in rest if q.get("kind") not in ("refund", "transfer")]
     merged = refunds + cq + merchants[: max(0, left - len(cq))]
     return {
         **data,

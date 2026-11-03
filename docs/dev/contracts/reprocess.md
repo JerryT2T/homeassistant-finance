@@ -37,3 +37,12 @@ Admin:
 - `data_quality` (admin): accounts whose booked lines carry no booking, value or transaction date (`tx_dates.effective_day` is None); such lines miss cycles and contracts, and the bank-side PayPal debit of the same purchase counts instead. Empty list = nothing to report. `transactionDate` is taken from the bank at import, so lines stored before 0.24.4 gain it only with the next "Neu importieren", not with "Aktualisieren".
 
 Existing `GET /refresh_status` is unchanged.
+
+## Ledger identity of PayPal rows (processing version 3)
+
+A row with only a transaction date used to have no date in its fingerprint, so equal payments
+collapsed. At start `Ledger.migrate_fingerprint_ids` gives such rows their new id before the replay;
+one-off answers, labels, manual refund allocations and contract assignments follow the rename.
+Transfer decisions stored under the old random chain ids point at nothing and are dropped; chain ids
+are now derived from the member bookings. Replay also picks up the counterparty IBANs needed for the
+own-account check; they stay in the encrypted ledger and leave no API.

@@ -17,6 +17,7 @@ from ..const import CATEGORY_OTHER, DEFAULT_CATEGORIES, DOMAIN
 from ..merchants import POINT_EVERY, _counterparty, merchant_key
 from ..points_target import EVENT_POINTS_AWARDED, async_award, person_of_user
 from ..refund_matcher import QUESTION_PREFIX, refund_questions
+from ..transfer_detector import transfer_questions
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -27,6 +28,8 @@ _NOT_SUGGESTED = (CATEGORY_OTHER, "transfers")
 REACH_BOOKING = "booking"
 REACH_MERCHANT = "merchant"
 _MAX_ID = 120
+TRANSFER_PREFIX = "transfer:"
+MAX_TRANSFER_QUESTIONS = 5
 
 
 class QuestionError(Exception):
@@ -70,11 +73,12 @@ class QuestionsMixin:
         mem = getattr(self, "_memory", None)
         today = dt_util.now().date()
         refunds = self.get_refund_questions()
+        transfers = self.get_transfer_questions()
         return {
-            # Unsure refund matches come first: one answer settles a whole bill (#119).
-            "questions": [*refunds, *data.get("questions", [])],
-            "questions_open": data.get("questions_open", 0) + len(refunds),
-            "questions_total": data.get("questions_total", 0) + len(refunds),
+            # Unsure matches come first: one answer settles a whole bill (#119) or transfer (#174).
+            "questions": [*refunds, *transfers, *data.get("questions", [])],
+            "questions_open": data.get("questions_open", 0) + len(refunds) + len(transfers),
+            "questions_total": data.get("questions_total", 0) + len(refunds) + len(transfers),
             "answered_total": mem.answered if mem else 0,
             "week_answered": mem.week_answered(today) if mem else 0,
             "points": mem.points if mem else 0,
@@ -121,6 +125,7 @@ class QuestionsMixin:
         from .. import ai_provider as ai
         from ..ai_consent import async_granted
         from ..contracts import is_own_name, own_account_names
+        from ..counted import counted_transactions
 
         mem = self._memory
         if not await async_granted(self._hass, "categorize"):
@@ -137,7 +142,8 @@ class QuestionsMixin:
             return 0
         tried: set[str] = self.__dict__.setdefault("_ai_tried", set())
         candidates = ai.select_candidates(
-            self._transactions,
+            # What does not count (a PayPal debit, a transfer) is worth no AI call.
+            counted_transactions(self._transactions, getattr(self, "_accounts", None) or []),
             key_of=merchant_key,
             counterparty_of=_counterparty,
             own_names=own_account_names(self._accounts),
@@ -179,6 +185,9 @@ class QuestionsMixin:
         if learned:
             await mem.async_save()
             self._derive_from_ledger(self._transfer_overrides)
+            refresh = getattr(self, "_async_refresh_contract_categories", None)
+            if refresh is not None:
+                await refresh()
             await self._push_coordinator()
         return learned
 
@@ -217,6 +226,8 @@ class QuestionsMixin:
             raise QuestionError("unavailable")
         if isinstance(question_id, str) and question_id.startswith(QUESTION_PREFIX):
             return await self._answer_refund(mem, question_id, choice, expenses, user_id)
+        if isinstance(question_id, str) and question_id.startswith(TRANSFER_PREFIX):
+            return await self._answer_transfer(mem, question_id, choice, user_id)
         if not isinstance(question_id, str) or not question_id or len(question_id) > _MAX_ID:
             raise QuestionError("invalid_id")
         if not isinstance(category, str) or not _SLUG.match(category) or category == CATEGORY_OTHER:
@@ -257,6 +268,50 @@ class QuestionsMixin:
             result["allocations"],
             labels.bookings if labels else None,
         )
+
+    def get_transfer_questions(self) -> list[dict[str, Any]]:
+        """Question cards for pairs that match on amount and date only (#174); cache only."""
+        if getattr(self, "_demo_mode", False):
+            return []
+        from ..tx_dates import effective_date_str
+
+        def row(tx: dict[str, Any]) -> dict[str, Any]:
+            return {
+                "date": effective_date_str(tx),
+                "amount": float((tx.get("transactionAmount") or {}).get("amount", 0) or 0),
+                "account": str(tx.get("_account_name") or ""),
+                "party": _counterparty(tx),
+                "description": str(tx.get("remittanceInformationUnstructured") or "")[:120],
+            }
+
+        cards = transfer_questions(
+            self._transactions, self._accounts, getattr(self, "_transfer_overrides", None)
+        )
+        # Newest first and few at a time: an imported history must not flood the list.
+        cards.sort(key=lambda card: effective_date_str(card["out"]), reverse=True)
+        return [
+            {
+                "kind": "transfer",
+                "id": f"{TRANSFER_PREFIX}{card['id']}",
+                "merchant": _counterparty(card["out"]) or _counterparty(card["in"]),
+                "out": row(card["out"]),
+                "in": row(card["in"]),
+            }
+            for card in cards[:MAX_TRANSFER_QUESTIONS]
+        ]
+
+    async def _answer_transfer(
+        self, mem: Any, question_id: str, choice: str | None, user_id: str | None
+    ) -> dict[str, Any]:
+        """``confirm`` links the pair for good, ``no`` keeps both bookings counted."""
+        if choice not in ("confirm", "no"):
+            raise QuestionError("invalid_choice")
+        if question_id not in {q["id"] for q in self.get_transfer_questions()}:
+            raise QuestionError("unknown_question")
+        await self.async_confirm_transfer_chain(
+            question_id[len(TRANSFER_PREFIX) :], choice == "confirm"
+        )
+        return await self._finish_answer(mem, user_id, derive=True)
 
     async def _answer_refund(
         self,
@@ -310,6 +365,9 @@ class QuestionsMixin:
         await mem.async_save()
         if derive:
             self._derive_from_ledger(self._transfer_overrides)
+            refresh = getattr(self, "_async_refresh_contract_categories", None)
+            if refresh is not None:
+                await refresh()
         if point:
             from ..setup_wizard import async_load_state
 

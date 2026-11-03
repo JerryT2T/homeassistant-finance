@@ -18,6 +18,7 @@ from typing import Any
 
 from .data_store import Ledger, reported_from
 from .enablebanking_client import EnableBankingClient
+from .tx_dates import effective_date_str
 
 WINDOW_KIND = "transactions_window"
 
@@ -141,12 +142,12 @@ def merge_uncovered(
         for tx in old_txs:
             if tx.get("_status") != "booked" or tx.get("_ledger_id") in ids:
                 continue
-            bdate = str(tx.get("bookingDate") or "")
+            bdate = effective_date_str(tx)
             # imported history (#121) is never rebuilt from the archive: always carried
             if tx.get("_source") or start is None or (bdate and bdate < start):
                 new["transactions"].append(tx)
                 carried += 1
-        new["transactions"].sort(key=lambda t: str(t.get("bookingDate") or ""), reverse=True)
+        new["transactions"].sort(key=effective_date_str, reverse=True)
 
         first_at = min((p.get("at", "") for p in new["balances"]), default=None)
         older = [p for p in old_bal if first_at is None or p.get("at", "") < first_at]

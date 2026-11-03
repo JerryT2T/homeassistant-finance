@@ -102,16 +102,11 @@ def _analyze_pattern(creditor: str, transactions: list[dict[str, Any]]) -> dict[
 
     for txn in transactions:
         amount = float(txn.get("transactionAmount", {}).get("amount", 0))
-        booking_str = txn.get("bookingDate", "")
-        if not booking_str:
+        day = effective_day(txn)
+        if day is None:
             continue
-
-        try:
-            booking = datetime.strptime(booking_str, "%Y-%m-%d")
-            amounts.append(amount)
-            dates.append(booking)
-        except ValueError:
-            continue
+        amounts.append(amount)
+        dates.append(datetime(day.year, day.month, day.day))
 
     if len(amounts) < MIN_OCCURRENCES:
         return None
@@ -1087,7 +1082,10 @@ def _build_series(
         "pause_pattern": pauses_recent >= PAUSE_PATTERN_MIN,
         "status": status,
         "price_change": price_change,
-        "category": _most_common_value([t.get("category") for t in txns], "other"),
+        # the bookings' own category: a contract's choice must not feed back into itself (#177)
+        "category": _most_common_value(
+            [t.get("_own_category") or t.get("category") for t in txns], "other"
+        ),
         # bookings of the series, for inherited category and labels (#113); hashes only
         "ledger_ids": [
             f"{t.get('_account_key') or ''}|{t['_ledger_id']}" for t in txns if t.get("_ledger_id")

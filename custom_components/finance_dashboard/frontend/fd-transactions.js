@@ -45,6 +45,7 @@ const FB = {
     "tx.prev": "Zurück",
     "tx.next": "Weiter",
     "tx.pending": "vorgemerkt",
+    "tx.movement": "Umbuchung, zählt nicht",
     "tx.admin_only": "Einzelne Transaktionen sind nur für Administratoren sichtbar.",
     "tx.error": "Transaktionen konnten nicht geladen werden.",
     "tx.retry": "Erneut versuchen",
@@ -69,6 +70,7 @@ const FB = {
     "tx.prev": "Previous",
     "tx.next": "Next",
     "tx.pending": "pending",
+    "tx.movement": "Transfer, not counted",
     "tx.admin_only": "Individual transactions are visible to administrators only.",
     "tx.error": "Could not load transactions.",
     "tx.retry": "Try again",
@@ -301,7 +303,8 @@ class FdTransactions extends HTMLElement {
       const party = x.creditor || x.debtor || "";
       const pend = x.status && x.status !== "booked" ? ` <span class="chip pend">${e(tr("tx.pending"))}</span>` : "";
       const cat = x.category ? `<div class="cat">${e(catLabel(x.category))}${x.category_source === "contract" ? ` <i>· ${e(tr("tx.from_contract"))}</i>` : ""}</div>` : "";
-      const rs = x.refund_state ? `<span class="chip">${e(tr(`rf.state.${x.refund_state.state}`))}</span>` : "";
+      const rs = (x.refund_state ? `<span class="chip">${e(tr(`rf.state.${x.refund_state.state}`))}</span>` : "")
+        + (x.counted === false ? `<span class="chip">${e(tr("tx.movement"))}</span>` : "");
       const chips = labelChips(x.labels_inherited, this._labels, "inherited") + labelChips(x.labels_own, this._labels, "own") + labelChips(x.labels_auto, this._labels, "auto") + rs;
       const open = this._isAdmin && this._desktop && x.ledger_id
         ? ` data-i="${idx}" role="button" tabindex="0" aria-label="${e(tr("tx.open_booking") + ": " + (party || x.description || ""))}"` : "";
