@@ -29,6 +29,7 @@ const COMPONENTS = [
   "fd-home.js",
   "fd-freshness.js",
   "fd-cycle-detail.js",
+  "fd-owner-chip.js",
   "fd-transactions.js",
   "fd-budget-plan.js",
   "fd-settings.js",
