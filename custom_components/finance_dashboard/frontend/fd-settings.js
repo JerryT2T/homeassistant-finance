@@ -31,7 +31,7 @@
  */
 
 const DOMAIN = "finance_dashboard";
-const ALL = ["persons", "accounts", "payday", "region", "notifications", "ai", "history", "points", "goals", "banks", "advanced"];
+const ALL = ["persons", "accounts", "review", "payday", "region", "notifications", "ai", "history", "points", "goals", "banks", "advanced"];
 const POINTS_EVENT = "finance_dashboard_points_awarded";
 const STATES = [
   ["DE-BW", "Baden-Württemberg"], ["DE-BY", "Bayern"], ["DE-BE", "Berlin"], ["DE-BB", "Brandenburg"],
@@ -129,6 +129,12 @@ const FB = {
     "settings.sec.goals": "Sparziele",
     "settings.sec.banks": "Banken",
     "settings.sec.advanced": "Erweitert",
+    "settings.sec.review": "Abgleich",
+    "settings.review.hint": "Prüfe Schritt für Schritt, ob Konten, Zuordnung (Haushalt oder Person) und Kategorien stimmen. Danach zeigen alle Ansichten dieselbe Wahrheit. Du kannst jederzeit erneut abgleichen.",
+    "settings.review.start": "Abgleich starten",
+    "settings.review.again": "Erneut prüfen",
+    "settings.review.checked": "Stand geprüft am $date",
+    "settings.review.never": "Noch nicht abgeglichen",
     "settings.payday_hint": "Dein Monat beginnt mit dem Gehalt. Leer lassen heißt: Kalendermonat.",
     "settings.payday_day": "Tag im Monat",
     "settings.payday_err": "Der Tag muss zwischen 1 und 31 liegen.",
@@ -288,6 +294,12 @@ const FB = {
     "settings.sec.goals": "Savings goals",
     "settings.sec.banks": "Banks",
     "settings.sec.advanced": "Advanced",
+    "settings.sec.review": "Reconciliation",
+    "settings.review.hint": "Check step by step that accounts, assignment (household or person) and categories are right. Afterwards every view shows the same truth. You can reconcile again at any time.",
+    "settings.review.start": "Start reconciliation",
+    "settings.review.again": "Check again",
+    "settings.review.checked": "Checked on $date",
+    "settings.review.never": "Not reconciled yet",
     "settings.payday_hint": "Your month starts with your salary. Leave empty to use the calendar month.",
     "settings.payday_day": "Day of month",
     "settings.payday_err": "The day must be between 1 and 31.",
@@ -568,6 +580,7 @@ class FdSettings extends HTMLElement {
       payday: [["setup", "setup"]], region: [["setup", "setup"]], notifications: [["setup", "setup"]],
       goals: [["setup", "setup"], ["goals", "setup/goals"]],
       accounts: [["hhcat", "ownership/household-categories"]],
+      review: [["review", "review"]],
       ai: [["ai", "setup/ai"], ["consents", "setup/ai/consents"]], points: [["points", "setup/points"]],
     }[sec] || [];
     for (const [key, path] of need) {
@@ -1059,6 +1072,15 @@ class FdSettings extends HTMLElement {
       <div class="bar"><button type="button" class="btn" data-goal-add>${escHtml(tr("settings.goals.add"))}</button></div>`;
   }
 
+  _s_review() {
+    const { escHtml, fmtDate } = window._fd;
+    const at = this._d.review && this._d.review.reviewed_at;
+    const stand = at ? tr("settings.review.checked", { date: fmtDate(at, true) }) : tr("settings.review.never");
+    return `<p class="muted" style="font-size:12.5px">${escHtml(tr("settings.review.hint"))}</p>
+      <div class="row" style="border:0"><div class="who"><b>${escHtml(stand)}</b></div>
+        <button type="button" class="btn" data-adv="review">${escHtml(tr(at ? "settings.review.again" : "settings.review.start"))}</button></div>`;
+  }
+
   _s_banks() {
     const { escHtml } = window._fd;
     return `<p class="muted" style="font-size:12.5px">${escHtml(tr("settings.banks.body"))}</p>
@@ -1155,6 +1177,8 @@ class FdSettings extends HTMLElement {
         this._removeGoal(d.goalRm);
       } else if (d.adv === "demo") {
         this._toggleDemo();
+      } else if (d.adv === "review") {
+        this.dispatchEvent(new CustomEvent("fd-navigate", { bubbles: true, composed: true, detail: { target: "review" } }));
       } else if (d.adv === "setup") {
         this.dispatchEvent(new CustomEvent("fd-navigate", { bubbles: true, composed: true, detail: { target: "setup" } }));
       }

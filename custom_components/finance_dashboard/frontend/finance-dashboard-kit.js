@@ -39,6 +39,7 @@ const COMPONENTS = [
   "fd-questions.js",
   "fd-contracts.js",
   "fd-benchmark.js",
+  "fd-review.js",
 ];
 
 const CARDS = [

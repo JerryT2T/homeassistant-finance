@@ -24,7 +24,8 @@ finance-dashboard-panel            shell: fd-home + subpage router + toast host
       |-- fd-transactions          (own header) transaction list (read-only on phones and tablets, categorising on desktop)
       |-- fd-questions             (own header) Fragen / flash cards
       |-- fd-contracts             (own header) Verträge
-      |-- fd-benchmark             (own header) Vergleich
+      |-- fd-benchmark             (own header) Vergleich (overview on one deviation scale; reachable only from Jahr)
+      |-- fd-review                (own header) Abgleich (stepper Konten..Abschluss-Check, KI fragen, report; from Einstellungen)
       '-- fd-budget-plan           (own header) Haushaltsplan
  fd-setup                          Einrichtung wizard (persons, accounts, payday, region, notifications, AI, points, done), its own full-screen layer
  fd-categorize (dialog)            desktop link from Fragen
@@ -83,7 +84,7 @@ Desktop side column (`@container ≥ 760 px`, purple ◆ marker):
 |---|---|
 | `freshness` | Datenstand (fd-freshness, shell draws fd-subpage-header) |
 | `settings` | `<fd-settings mode="page" section=…>` (shell draws the header) |
-| `transactions`, `questions`, `contracts`, `benchmark`, `plan` | the component, which draws its own header |
+| `transactions`, `questions`, `contracts`, `benchmark`, `review`, `plan` | the component, which draws its own header |
 | `setup` | the wizard layer (fd-setup) |
 | `back`, `settings-closed` | closes the subpage |
 
@@ -143,7 +144,7 @@ Settings -> Konten (`fd-settings.js`) offers per account one person OR Haushalt 
 
 `frontend/locales/de.json` and `en.json` hold the shell, Start and Datenstand strings (`sub.*`, `shell.*`,
 `home.*`, `fr.*`, …). Components built in parallel (fd-cycle-detail, fd-transactions, fd-subpage-header,
-fd-setup, fd-settings, fd-questions, fd-contracts, fd-benchmark) carry fallback dictionaries in their own file.
+fd-setup, fd-settings, fd-questions, fd-contracts, fd-benchmark, fd-review) carry fallback dictionaries in their own file.
 Placeholders use `$name`; plurals use a `_one` sibling key.
 
 ## Kit loading
