@@ -72,6 +72,12 @@ class FinanceDashboardHomeView(HomeAssistantView):
             await load_refund_inputs(hass)  # manual allocations + labels (#119)
         except Exception:  # noqa: BLE001 - the home view must not depend on the refund hint
             _LOGGER.debug("Refund inputs unavailable", exc_info=True)
+        year_inputs = None
+        if horizon == "year" and not (want_demo or getattr(manager, "demo_mode", False) is True):
+            try:
+                year_inputs = await manager.async_year_inputs(is_admin=_is_admin(request))
+            except Exception:  # noqa: BLE001 - the year renders without the extras
+                _LOGGER.debug("Year inputs unavailable", exc_info=True)
         return self.json(
             manager.get_home(
                 person=person,
@@ -79,6 +85,7 @@ class FinanceDashboardHomeView(HomeAssistantView):
                 horizon=horizon,
                 demo=want_demo,
                 include_recent=_is_admin(request),  # individual bookings: admin only
+                year_inputs=year_inputs,
             )
         )
 

@@ -223,6 +223,22 @@ class Classifier:
         return owner, fixed
 
 
+def owner_fields(clf: Classifier, tx: dict[str, Any], today: date | None = None) -> dict[str, Any]:
+    """Wire fields of one booking's owner, from the one chain (read time).
+
+    ``owner``: ``"shared"`` | person | ``""`` (open); ``owner_source`` one of
+    ``ownership.SOURCE_*``; ``owner_confidence`` 0..100. The plan position is
+    looked up for the booking's own month.
+    """
+    day = _day(tx) or today or date.today()
+    owner, _fixed, source, confidence = clf.classify_detail(tx, day)
+    return {
+        "owner": "shared" if owner == OWNER_SHARED else ("" if owner == OWNER_OPEN else owner),
+        "owner_source": source,
+        "owner_confidence": confidence,
+    }
+
+
 def plan_persons(plan: BudgetPlan | None, accounts: list[dict[str, Any]] | None) -> list[str]:
     """Names a position may be named after without being about that person."""
     names = {str(a.get("person") or "") for a in accounts or []}

@@ -60,9 +60,17 @@ class OwnershipMixin:
         if reach not in (REACH_BOOKING, REACH_MERCHANT):
             raise QuestionError("invalid_reach")
         owner = self._check_owner(owner)
-        tx = next((t for t in self._transactions if t.get("_ledger_id") == ledger_id), None)
+        akey, _, raw_id = ledger_id.rpartition("|")  # the lists carry "<account_key>|<id>"
+        tx = next(
+            (
+                t for t in self._transactions
+                if t.get("_ledger_id") == raw_id and (not akey or t.get("_account_key") == akey)
+            ),
+            None,
+        )
         if tx is None:
             raise QuestionError("unknown_booking")
+        ledger_id = raw_id
         key = merchant_key(tx)
         if reach == REACH_MERCHANT:
             if not key:
