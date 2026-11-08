@@ -832,6 +832,7 @@ def build_home(  # noqa: PLR0912, PLR0915
             contracts=extra.get("contracts"),
             is_admin=include_recent,
             ledger_earliest=extra.get("ledger_earliest"),
+            split_options=extra.get("split_options"),
             benchmark_teaser=extra.get("benchmark_teaser") if include_recent else None,
             review=extra.get("review") if include_recent else {
                 "reviewed_at": (extra.get("review") or {}).get("reviewed_at")

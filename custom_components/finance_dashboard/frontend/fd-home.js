@@ -161,6 +161,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .vpill { display: inline-flex; align-items: center; padding: 3px 12px; border-radius: var(--fd-r-pill); font-size: 13px; font-weight: 500; background: var(--cbg, var(--fd-sunk)); color: var(--cfg, var(--fd-t1)); }
 .yhero { background: linear-gradient(180deg, var(--cbg), var(--fd-card) 70%); }
 .tiles.four { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.tiles.five > .tile:first-child { grid-column: 1 / -1; }
 .tiles.four .tile { background: color-mix(in srgb, var(--fd-card) 70%, transparent); border: 1px solid var(--fd-line); }
 .split2 { display: flex; gap: 2px; height: 10px; margin-top: 12px; border-radius: 5px; overflow: hidden; background: var(--fd-sunk); }
 .split2.tall { height: 14px; margin: 4px 0 8px; }
@@ -228,6 +229,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
   .ygrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 12px; align-items: start; }
   .ygrid .yfull { grid-column: 1 / -1; }
   .tiles.four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .tiles.five { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  .tiles.five > .tile:first-child { grid-column: auto; }
   .yc .col { height: 150px; }
 }
 .entry { display: flex; align-items: center; gap: 10px; width: 100%; min-height: var(--fd-touch); margin: 0 0 12px; padding: 10px 14px; border: 0; border-radius: var(--fd-r-card); background: var(--fd-card); box-shadow: var(--fd-sh1); text-align: left; }
@@ -1284,7 +1287,7 @@ class FdHome extends HTMLElement {
     return `<section class="card yfull yhero ${neg ? "st-over" : "st-ok"}"><div class="h"><span>${this._t("home.year.title", { year: y.year })}</span></div>
       <div class="ycap">${this._t("home.year.hero_cap", { date: th })}</div>
       <div class="yrow"><span class="big">${this._m(b.saved, false)}</span>${rate == null ? "" : `<span class="vpill" aria-label="${this._e(this._t("home.year.rate_aria", { pct: rate }))}">${this._t("home.year.rate", { pct: rate })}</span>`}</div>
-      <div class="tiles four">${tile("income", b.income)}${tile("expenses", b.expenses)}${tile("fixed", b.fixed)}${tile("variable", b.variable)}</div>
+      <div class="tiles four${b.shared_share != null ? " five" : ""}">${tile("income", b.income)}${tile("expenses", b.expenses)}${b.shared_share != null ? tile("shared_share", b.shared_share) : ""}${tile("fixed", b.fixed)}${tile("variable", b.variable)}</div>
       <div class="split2" role="img" aria-label="${this._e(`${this._t("home.year.fixed")} ${this._m(b.fixed, false)}, ${this._t("home.year.variable")} ${this._m(b.variable, false)}`)}"><i class="s-fix" style="width:${fixPct.toFixed(1)}%"></i><i class="s-var" style="width:${(100 - fixPct).toFixed(1)}%"></i></div>
       <div class="legend"><span><i class="s-fix"></i>${this._t("home.year.fixed")}</span><span><i class="s-var"></i>${this._t("home.year.variable")}</span></div></section>`;
   }

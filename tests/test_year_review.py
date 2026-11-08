@@ -81,6 +81,19 @@ def test_privacy_person_and_household_scopes(world):
     assert all(i["name"] != "Autoversicherung" for i in p["fixed_year"]["items"])
 
 
+def test_person_saved_carries_shared_part_and_budget_includes_free_money(world):
+    p = _year(world, view="person", person="Anna")
+    b = p["balance"]
+    assert b["shared_share"] > 0
+    assert b["saved"] == pytest.approx(b["income"] - b["expenses"] - b["shared_share"], abs=0.02)
+    assert p["split"]["own"]["shared_share"] == b["shared_share"]
+    # The bar counts every own expense, pocket money included, so the budget
+    # is own planned costs plus the free money of the split -- not costs alone.
+    _n, _a, _raw, _c, plan, _clf = world
+    cyc = next(c for c in p["cycles"] if c["budget"] is not None)
+    assert cyc["budget"] > plan.cost_total("Anna", cyc["month"], cyc["year"])
+
+
 def test_outliers_admin_only_with_owner_fields(world):
     admin = _year(world)["outliers"]
     assert admin["items"] and admin["count"] == len(admin["items"])

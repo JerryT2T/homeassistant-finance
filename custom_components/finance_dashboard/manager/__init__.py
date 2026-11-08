@@ -1100,6 +1100,7 @@ class FinanceDashboardManager(
             year_inputs=(
                 {
                     "ledger_earliest": earliest_booked_by_key(getattr(self, "_ledger", None)),
+                    "split_options": self._split_options(),
                     **(year_inputs or {}),
                 }
                 if horizon == "year"

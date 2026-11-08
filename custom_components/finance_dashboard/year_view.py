@@ -31,8 +31,9 @@ from datetime import date, timedelta
 from typing import Any
 
 from .budget_plan import BudgetPlan
-from .const import OWNER_SHARED
+from .const import DEFAULT_SPLIT_MODEL, OWNER_SHARED
 from .counted import amount_of, is_income_line
+from .household import model_from_plan
 from .household_summary import (
     OWNER_OPEN,
     Classifier,
@@ -133,18 +134,56 @@ def _rate(income: float, expenses: float) -> float | None:
     return round((income - expenses) / income, 4) if income > 0 else None
 
 
+def _split(
+    plan: BudgetPlan, month: int, year: int, split_options: tuple | None
+) -> dict[str, Any]:
+    """The plan's split of that month, keyed by person (the configured model)."""
+    mode, remainder, ratios = split_options or (DEFAULT_SPLIT_MODEL, "none", {})
+    model, shared = model_from_plan(
+        plan, month, year, split_mode=mode, remainder_mode=remainder, custom_ratios=ratios
+    )
+    return {r.person: r for r in model.calculate_split(shared)}
+
+
 def _month_budget(
-    plan: BudgetPlan | None, month: int, year: int, view: str, person: str | None
+    plan: BudgetPlan | None,
+    month: int,
+    year: int,
+    view: str,
+    person: str | None,
+    split_options: tuple | None = None,
 ) -> float | None:
-    """That month's planned cost of the scope; ``None`` without a plan (A4)."""
+    """That month's planned spending of the scope; ``None`` without a plan (A4).
+
+    The bar it is compared with counts every expense of the scope, pocket money
+    included, so the budget must too: a person's own costs plus the free money
+    the split leaves them; the household's planned costs plus every person's
+    free money. Comparing against planned costs alone made every month "over".
+    """
     if plan is None or plan.is_empty():
         return None
-    value = (
-        plan.cost_total(person or "", month, year)
-        if view == "person"
-        else plan.cost_grand_total(month, year)
-    )
+    try:
+        results = _split(plan, month, year, split_options)
+    except Exception:  # noqa: BLE001 - a broken split must not break the year view
+        results = {}
+    free = {name: max(0.0, r.spielgeld) for name, r in results.items()}
+    if view == "person":
+        r = results.get(person or "")
+        value = (r.individual_costs + free[person]) if r is not None else plan.cost_total(
+            person or "", month, year
+        )
+    else:
+        value = plan.cost_grand_total(month, year) + sum(free.values())
     return round(value, 2) if value > 0 else None
+
+
+def _shared_share(
+    plan: BudgetPlan | None, person: str | None, persons_seen: list[str]
+) -> float:
+    """The person's part of shared spending (income ratio of the plan, else equal)."""
+    if plan is not None and not plan.is_empty() and plan.persons:
+        return plan.income_rel(person or "")
+    return 1 / len(persons_seen) if person in persons_seen else 0.0
 
 
 def _scope_categories(fig: dict[str, Any], view: str, person: str | None) -> dict[str, float]:
@@ -249,6 +288,7 @@ def build_year(  # noqa: PLR0912, PLR0914, PLR0915
     ledger_earliest: dict[str, str | None] | None = None,
     benchmark_teaser: list[dict[str, Any]] | None = None,
     review: dict[str, Any] | None = None,
+    split_options: tuple | None = None,
 ) -> dict[str, Any]:
     """The year payload (see module doc and ``docs/dev/entities-and-services.md``)."""
     year = today.year
@@ -275,7 +315,7 @@ def build_year(  # noqa: PLR0912, PLR0914, PLR0915
             ),
             "spent": None,
             "income": None,
-            "budget": _month_budget(plan, month, year, view, person),
+            "budget": _month_budget(plan, month, year, view, person, split_options),
             "status": None,
         }
         if window and not row["future"] and not row["before_history"]:
@@ -296,16 +336,26 @@ def build_year(  # noqa: PLR0912, PLR0914, PLR0915
         cycles.append(row)
 
     income, expenses = ytd.get("income", 0.0), ytd.get("expenses", 0.0)
+    persons_seen = [o for o in per_owner if o not in (OWNER_SHARED, OWNER_OPEN)]
+    # A person's income also pays their part of the shared spending; without it
+    # "saved" was income minus own purchases only (a 97 % savings rate).
+    shared_part = (
+        per_owner.get(OWNER_SHARED, 0.0) * _shared_share(plan, person, persons_seen)
+        if view == "person"
+        else 0.0
+    )
     balance = {
         "income": _r(income),
         "expenses": _r(expenses),
-        "saved": _r(income - expenses),
-        "savings_rate": _rate(income, expenses),
+        "saved": _r(income - expenses - shared_part),
+        "savings_rate": _rate(income, expenses + shared_part),
         "fixed": _r(ytd.get("fixed", 0.0)),
         "variable": _r(ytd.get("variable", 0.0)),
         "through": today.isoformat(),
         "cycles_counted": len(used),
     }
+    if view == "person":
+        balance["shared_share"] = _r(shared_part)
 
     # --- prior year (A9): same cycles, up to the same day ---------------------
     vs_last_year: dict[str, Any] | None = None
@@ -317,12 +367,17 @@ def build_year(  # noqa: PLR0912, PLR0914, PLR0915
         if len(prior_used) == cur_month and covers(earliest, prior_used[0][1][0]):
             cutoff = _same_day_last_year(today)
             pytd: dict[str, float] = {}
+            pshared = 0.0
             for month, (a, b_) in prior_used:
                 fig = figures(booked, (a, min(b_, cutoff)), clf)
                 _add(pytd, _bucket(fig, view, person))
+                pshared += fig["owners"].get(OWNER_SHARED, {}).get("expenses", 0.0)
                 for cat, v in _scope_categories(fig, view, person).items():
                     prior_cats[cat] += v
             pe, pi = pytd.get("expenses", 0.0), pytd.get("income", 0.0)
+            pshared_part = (
+                pshared * _shared_share(plan, person, persons_seen) if view == "person" else 0.0
+            )
             vs_last_year = {
                 "through": cutoff.isoformat(),
                 "spent": _r(expenses),
@@ -331,8 +386,8 @@ def build_year(  # noqa: PLR0912, PLR0914, PLR0915
                 "delta_pct": round((expenses - pe) / pe, 4) if pe > 0 else None,
                 "income": _r(income),
                 "income_last_year": _r(pi),
-                "saved": _r(income - expenses),
-                "saved_last_year": _r(pi - pe),
+                "saved": _r(income - expenses - shared_part),
+                "saved_last_year": _r(pi - pe - pshared_part),
             }
 
     top = sorted(((c, v) for c, v in cats.items() if v > 0), key=lambda kv: -kv[1])[:TOP_CATEGORIES]
@@ -355,13 +410,11 @@ def build_year(  # noqa: PLR0912, PLR0914, PLR0915
     if per_owner.get(OWNER_OPEN):
         split["open"] = _r(per_owner[OWNER_OPEN])
     if view == "person" and person:
-        split["own"] = {"person": person, "total": _r(per_owner.get(person, 0.0))}
-        if plan is not None and not plan.is_empty() and plan.persons:
-            share = plan.income_rel(person)
-        else:
-            names = [o for o in per_owner if o not in (OWNER_SHARED, OWNER_OPEN)]
-            share = 1 / len(names) if person in names else 0.0
-        split["own"]["shared_share"] = _r(shared_total * share)
+        split["own"] = {
+            "person": person,
+            "total": _r(per_owner.get(person, 0.0)),
+            "shared_share": _r(shared_part),
+        }
 
     out: dict[str, Any] = {
         "year": year,

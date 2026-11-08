@@ -115,6 +115,7 @@
   "home.year.rate_aria": "Savings rate $pct percent",
   "home.year.income": "Income",
   "home.year.expenses": "Expenses",
+  "home.year.shared_share": "Share of shared costs",
   "home.year.fixed": "Fixed",
   "home.year.variable": "Variable",
   "home.year.nobal": "No cycle has been completed this year yet.",

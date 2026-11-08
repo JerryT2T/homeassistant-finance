@@ -573,7 +573,7 @@ def build_report(  # noqa: PLR0913, PLR0914
     own person carries the full detail.
     """
     from .household_summary import cycle_windows, figures
-    from .year_view import build_year
+    from .year_view import _shared_share, build_year
 
     booked = [t for t in txs if t.get("_status", "booked") == "booked"]
     cycle = cycle_windows(booked, today, persons_cfg)[0][0]
@@ -598,7 +598,16 @@ def build_report(  # noqa: PLR0913, PLR0914
         full = name == viewer_person
         own = fig["owners"].get(name, {})
         inc, exp = round(own.get("income", 0.0), 2), round(own.get("expenses", 0.0), 2)
-        p_cycle[name] = {"restricted": not full, "income": inc, "expenses": exp, "saved": round(inc - exp, 2)}
+        # The person's income also carries their part of the shared spending.
+        part = round(
+            fig["owners"].get(OWNER_SHARED, {}).get("expenses", 0.0)
+            * _shared_share(plan, name, list(person_names)),
+            2,
+        )
+        p_cycle[name] = {
+            "restricted": not full, "income": inc, "expenses": exp,
+            "shared_share": part, "saved": round(inc - exp - part, 2),
+        }
         yr = build_year(
             txs=booked, plan=plan, clf=clf, persons=persons_cfg, today=today, view="person",
             person=name, contracts=contracts, is_admin=False, ledger_earliest=ledger_earliest,
