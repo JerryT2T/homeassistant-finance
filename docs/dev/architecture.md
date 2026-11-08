@@ -111,3 +111,14 @@ One kit (`finance-dashboard-kit.js`, `fd-*` components), see `docs/ARCHITECTURE-
 ## Distribution
 
 HACS only (`hacs.json`). There is no companion add-on and no payload sync.
+
+## Frontend dev harness
+
+`scripts/dev/panel_harness.py` (stdlib only, never loaded by the integration) serves `custom_components/finance_dashboard/frontend/` and answers `/api/finance_dashboard/*` from `demo.py` (`home`, `review`, `review/report`, `benchmark`; other reads `{}`, writes `{"ok": true}`). It needs the repo venv (Home Assistant importable); on Windows `fcntl`/`resource` are stubbed.
+
+```
+python scripts/dev/panel_harness.py --port 8765
+http://localhost:8765/?el=fd-home&width=375&theme=dark&lang=en&admin=1
+```
+
+The bar on top toggles the element (`fd-home`, `fd-benchmark`, ...), admin/member, de/en, light/dark and the stage width (375 / 768 / 1100); the same keys work as URL parameters. `fd-navigate`, `fd-toast` and `fd-demo-toggle` are shown in the bar. The Jahr tab (`Start` > `Jahr`) renders from `GET /home?horizon=year`; the demo has no settlement balances, set `d._data.settlement` in the console to see the Ausgleich card.

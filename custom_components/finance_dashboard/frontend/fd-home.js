@@ -151,13 +151,85 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .verdict .chip { padding: 3px 12px; font-size: 14px; }
 .know { display: flex; gap: 10px; align-items: flex-start; border-left: 4px solid var(--fd-a500); }
 .know b { display: block; margin-bottom: 2px; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--fd-a700); }
-.cyc { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 4px; }
-.cyc span { display: flex; align-items: flex-end; justify-content: center; height: 36px; padding-bottom: 2px; border-radius: 6px; font-size: 12px; color: #fff; background: var(--c, var(--fd-sunk)); overflow: hidden; }
-.cyc span.run { background: repeating-linear-gradient(135deg, var(--fd-near) 0 4px, color-mix(in srgb, var(--fd-near) 60%, #fff) 4px 8px); }
-.cyc span.fut { background: var(--fd-sunk); color: var(--fd-t3); }
 .cmp { height: 8px; margin: 4px 0; border-radius: 4px; background: var(--fd-sunk); overflow: hidden; }
-.cmp i { display: block; height: 100%; background: var(--fd-a500); }
+.cmp i { display: block; height: 100%; border-radius: 4px; background: var(--fd-a500); }
 .cmp.prev i { background: var(--fd-t3); }
+.ygrid { display: block; }
+.yrow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+.ycap { font-size: 12.5px; color: var(--fd-t2); margin: -2px 0 4px; }
+.big.sm { font-size: 28px; }
+.vpill { display: inline-flex; align-items: center; padding: 3px 12px; border-radius: var(--fd-r-pill); font-size: 13px; font-weight: 500; background: var(--cbg, var(--fd-sunk)); color: var(--cfg, var(--fd-t1)); }
+.yhero { background: linear-gradient(180deg, var(--cbg), var(--fd-card) 70%); }
+.tiles.four { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.tiles.four .tile { background: color-mix(in srgb, var(--fd-card) 70%, transparent); border: 1px solid var(--fd-line); }
+.split2 { display: flex; gap: 2px; height: 10px; margin-top: 12px; border-radius: 5px; overflow: hidden; background: var(--fd-sunk); }
+.split2.tall { height: 14px; margin: 4px 0 8px; }
+.split2 i { display: block; height: 100%; min-width: 2px; }
+.s-fix { background: var(--fd-a700); } .s-var { background: var(--fd-a300); }
+.legend i.s-fix, .legend i.s-var, .legend i.s-ok, .legend i.s-near, .legend i.s-over, .legend i.s-now, .legend i.s-prev { display: inline-block; width: 12px; height: 8px; border-radius: 2px; }
+.legend i.s-fix { background: var(--fd-a700); } .legend i.s-var { background: var(--fd-a300); }
+.legend i.s-ok { background: var(--fd-ok); } .legend i.s-near { background: var(--fd-near); } .legend i.s-over { background: var(--fd-over); }
+.legend i.s-now { background: var(--fd-a500); } .legend i.s-prev { background: var(--fd-t3); }
+.legend i.s-fut { display: inline-block; width: 12px; height: 8px; border-radius: 2px; border: 1px dashed var(--fd-t3); background: transparent; }
+.ycyc { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 3px; margin-top: 4px; }
+.yc { position: relative; display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 0; padding: 2px 0; border: 0; border-radius: 8px; background: transparent; color: var(--fd-t2); }
+.yc:hover, .yc.on { background: var(--fd-sunk); }
+.yc:focus-visible { outline: 2px solid var(--fd-a500); outline-offset: 1px; }
+.yc em { height: 14px; font-style: normal; font-size: 11px; line-height: 14px; color: var(--c, var(--fd-t2)); font-weight: 700; }
+.yc.st-ok { --c: var(--fd-ok); } .yc.st-near { --c: var(--fd-near); } .yc.st-over { --c: var(--fd-over); }
+.yc .col { position: relative; display: flex; align-items: flex-end; width: 100%; max-width: 26px; height: 120px; border-radius: 6px 6px 3px 3px; background: var(--fd-sunk); }
+.yc .col i { display: block; width: 100%; border-radius: 6px 6px 3px 3px; background: var(--c, var(--fd-a500)); }
+.yc .tick { position: absolute; left: -3px; right: -3px; height: 0; border-top: 2px solid var(--fd-t1); pointer-events: none; }
+.yc.run .col i { background: repeating-linear-gradient(135deg, var(--fd-a500) 0 4px, var(--fd-a300) 4px 8px); }
+.yc.future .col { background: transparent; border: 1px dashed var(--fd-t3); }
+.yc.nohist .col { background: repeating-linear-gradient(135deg, var(--fd-sunk) 0 5px, transparent 5px 10px); opacity: .7; }
+.yc.future small, .yc.nohist small { color: var(--fd-t3); }
+.yc small { font-size: 11px; max-width: 100%; overflow: hidden; text-overflow: clip; white-space: nowrap; }
+.yc.le[data-tip]::after { left: 0; transform: none; }
+.yc.re[data-tip]::after { left: auto; right: 0; transform: none; }
+.ydet { min-height: 18px; margin-top: 8px; }
+.vshead { margin: 0 0 6px; }
+.vsm { padding: 8px 0; }
+.vsm + .vsm { border-top: 1px solid var(--fd-line); }
+.vsl { font-size: 12px; color: var(--fd-t2); }
+.vsb { display: grid; grid-template-columns: minmax(0, 1fr) 76px; align-items: center; gap: 10px; }
+.vsb b, .vsb span { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.vsb.prev span { color: var(--fd-t2); }
+.crow { padding: 6px 0; }
+.crow + .crow { border-top: 1px solid var(--fd-line); }
+.crow .row { padding: 0; }
+.crow .row + .row { border-top: 0; }
+.dl { display: block; font-size: 12px; color: var(--fd-t2); }
+.dl.up { color: color-mix(in srgb, var(--fd-over) 72%, var(--fd-t1)); } .dl.down { color: color-mix(in srgb, var(--fd-ok) 72%, var(--fd-t1)); }
+.dot { display: inline-block; width: 10px; height: 10px; margin-right: 8px; border-radius: 50%; vertical-align: -1px; }
+.orow { padding: 8px 0; }
+.orow + .orow { border-top: 1px solid var(--fd-line); }
+.oh, .om { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
+.om { margin-top: 2px; flex-wrap: wrap; }
+.ol { min-width: 0; overflow-wrap: anywhere; font-weight: 500; }
+.oh .amt { flex: none; font-variant-numeric: tabular-nums; }
+.ybm { display: block; width: 100%; border: 0; text-align: left; color: inherit; font: inherit; cursor: pointer; }
+.ybm:hover { box-shadow: var(--fd-sh2); }
+.ybm:focus-visible { outline: 2px solid var(--fd-a500); outline-offset: 2px; }
+.ybm .h { margin-bottom: 2px; }
+.bmr { padding: 8px 0 2px; }
+.bmr .row { padding: 0; }
+.bmt { position: relative; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 2px; height: 10px; margin: 6px 0 2px; }
+.bmt i { display: block; background: var(--fd-sunk); border-radius: 5px; }
+.bmt i.mid { background: var(--fd-a100); }
+.bmt b { position: absolute; top: 50%; width: 16px; height: 16px; margin: -8px 0 0 -8px; border-radius: 50%; border: 3px solid var(--fd-card); box-shadow: var(--fd-sh1); }
+.bml { display: grid; grid-template-columns: 1fr 1fr 1fr; font-size: 11px; color: var(--fd-t3); text-align: center; }
+.more2 { display: block; margin-top: 10px; color: var(--fd-a700); font-size: 12.5px; }
+.hintchip { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; min-height: var(--fd-touch); margin: 0 0 12px; padding: 0 14px; border: 1px solid var(--fd-attn); border-radius: var(--fd-r-pill); background: color-mix(in srgb, var(--fd-attn) 14%, var(--fd-card)); color: var(--fd-t1); font-size: 12.5px; font-weight: 500; }
+.hintchip i { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--fd-attn); }
+.reviewed { text-align: center; margin: 4px 0 16px; }
+.settle .row > span:first-child { white-space: normal; }
+@container home (min-width: 900px) {
+  .ygrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 12px; align-items: start; }
+  .ygrid .yfull { grid-column: 1 / -1; }
+  .tiles.four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .yc .col { height: 150px; }
+}
 .entry { display: flex; align-items: center; gap: 10px; width: 100%; min-height: var(--fd-touch); margin: 0 0 12px; padding: 10px 14px; border: 0; border-radius: var(--fd-r-card); background: var(--fd-card); box-shadow: var(--fd-sh1); text-align: left; }
 .entry > i { flex: none; display: flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 10px; font-style: normal; background: var(--fd-a50); color: var(--fd-a700); }
 .entry > span { flex: 1; min-width: 0; display: flex; flex-direction: column; }
@@ -392,6 +464,7 @@ class FdHome extends HTMLElement {
       if (seq !== this._seq) return;
       this._data = d;
       this._err = null;
+      if (d && d.year) this._hint = d.year.review_hint || null;
       if (d && d.cycle) this._cycle = d.cycle;
       // Who am I? viewer_person (newer backend) wins; else learn it from the person view.
       if (d && d.viewer_person !== undefined) this._mapped = !!d.viewer_person;
@@ -406,6 +479,7 @@ class FdHome extends HTMLElement {
     const d = this._data;
     if (d && !this._err && this._horizon !== "year" && this._needsSummary(d)) this._loadSummary(d.view);
     if (d && this._wide && this._acc === undefined) this._loadAccounts();
+    if (d && !this._err && this._horizon !== "year") this._loadHint();
   }
 
   _needsSummary(d) {
@@ -620,6 +694,7 @@ class FdHome extends HTMLElement {
     else if (!d) body = `<div class="msg">${this._t("home.loading")}</div>`;
     else body = this._body(d);
     main.innerHTML = body;
+    this._hydrateChips();
     this._paintSide();
     this._paintToggle();
   }
@@ -759,6 +834,7 @@ class FdHome extends HTMLElement {
   _body(d) {
     let h = "";
     if (this._horizon !== "year" && this._horizon !== "cycle") h += this._setupCard(d);
+    if (this._horizon !== "year") h += this._hintChip(this._hint);
     switch (this._horizon) {
       case "today": return h + this._today(d);
       case "week": return h + this._week(d);
@@ -1069,7 +1145,7 @@ class FdHome extends HTMLElement {
   _cycle_(d) {
     // H1 · Held oben, Kassenbuch darunter: hero, then ledger | Als Nächstes + Einrichten.
     // fd-cycle-detail sits under the grid on mobile (desktop: analysis cards below, see _sideHtml).
-    return this._hero(d) + this._fixed(d)
+    return this._hero(d) + this._settle(d) + this._fixed(d)
       + `<div class="hl-grid"><div class="hl-main">${this._ledger(d)}</div><div class="hl-side">${this._next(d)}${this._strip(d)}</div></div>`
       + (this._wide ? "" : `<div id="cdslot"></div>`);
   }
@@ -1173,41 +1249,213 @@ class FdHome extends HTMLElement {
     else this._openSheet(null);
   }
 
+  // ---- Jahr (Haushalt → Jahr, Person → Jahr) ------------------------------
+  // Contract: GET /home?horizon=year -> d.year (see the file header). Blocks, top to bottom:
+  // Bilanz hero · cycle chart · vs last year (only when sent) · categories · fixed ·
+  // split · outliers · benchmark teaser · plan link · "Stand geprüft". Every figure is the
+  // server's (one counting rule); this view only draws.
   _year(d) {
     const y = d.year || {};
-    const year = new Date().getFullYear();
-    const byMonth = new Map();
-    for (const c of y.cycles || []) {
-      if (!c || !c.start || Number(c.start.slice(0, 4)) !== year) continue;
-      byMonth.set(Number(c.start.slice(5, 7)) - 1, c);
-    }
-    const cyc = Array.from({ length: 12 }, (_, m) => {
-      const lab = new Date(year, m, 15).toLocaleDateString(this._lang(), { month: "short" });
-      const c = byMonth.get(m);
-      if (!c) return `<span class="fut" data-tip="${this._e(`${lab} · ${this._t("home.year.no_data")}`)}" aria-label="${this._e(`${lab} ${this._t("home.year.no_data")}`)}" tabindex="0">${this._e(lab)}</span>`;
-      const known = c.status === "good" || c.status === "knapp" || c.status === "over";
-      const cls = c.current ? "run" : known ? "" : "fut";
-      const col = c.status === "over" ? "var(--fd-over)" : c.status === "knapp" ? "var(--fd-near)" : "var(--fd-ok)";
-      const st = c.current ? this._t("home.year.running") : known ? this._t("home.status." + c.status) : this._t("home.year.no_data");
-      return `<span class="${cls}" style="--c:${col}" data-tip="${this._e(`${lab} · ${st}`)}" aria-label="${this._e(`${lab} ${st}`)}" tabindex="0">${this._e(lab)}</span>`;
-    }).join("");
-    const v = y.vs_last_year || {};
-    let vs;
-    if (v.available) {
-      const mx = Math.max(v.spent, v.spent_last_year, 1);
-      vs = `<div class="row"><span>${this._t("home.year.this")}</span><span class="amt">${this._m(v.spent, false)}</span></div>
-        <div class="cmp"><i style="width:${(v.spent / mx) * 100}%"></i></div>
-        <div class="row"><span>${this._t("home.year.last")}</span><span class="amt">${this._m(v.spent_last_year, false)}</span></div>
-        <div class="cmp prev"><i style="width:${(v.spent_last_year / mx) * 100}%"></i></div>
-        <div class="muted">${this._t(v.delta <= 0 ? "home.year.vs_less" : "home.year.vs_more", { amount: this._m(Math.abs(v.delta), false) })}</div>`;
-    } else vs = `<div class="muted">${this._t("home.year.vs_na")}</div>`;
+    const hh = d.view === "household";
+    const blocks = [
+      this._yHero(y), this._settle(d), this._yCycles(y), this._yVs(y), this._yCats(y), this._yFixed(y),
+      this._ySplit(y, hh), this._yOutliers(y), this._yBench(y),
+    ];
     const entry = (target, icon, title, sub) => `<button class="entry" data-act="nav" data-target="${target}"><i aria-hidden="true">${icon}</i><span><b>${this._t(title)}</b><small class="muted">${this._t(sub)}</small></span><span aria-hidden="true">›</span></button>`;
-    return `<section class="card"><div class="h"><span>${this._t("home.year.title", { year })}</span></div><div class="cyc">${cyc}</div></section>
-      <section class="card"><div class="h"><span>${this._t("home.year.vs")}</span></div>${vs}</section>
-      ${entry("contracts", "☰", "home.year.contracts", "home.year.contracts_sub")}
-      ${entry("benchmark", "≈", "home.year.benchmark", "home.year.benchmark_sub")}
-      ${entry("plan", "▤", "home.year.plan", "home.year.plan_sub")}
+    const rv = y.reviewed_at ? new Date(y.reviewed_at) : null;
+    const reviewed = rv && !isNaN(rv) ? `<p class="reviewed muted">${this._t("home.year.reviewed", { date: this._e(rv.toLocaleDateString(this._lang(), { day: "numeric", month: "long", year: "numeric" })) })}</p>` : "";
+    return `${this._hintChip(y.review_hint)}<div class="ygrid">${blocks.join("")}</div>
+      ${entry("plan", "▤", "home.year.plan", "home.year.plan_sub")}${reviewed}
       ${this._dyk(d)}${this._reserves(d)}`;
+  }
+
+  /** The big number: what was saved this year so far, with the rate and the four small figures. */
+  _yHero(y) {
+    const b = y.balance;
+    if (!b || !b.cycles_counted) {
+      return `<section class="card yfull"><div class="h"><span>${this._t("home.year.title", { year: y.year || new Date().getFullYear() })}</span></div><div class="muted">${this._t("home.year.nobal")}</div></section>`;
+    }
+    const neg = b.saved < 0;
+    const rate = b.savings_rate == null ? null : Math.round(b.savings_rate * 100);
+    const th = this._e(b.through ? this._day(b.through) : "");
+    const tile = (k, v) => `<div class="tile"><span>${this._t("home.year." + k)}</span><b>${this._m(v, false)}</b></div>`;
+    const exp = Math.max(b.expenses, 0.01);
+    const fixPct = Math.min(100, Math.max(0, (b.fixed / exp) * 100));
+    return `<section class="card yfull yhero ${neg ? "st-over" : "st-ok"}"><div class="h"><span>${this._t("home.year.title", { year: y.year })}</span></div>
+      <div class="ycap">${this._t("home.year.hero_cap", { date: th })}</div>
+      <div class="yrow"><span class="big">${this._m(b.saved, false)}</span>${rate == null ? "" : `<span class="vpill" aria-label="${this._e(this._t("home.year.rate_aria", { pct: rate }))}">${this._t("home.year.rate", { pct: rate })}</span>`}</div>
+      <div class="tiles four">${tile("income", b.income)}${tile("expenses", b.expenses)}${tile("fixed", b.fixed)}${tile("variable", b.variable)}</div>
+      <div class="split2" role="img" aria-label="${this._e(`${this._t("home.year.fixed")} ${this._m(b.fixed, false)}, ${this._t("home.year.variable")} ${this._m(b.variable, false)}`)}"><i class="s-fix" style="width:${fixPct.toFixed(1)}%"></i><i class="s-var" style="width:${(100 - fixPct).toFixed(1)}%"></i></div>
+      <div class="legend"><span><i class="s-fix"></i>${this._t("home.year.fixed")}</span><span><i class="s-var"></i>${this._t("home.year.variable")}</span></div></section>`;
+  }
+
+  /** Twelve cycle columns: bar = spent (status colour + glyph), tick = that cycle's budget. */
+  _yCycles(y) {
+    const cs = (y.cycles || []).filter(Boolean);
+    if (!cs.length) return "";
+    const mx = Math.max(1, ...cs.map((c) => Math.max(c.spent || 0, c.budget || 0)));
+    const GL = { good: "✓", knapp: "!", over: "▲" };
+    const sel = this._yc != null && cs[this._yc] ? this._yc : null;
+    const cols = cs.map((c, i) => {
+      const lab = new Date(c.year, c.month - 1, 15).toLocaleDateString(this._lang(), { month: "short" });
+      const state = c.future ? "future" : c.before_history ? "nohist" : c.current ? "run" : "done";
+      const known = c.status === "good" || c.status === "knapp" || c.status === "over";
+      const stTxt = state === "future" ? this._t("home.year.cyc_future") : state === "nohist" ? this._t("home.year.cyc_nohist")
+        : c.current ? this._t("home.year.running") : known ? this._t("home.status." + c.status) : "";
+      const tip = state === "future" || state === "nohist" ? `${lab} · ${stTxt}`
+        : this._t(c.budget > 0 ? "home.year.cyc_with" : "home.year.cyc_without", { month: lab, spent: this._m(c.spent, false), budget: this._m(c.budget, false), status: stTxt });
+      const h = state === "done" || state === "run" ? Math.max(c.spent > 0 ? 2 : 0, ((c.spent || 0) / mx) * 100) : 0;
+      const tick = (state === "done" || state === "run") && c.budget > 0 ? `<b class="tick" style="bottom:${Math.min(100, (c.budget / mx) * 100).toFixed(1)}%"></b>` : "";
+      const glyph = state === "done" && known ? GL[c.status] : state === "run" ? "…" : "";
+      const edge = i < 3 ? " le" : i >= cs.length - 3 ? " re" : "";
+      return `<button class="yc ${state} ${known && state === "done" ? "st-" + (c.status === "good" ? "ok" : c.status === "knapp" ? "near" : "over") : ""}${edge}${sel === i ? " on" : ""}" data-act="ycyc" data-i="${i}" data-tip="${this._e(tip)}" aria-label="${this._e(tip)}" aria-pressed="${sel === i}">
+        <em aria-hidden="true">${glyph}</em><span class="col"><i style="height:${h.toFixed(1)}%"></i>${tick}</span><small>${this._e(lab)}</small></button>`;
+    }).join("");
+    const c = sel != null ? cs[sel] : null;
+    const detail = c && !c.future && !c.before_history
+      ? this._t(c.budget > 0 ? "home.year.cyc_with" : "home.year.cyc_without", { month: new Date(c.year, c.month - 1, 15).toLocaleDateString(this._lang(), { month: "long" }), spent: this._m(c.spent, false), budget: this._m(c.budget, false), status: c.current ? this._t("home.year.running") : (c.status === "good" || c.status === "knapp" || c.status === "over") ? this._t("home.status." + c.status) : "" })
+      : this._t("home.year.cyc_pick");
+    return `<section class="card yfull"><div class="h"><span>${this._t("home.year.cycles_title")}</span><span class="sub">${this._t("home.year.cycles_sub")}</span></div>
+      <div class="ycyc">${cols}</div><div class="ydet muted" aria-live="polite">${this._e(detail)}</div>
+      <div class="legend"><span><i class="s-ok"></i>${this._t("home.status.good")}</span><span><i class="s-near"></i>${this._t("home.status.knapp")}</span><span><i class="s-over"></i>${this._t("home.status.over")}</span><span><i class="l1"></i>${this._t("home.year.leg_budget")}</span><span><i class="s-fut"></i>${this._t("home.year.leg_future")}</span></div></section>`;
+  }
+
+  /** Year to date vs. the same cycles one year earlier. Absent in the payload = no card at all. */
+  _yVs(y) {
+    const v = y.vs_last_year;
+    if (!v || typeof v !== "object") return "";
+    const mx = (a, b) => Math.max(Math.abs(a), Math.abs(b), 1);
+    const metric = (k, now, prev) => {
+      const m = mx(now, prev);
+      return `<div class="vsm"><span class="vsl">${this._t("home.year.vs_" + k)}</span>
+        <div class="vsb"><div class="cmp"><i style="width:${(Math.abs(now) / m) * 100}%"></i></div><b>${this._m(now, false)}</b></div>
+        <div class="vsb prev"><div class="cmp prev"><i style="width:${(Math.abs(prev) / m) * 100}%"></i></div><span>${this._m(prev, false)}</span></div></div>`;
+    };
+    const less = v.delta <= 0;
+    return `<section class="card"><div class="h"><span>${this._t("home.year.vs")}</span><span class="sub">${this._t("home.year.vs_through", { date: this._e(this._day(v.through)) })}</span></div>
+      <div class="vshead"><span class="chip ${less ? "st-ok" : "st-near"}">${less ? "▼" : "▲"} ${this._t(less ? "home.year.vs_less" : "home.year.vs_more", { amount: this._m(Math.abs(v.delta), false) })}</span></div>
+      ${metric("spent", v.spent, v.spent_last_year)}${metric("income", v.income, v.income_last_year)}${metric("saved", v.saved, v.saved_last_year)}
+      <div class="legend"><span><i class="s-now"></i>${this._t("home.year.vs_now")}</span><span><i class="s-prev"></i>${this._t("home.year.vs_prev")}</span></div></section>`;
+  }
+
+  _yCats(y) {
+    const cs = (y.categories || []).filter(Boolean);
+    if (!cs.length) return "";
+    const lab = window._fd.catLabel || ((k) => k);
+    const mx = Math.max(...cs.map((c) => c.share || 0), 0.0001);
+    const rows = cs.map((c) => {
+      const dv = c.delta_prev;
+      const delta = typeof dv === "number" && Math.abs(dv) >= 0.5
+        ? `<small class="dl ${dv > 0 ? "up" : "down"}">${dv > 0 ? "▲" : "▼"} ${this._t(dv > 0 ? "home.year.delta_up" : "home.year.delta_down", { amount: this._m(Math.abs(dv), false) })}</small>` : "";
+      return `<div class="crow"><div class="row"><span>${this._e(lab(c.category))}</span><span class="amt">${this._m(c.amount, false)}</span></div>
+        <div class="cmp" role="img" aria-label="${Math.round((c.share || 0) * 100)} %"><i style="width:${(((c.share || 0) / mx) * 100).toFixed(1)}%"></i></div>${delta}</div>`;
+    }).join("");
+    return `<section class="card"><div class="h"><span>${this._t("home.year.cats")}</span><span class="sub">${this._t(y.categories_scope === "own" ? "home.year.cats_own" : "home.year.cats_all")}</span></div>${rows}</section>`;
+  }
+
+  _yFixed(y) {
+    const f = y.fixed_year;
+    if (!f || !(f.yearly > 0)) return "";
+    const items = (f.items || []).slice(0, 3).map((i) => `<div class="row"><span>${this._e(i.name)}</span><span class="amt">${this._m(i.yearly, false)}</span></div>`).join("");
+    return `<section class="card"><div class="h"><span>${this._t("home.year.fixed_title")}</span></div>
+      <div class="yrow"><span class="big sm">${this._m(f.yearly, false)}</span></div>
+      <div class="cap">${this._plural("home.year.fixed_sub", f.count || 0, { monthly: this._m(f.monthly, false) })}</div>${items}
+      <button class="more" data-act="nav" data-target="${this._e(f.link || "contracts")}">${this._t("home.year.fixed_open")} ›</button></section>`;
+  }
+
+  /** Shared first, then each person as a total; the bar shows the proportions. */
+  _ySplit(y, hh) {
+    const s = y.split;
+    if (!s) return "";
+    const segs = [{ name: this._t("home.year.split_shared"), v: s.shared || 0, c: "var(--fd-household)" }];
+    Object.keys(s.persons || {}).forEach((n, i) => segs.push({ name: n, v: s.persons[n] || 0, c: PERSON_COLORS[i % PERSON_COLORS.length] }));
+    if (s.open > 0) segs.push({ name: this._t("home.year.split_open"), v: s.open, c: "var(--fd-t3)" });
+    const total = segs.reduce((a, g) => a + Math.max(0, g.v), 0);
+    if (!(total > 0)) return "";
+    const bar = segs.map((g) => `<i style="width:${((Math.max(0, g.v) / total) * 100).toFixed(2)}%;background:${g.c}"></i>`).join("");
+    const rows = segs.map((g) => `<div class="row"><span><i class="dot" style="background:${g.c}"></i>${this._e(g.name)}</span><span class="amt">${this._m(g.v, false)}</span></div>`).join("");
+    const own = !hh && s.own ? `<div class="cap">${this._t("home.year.split_share", { amount: this._m(s.own.shared_share, false) })}</div>` : "";
+    return `<section class="card"><div class="h"><span>${this._t("home.year.split_title")}</span></div>
+      <div class="split2 tall" role="img" aria-label="${this._e(segs.map((g) => `${g.name} ${this._m(g.v, false)}`).join(", "))}">${bar}</div>${rows}${own}</section>`;
+  }
+
+  /** Largest single expenses; rows only for admins, each with the owner chip (E1). */
+  _yOutliers(y) {
+    const o = y.outliers;
+    if (!o || !o.count) return "";
+    const sub = this._plural("home.year.out_sub", o.count, { total: this._m(o.total, false) });
+    const lab = window._fd.catLabel || ((k) => k);
+    const rows = Array.isArray(o.items) ? o.items.map((it, i) => `<div class="orow"><div class="oh"><span class="ol">${this._e(it.label)}</span><span class="amt">${this._m(it.amount, false)}</span></div>
+        <div class="om"><span class="muted">${this._e(this._day(it.date))} · ${this._e(lab(it.category))}</span><span class="ochip" data-oi="${i}"></span></div></div>`).join("")
+      : `<div class="muted">${this._t("home.year.out_admin")}</div>`;
+    return `<section class="card"><div class="h"><span>${this._t("home.year.out_title")}</span></div><div class="cap" style="margin:-4px 0 6px">${sub}</div>${rows}</section>`;
+  }
+
+  /** Teaser of the benchmark page (reachable only from here): three rows on a below/typical/above scale. */
+  _yBench(y) {
+    const rows = (y.benchmark_teaser || []).filter(Boolean).slice(0, 3);
+    const head = `<div class="h"><span>${this._t("home.year.benchmark")}</span><span aria-hidden="true">›</span></div><div class="cap" style="margin:-4px 0 8px">${this._t("home.year.benchmark_sub")}</div>`;
+    if (!rows.length) return `<button class="card ybm" data-act="nav" data-target="benchmark">${head}</button>`;
+    const POS = { below: 0.17, typical: 0.5, above: 0.83 };
+    const body = rows.map((r) => {
+      const band = POS[r.band] != null ? r.band : "typical";
+      const pos = Math.min(1, Math.max(0, typeof r.position === "number" ? r.position : POS[band]));
+      const col = r.better === true ? "var(--fd-ok)" : r.better === false ? "var(--fd-over)" : "var(--fd-a500)";
+      const pct = typeof r.deviation_pct === "number" ? `${r.deviation_pct > 0 ? "+" : "−"}${Math.abs(Math.round(r.deviation_pct * 100))} %` : "";
+      const word = this._t("home.year.bm_" + band);
+      return `<div class="bmr"><div class="row"><span>${this._e(r.label)}</span><span class="amt">${this._e(pct)}</span></div>
+        <div class="bmt" role="img" aria-label="${this._e(`${r.label}: ${word} ${pct}`)}"><i></i><i class="mid"></i><i></i><b style="left:${(pos * 100).toFixed(1)}%;background:${col}"></b></div>
+        <div class="bml"><span>${this._t("home.year.bm_below")}</span><span>${this._t("home.year.bm_typical")}</span><span>${this._t("home.year.bm_above")}</span></div></div>`;
+    }).join("");
+    return `<button class="card ybm" data-act="nav" data-target="benchmark" aria-label="${this._e(this._t("home.year.benchmark"))}">${head}${body}<span class="more2">${this._t("home.year.bm_more")} ›</span></button>`;
+  }
+
+  /** Review hint (G7): new unreviewed groups; opens the review route. Admin only. */
+  _hintChip(h) {
+    if (!h || !(h.open_groups > 0) || !this._isAdmin) return "";
+    const txt = this._plural("home.hint.review", h.open_groups);
+    return `<button class="hintchip" data-act="review" aria-label="${this._e(this._t("home.hint.review_aria", { n: h.open_groups, amount: this._m(h.open_amount, false) }))}"><i aria-hidden="true"></i>${this._e(txt)}<span aria-hidden="true">›</span></button>`;
+  }
+
+  /** Ausgleich (F1): who owes whom this cycle; hidden while every balance is zero. */
+  _settle(d) {
+    const s = d.settlement;
+    if (!s || d.view !== "household") return "";
+    const rows = Object.entries(s.balances || {}).map(([name, b]) => ({ name, net: Math.round(((b && b.net) || 0) * 100) / 100 })).filter((r) => Math.abs(r.net) >= 0.5);
+    if (!rows.length) return "";
+    const li = rows.map((r) => `<div class="row"><span>${this._t(r.net > 0 ? "home.settle.owes" : "home.settle.owed", { name: this._e(r.name), amount: this._m(Math.abs(r.net), false) })}</span></div>`).join("");
+    return `<section class="card settle"><div class="h"><span>${this._t("home.settle.title")}</span><span class="sub">${this._t("home.settle.sub")}</span></div>${li}</section>`;
+  }
+
+  /** Put the owner chip into every outlier row (props are set after insertion, see fd-owner-chip). */
+  _hydrateChips() {
+    const items = this._data && this._data.year && this._data.year.outliers && this._data.year.outliers.items;
+    if (!Array.isArray(items)) return;
+    this.shadowRoot.querySelectorAll(".ochip").forEach((slot) => {
+      const it = items[Number(slot.dataset.oi)];
+      if (!it || slot.firstChild) return;
+      if (!customElements.get("fd-owner-chip")) { slot.textContent = it.owner === "shared" ? this._t("home.year.split_shared") : it.owner || ""; return; }
+      const el = document.createElement("fd-owner-chip");
+      slot.appendChild(el);
+      el.hass = this._hass;
+      el.ledgerId = it.ledger_id;
+      el.owner = it.owner || "";
+      el.source = it.owner_source || "";
+      el.confidence = it.owner_confidence;
+      el.merchant = it.label;
+      el.addEventListener("fd-owner-changed", () => this._load());
+    });
+  }
+
+  /** The hint chip on Start: one cache read of the year, only for admins, once per mount. */
+  async _loadHint() {
+    if (this._hintAsked || !this._hass || !this._isAdmin) return;
+    this._hintAsked = true;
+    try {
+      const d = await this._hass.callApi("GET", `${DOMAIN}/home?horizon=year&view=household${this._demo ? "&demo=1" : ""}`);
+      this._hint = (d && d.year && d.year.review_hint) || null;
+      if (this._hint && this._horizon !== "year") this._paint();
+    } catch (_) { /* the hint is optional */ }
   }
 
   // ---- desktop side column ----------------------------------------------
@@ -1532,6 +1780,14 @@ class FdHome extends HTMLElement {
       case "settings": this._nav("settings", t.dataset.section ? { section: t.dataset.section } : {}); break;
       case "nav": this._nav(t.dataset.target); break;
       case "ask": this._nav("questions"); break;
+      case "review": this._nav("review"); break;
+      case "ycyc": {
+        const i = Number(t.dataset.i);
+        this._yc = this._yc === i ? null : i;
+        this._paint();
+        this.shadowRoot.querySelector(`.yc[data-i="${i}"]`)?.focus();
+        break;
+      }
       case "renew":
       case "connect": window._fd.navigate(window._fd.INTEGRATION_PATH, e); break;
       case "retry": this._load(); break;
