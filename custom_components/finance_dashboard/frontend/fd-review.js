@@ -93,7 +93,9 @@ const FB = {
     "review.ai_sub": "Die KI schlägt für die $n unklaren Gruppen Haushalt/Person und Kategorie vor.",
     "review.ai_busy": "KI prüft…",
     "review.ai_done": "KI hat $n Gruppen bewertet. Die Vorschläge sind Vermutungen, du bestätigst sie.",
+    "review.ai_done_one": "KI hat 1 Gruppe bewertet. Die Vorschläge sind Vermutungen, du bestätigst sie.",
     "review.ai_budget": "$n Gruppen blieben wegen des Monatsbudgets offen.",
+    "review.ai_budget_one": "1 Gruppe blieb wegen des Monatsbudgets offen.",
     "review.ai_nothing": "Die KI hatte keinen Vorschlag.",
     "review.ai_none_open": "Keine unklaren Gruppen für die KI.",
     "review.ai_no_consent": "Die KI darf noch nicht fragen: Für Kategorien fehlt deine Zustimmung.",
@@ -227,7 +229,9 @@ const FB = {
     "review.ai_sub": "The AI suggests household/person and category for the $n unclear groups.",
     "review.ai_busy": "AI is checking…",
     "review.ai_done": "The AI rated $n groups. Its suggestions are guesses, you confirm them.",
+    "review.ai_done_one": "The AI rated 1 group. Its suggestions are guesses, you confirm them.",
     "review.ai_budget": "$n groups stayed open because of the monthly budget.",
+    "review.ai_budget_one": "1 group stayed open because of the monthly budget.",
     "review.ai_nothing": "The AI had no suggestion.",
     "review.ai_none_open": "No unclear groups for the AI.",
     "review.ai_no_consent": "The AI may not ask yet: your consent for categories is missing.",
@@ -743,7 +747,7 @@ class FdReview extends HTMLElement {
   }
 
   _fig(k, v, cls = "") { return `<div class="fig"><div class="v ${cls}">${window._fd.escHtml(v)}</div><div class="k">${window._fd.escHtml(k)}</div></div>`; }
-  _pct(v) { return v == null ? "–" : `${Math.round(v * 1000) / 10} %`; }
+  _pct(v) { return v == null ? "–" : `${new Intl.NumberFormat(this._lang(), { maximumFractionDigits: 1 }).format(v * 100)} %`; }
 
   _positions(rows) {
     const e = window._fd.escHtml;
@@ -947,8 +951,9 @@ class FdReview extends HTMLElement {
           if (f) Object.assign(f.group, r);
         }
         const n = (res.categorized || 0) + (res.tendencies || 0);
-        const parts = [n ? tr("review.ai_done", { n: (res.groups || []).length || n }) : tr("review.ai_nothing")];
-        if (res.skipped_budget) parts.push(tr("review.ai_budget", { n: res.skipped_budget }));
+        const rated = (res.groups || []).length || n;
+        const parts = [n ? tr(rated === 1 ? "review.ai_done_one" : "review.ai_done", { n: rated }) : tr("review.ai_nothing")];
+        if (res.skipped_budget) parts.push(tr(res.skipped_budget === 1 ? "review.ai_budget_one" : "review.ai_budget", { n: res.skipped_budget }));
         this._ai = { step: stepId, warn: !!res.skipped_budget, text: parts.join(" ") };
       }
     } catch (e) {

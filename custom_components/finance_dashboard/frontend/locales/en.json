@@ -552,6 +552,7 @@
   "sub.benchmark": "Comparison",
   "sub.plan": "Household plan",
   "sub.review": "Reconciliation",
+  "sub.review": "Reconciliation",
   "shell.toast.import_ok": "Import done: $accounts accounts, $tx bookings, $new new ($duration).",
   "shell.toast.import_partial": "Partly imported: $accounts accounts, $tx bookings.",
   "shell.toast.import_debounced": "Just imported – please wait a moment.",
@@ -1286,5 +1287,7 @@
   "review.diff.before": "Before",
   "review.diff.after": "After",
   "review.diff.delta": "Change",
-  "review.bk_none": "No bookings"
+  "review.bk_none": "No bookings",
+  "review.ai_done_one": "The AI rated 1 group. Its suggestions are guesses, you confirm them.",
+  "review.ai_budget_one": "1 group stayed open because of the monthly budget."
 }

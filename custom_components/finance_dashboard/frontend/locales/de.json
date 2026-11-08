@@ -552,6 +552,7 @@
   "sub.benchmark": "Vergleich",
   "sub.plan": "Haushaltsplan",
   "sub.review": "Abgleich",
+  "sub.review": "Abgleich",
   "shell.toast.import_ok": "Import fertig: $accounts Konten, $tx Buchungen, $new neu ($duration).",
   "shell.toast.import_partial": "Teilweise importiert: $accounts Konten, $tx Buchungen.",
   "shell.toast.import_debounced": "Gerade erst importiert – bitte einen Moment warten.",
@@ -1286,5 +1287,7 @@
   "review.diff.before": "Vorher",
   "review.diff.after": "Nachher",
   "review.diff.delta": "Änderung",
-  "review.bk_none": "Keine Buchungen"
+  "review.bk_none": "Keine Buchungen",
+  "review.ai_done_one": "KI hat 1 Gruppe bewertet. Die Vorschläge sind Vermutungen, du bestätigst sie.",
+  "review.ai_budget_one": "1 Gruppe blieb wegen des Monatsbudgets offen."
 }
