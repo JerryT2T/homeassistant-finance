@@ -74,6 +74,7 @@ def default_config() -> dict[str, Any]:
         "key_enc": "",
         "usage": {"month": "", "calls": 0},
         "cache": {},
+        "tendency": {},
         "last_run": None,
         "last_test": None,
     }
@@ -116,6 +117,12 @@ def parse_category(text: str, categories: list[str]) -> str | None:
     return None
 
 
+def parse_tendency(text: str) -> str | None:
+    """``shared`` / ``personal`` from the model answer (the last one named wins)."""
+    found = re.findall(r"(?<![a-z_])(shared|personal)(?![a-z_])", (text or "").lower())
+    return found[-1] if found else None
+
+
 # ---------------------------------------------------------------------------
 # Config + budget (pure)
 # ---------------------------------------------------------------------------
@@ -141,6 +148,12 @@ def merge_config(raw: Any) -> dict[str, Any]:
         }
     cache = raw.get("cache")
     cfg["cache"] = {str(k): str(v) for k, v in cache.items()} if isinstance(cache, dict) else {}
+    tendency = raw.get("tendency")
+    cfg["tendency"] = (
+        {str(k): str(v) for k, v in tendency.items() if v in TENDENCIES}
+        if isinstance(tendency, dict)
+        else {}
+    )
     for key in ("last_run", "last_test"):
         cfg[key] = _merge_outcome(raw.get(key))
     return cfg
@@ -442,28 +455,66 @@ async def async_categorize(
     today: date,
 ) -> str | None:
     """Category for a merchant, or None (no opt-in, cap reached, error, no match)."""
+    category, _tendency = await async_categorize_full(
+        hass,
+        credentials=credentials,
+        opt_in=opt_in,
+        merchant_id=merchant_id,
+        merchant=merchant,
+        remittance=remittance,
+        categories=categories,
+        today=today,
+    )
+    return category
+
+
+async def async_categorize_full(  # noqa: PLR0913 - keyword-only call context
+    hass: HomeAssistant,
+    *,
+    credentials: Any,
+    opt_in: bool,
+    merchant_id: str,
+    merchant: str,
+    remittance: str,
+    categories: list[str],
+    today: date,
+    ask_missing_tendency: bool = False,
+) -> tuple[str | None, str | None]:
+    """``(category, tendency)`` for a merchant; one call answers both.
+
+    The payload is unchanged (merchant + remittance text); the tendency is
+    ``shared`` / ``personal`` and never names a person. Both are cached per
+    merchant. ``ask_missing_tendency`` re-asks a merchant cached before the
+    tendency existed (spends one call); otherwise a cached category is free.
+    """
     if not opt_in or not categories:
-        return None
+        return None, None
     cfg = await async_load_config(hass)
     cached = cfg["cache"].get(merchant_id)
-    if cached:
-        return cached
+    cached_tendency = cfg["tendency"].get(merchant_id)
+    if cached and (cached_tendency or not ask_missing_tendency):
+        return cached, cached_tendency
     provider = cfg["provider"]
     key = None
     if provider in KEYED:
         key = read_key(cfg, credentials)
         if not key:
-            return None
+            return (cached, None) if cached else (None, None)
     if not spend_call(cfg, today):
-        return None
+        return (cached, None) if cached else (None, None)
     await async_save_config(hass, cfg)  # persist the spend before the call
     prompt = build_prompt(build_payload(merchant, remittance), categories)
-    category, error = await _ask(hass, cfg, key, prompt, categories)
+    answer, error = await _ask_raw(hass, cfg, key, prompt)
+    category = None if error else parse_category(answer or "", categories)
+    tendency = parse_tendency(answer or "") if category else None
+    error = error or (None if category else "unparsable")
     cfg["last_run"] = outcome(dt_util.utcnow().isoformat(), category, error)
     if category and len(cfg["cache"]) < MAX_CACHE:
         cfg["cache"][merchant_id] = category
+        if tendency:
+            cfg["tendency"][merchant_id] = tendency
     await async_save_config(hass, cfg)
-    return category
+    return category, tendency
 
 
 async def _ask(
