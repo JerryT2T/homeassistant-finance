@@ -135,6 +135,7 @@ class CostPosition:
     valid_until: str | None = None
     note: str = ""
     debit_account: str | None = None
+    suspended: bool = False  # paused on purpose: the review does not expect a booking
 
     @property
     def is_shared(self) -> bool:
@@ -189,6 +190,7 @@ class CostPosition:
             "valid_until": self.valid_until,
             "note": self.note,
             "debit_account": self.debit_account,
+            "suspended": self.suspended,
         }
 
     @classmethod
@@ -218,6 +220,7 @@ class CostPosition:
             valid_until=data.get("valid_until") or None,
             note=str(data.get("note") or ""),
             debit_account=data.get("debit_account") or None,
+            suspended=bool(data.get("suspended", False)),
         )
 
 

@@ -39,7 +39,6 @@ from .counted import (
 from .household_summary import plan_persons
 from .cycle import (
     calendar_cycle,
-    cycle_windows,
     household_cycle,
     household_starts,
     person_cycle,
@@ -397,49 +396,6 @@ def _spent_between(pots: list[Pot], bookings: list[dict[str, Any]], a: date, b: 
     return total
 
 
-def _year_block(
-    spend: list[Pot],
-    bookings: list[dict[str, Any]],
-    starts: list[date],
-    cycle: tuple[date, date],
-    today: date,
-) -> dict[str, Any]:
-    windows = cycle_windows(starts)[-(YEAR_CYCLES - 1) :] + [cycle]
-    budget = sum(p.cycle_budget for p in spend)
-    cycles = []
-    for a, b in windows:
-        spent = _spent_between(spend, bookings, a, b)
-        full = budget if budget else 0.0
-        cycles.append(
-            {
-                "start": a.isoformat(),
-                "end": b.isoformat(),
-                "status": status_for(spent, full),
-                "current": (a, b) == cycle,
-            }
-        )
-    try:
-        ly_start = cycle[0].replace(year=cycle[0].year - 1)
-        ly_today = today.replace(year=today.year - 1)
-    except ValueError:  # 29 Feb
-        ly_start, ly_today = cycle[0] - timedelta(days=365), today - timedelta(days=365)
-    has_history = any(b["date"] <= ly_today and b["date"] >= ly_start for b in bookings)
-    spent_now = _spent_between(spend, bookings, cycle[0], today)
-    spent_then = _spent_between(spend, bookings, ly_start, ly_today)
-    return {
-        "cycles": cycles,
-        "vs_last_year": {
-            "available": has_history,
-            "spent": round(spent_now, 2),
-            "spent_last_year": round(spent_then, 2) if has_history else None,
-            "delta": round(spent_now - spent_then, 2) if has_history else None,
-        },
-        # Inflation / purchasing-power comparison needs the bundled benchmark
-        # dataset (roadmap phase 4e); never a runtime fetch.
-        "benchmark": {"available": False, "reason": "not_implemented"},
-    }
-
-
 def _did_you_know(scope_bookings: list[dict[str, Any]], cycle: tuple[date, date], today: date):
     by_cat: dict[str, float] = defaultdict(float)
     for b in scope_bookings:
@@ -573,6 +529,7 @@ def build_home(  # noqa: PLR0912, PLR0915
     include_questions: bool = False,
     include_recent: bool = False,
     refund_allocations: dict[str, dict[str, float]] | None = None,
+    year_inputs: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Assemble the home contract. ``view`` degrades to household without a person."""
     today = now.date()
@@ -842,7 +799,43 @@ def build_home(  # noqa: PLR0912, PLR0915
             covered = income >= fixed
         out["fixed_costs_covered"] = covered
 
+    if view == "household" and horizon in ("cycle", "year"):
+        # F1: who owes whom between the persons and the household this cycle.
+        from .household_settle import settlement_balances
+        from .household_summary import Classifier as _Clf
+
+        out["settlement"] = {
+            "start": start.isoformat(),
+            "end": end.isoformat(),
+            "balances": settlement_balances(
+                [t for t in transactions if t.get("_status", "booked") == "booked"],
+                _Clf(plan, recurring, None, plan_people),
+                cycle,
+            ),
+        }
+
     if horizon == "year":
-        out["year"] = _year_block(scope_spend, scope, starts, cycle, today)
+        # The year is its own pure module: one counting rule, windows from the
+        # household summary, owners from the one chain (``year_view``).
+        from .household_summary import Classifier
+        from .year_view import build_year
+
+        extra = year_inputs or {}
+        out["year"] = build_year(
+            txs=transactions,
+            plan=plan,
+            clf=Classifier(plan, recurring, None, plan_people),
+            persons=persons_cfg,
+            today=today,
+            view=view,
+            person=person,
+            contracts=extra.get("contracts"),
+            is_admin=include_recent,
+            ledger_earliest=extra.get("ledger_earliest"),
+            benchmark_teaser=extra.get("benchmark_teaser") if include_recent else None,
+            review=extra.get("review") if include_recent else {
+                "reviewed_at": (extra.get("review") or {}).get("reviewed_at")
+            },
+        )
 
     return out

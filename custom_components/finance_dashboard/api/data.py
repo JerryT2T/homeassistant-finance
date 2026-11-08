@@ -20,6 +20,7 @@ from homeassistant.components.http import HomeAssistantView
 
 from ..const import DOMAIN
 from ..counted import amount_of, is_income_line, movement_reasons
+from ..household_summary import owner_fields
 from ..labels import booking_key
 from ..tx_dates import effective_date_str
 from ._helpers import _get_manager, visible_account_ids
@@ -301,6 +302,7 @@ class FinanceDashboardTransactionsView(HomeAssistantView):
         resolved = await _resolve_page(request, manager, page)
         refund_state = await _refund_states(request, manager)
         sanitized = []
+        clf = manager._classifier()  # noqa: SLF001
         for txn in page:
             entry = {
                 "date": effective_date_str(txn),
@@ -313,6 +315,8 @@ class FinanceDashboardTransactionsView(HomeAssistantView):
                 "status": txn.get("_status", "booked"),
                 "account_name": txn.get("_account_name", ""),
                 "account_key": txn.get("_account_key", ""),
+                "ledger_id": booking_key(txn) or "",
+                **owner_fields(clf, txn),
             }
             # Contract link, inherited category and labels (#113)
             key = booking_key(txn) or ""

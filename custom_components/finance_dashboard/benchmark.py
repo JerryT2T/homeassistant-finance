@@ -379,3 +379,145 @@ class BenchmarkProvider:
             }
         )
         return result
+
+
+# ---------------------------------------------------------------------------
+# Actual-vs-benchmark (B1): the household's real yearly spend, plan as second mark
+# ---------------------------------------------------------------------------
+
+TYPICAL_TOLERANCE = 0.10  # within +-10 % of the benchmark reads as "typical"
+BAND_BELOW, BAND_TYPICAL, BAND_ABOVE = "below", "typical", "above"
+SAVINGS_CATEGORY = "savings"
+TEASER_N = 3
+FULL_YEAR_MONTHS = 12
+
+
+def deviation(user: float, bench: float) -> tuple[float | None, float | None, str | None]:
+    """``(deviation_pct, position, band)`` of ``user`` against ``bench``.
+
+    ``deviation_pct`` is relative (0.12 = 12 % above). ``position`` is 0..1 on
+    the overview scale (0.5 = exactly typical, 0 / 1 = 50 % or more below /
+    above). ``band`` is ``below`` / ``typical`` / ``above``.
+    """
+    if not bench:
+        return None, None, None
+    d = (user - bench) / abs(bench)
+    band = BAND_TYPICAL if abs(d) <= TYPICAL_TOLERANCE else (BAND_ABOVE if d > 0 else BAND_BELOW)
+    return round(d, 4), round(min(1.0, max(0.0, 0.5 + d)), 4), band
+
+
+def _own_values(
+    metric: str,
+    cats: list[str],
+    percent: bool,
+    actual_monthly: dict[str, float],
+    plan_monthly: dict[str, float],
+    income_actual: float,
+    income_plan: float,
+    months_covered: int,
+) -> tuple[float | None, float | None, float | None]:
+    """``(actual, plan, amount)`` of the household for one dimension."""
+    if metric == SAVINGS_CATEGORY:
+        actual = (
+            round((income_actual - sum(actual_monthly.values())) / income_actual * 100, 2)
+            if months_covered and income_actual > 0
+            else None
+        )
+        plan = (
+            round((income_plan - sum(plan_monthly.values())) / income_plan * 100, 2)
+            if income_plan > 0 and plan_monthly
+            else None
+        )
+        return actual, plan, None
+    a_sum = round(sum(actual_monthly.get(c, 0.0) for c in cats), 2)
+    p_sum = round(sum(plan_monthly.get(c, 0.0) for c in cats), 2)
+    if percent:
+        actual = (
+            round(a_sum / income_actual * 100, 2)
+            if months_covered and a_sum > 0 and income_actual > 0
+            else None
+        )
+        plan = round(p_sum / income_plan * 100, 2) if p_sum > 0 and income_plan > 0 else None
+    else:
+        actual = a_sum if months_covered and a_sum > 0 else None
+        plan = p_sum if p_sum > 0 else None
+    return actual, plan, a_sum
+
+
+def compare_all(  # noqa: PLR0913
+    provider: BenchmarkProvider,
+    sources: dict[str, list[str]],
+    *,
+    actual_monthly: dict[str, float],
+    plan_monthly: dict[str, float],
+    income_actual: float,
+    income_plan: float,
+    months_covered: int,
+    year: int,
+    location: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """One comparison per dimension, outliers (largest relative deviation) first.
+
+    The household's own side is the **actual** monthly average of the year
+    (counted spend by category over ``months_covered`` finished cycles); an
+    incomplete year is flagged ``extrapolated``. The plan value is the second
+    mark. A dimension without actual spend falls back to the plan
+    (``basis: "plan"``). Source, statistic, year and fallback level stay with
+    every figure (the provider's labels).
+    """
+    rows: list[dict[str, Any]] = []
+    for metric, cats in {**sources, SAVINGS_CATEGORY: [SAVINGS_CATEGORY]}.items():
+        bench = provider.get_benchmark_for_category(metric, **location)
+        if not bench:
+            continue
+        actual, plan, amount = _own_values(
+            metric, cats, bench.get("unit") == "%", actual_monthly, plan_monthly,
+            income_actual, income_plan, months_covered,
+        )
+        basis, value = ("actual", actual) if actual is not None else ("plan", plan)
+        if value is None:
+            continue
+        row = provider.compare(metric, value, **location)
+        if not row:
+            continue
+        dev, position, band = deviation(value, row["benchmark_value"])
+        row.update(
+            {
+                "basis": basis,
+                "actual_value": actual,
+                "plan_value": plan,
+                "plan_deviation_pct": (
+                    deviation(plan, row["benchmark_value"])[0] if plan is not None else None
+                ),
+                "deviation_pct": dev,
+                "position": position,
+                "band": band,
+                "extrapolated": basis == "actual" and months_covered < FULL_YEAR_MONTHS,
+                "months_covered": months_covered if basis == "actual" else 0,
+                "year": year,
+                "our_amount": amount,
+                "source_categories": cats,
+            }
+        )
+        rows.append(row)
+    rows.sort(key=lambda r: -abs(r["deviation_pct"] or 0.0))
+    return rows
+
+
+def teaser(comparisons: list[dict[str, Any]], n: int = TEASER_N) -> list[dict[str, Any]]:
+    """The ``n`` largest deviations, for the year view (A11)."""
+    return [
+        {
+            "dimension": r["dimension"],
+            "label": r["label"],
+            "deviation_pct": r["deviation_pct"],
+            "band": r["band"],
+            "better": r["better"],
+            "user_value": r["user_value"],
+            "benchmark_value": r["benchmark_value"],
+            "unit": r["unit"],
+            "extrapolated": r.get("extrapolated", False),
+        }
+        for r in comparisons
+        if r.get("deviation_pct") is not None and not r.get("manual")
+    ][:n]

@@ -135,7 +135,9 @@ class MerchantMemory:
                 # AI tendency per merchant key: "shared" | "personal"
                 "tendencies": {},
                 # None = the defaults of ownership.DEFAULT_HOUSEHOLD_CATEGORIES
-                "household_categories": None}
+                "household_categories": None,
+                # reconciliation review: confirmed group ids, reviewed_at, snapshots
+                "review": {}}
 
     async def async_load(self) -> None:
         data = await self._store.async_load()
@@ -307,6 +309,10 @@ class MerchantMemory:
     def set_household_categories(self, categories: list[str] | None) -> None:
         """``None`` restores the defaults."""
         self._data["household_categories"] = None if categories is None else list(categories)
+
+    def review_state(self) -> dict[str, Any]:
+        """The reconciliation review's persisted state (live dict)."""
+        return self._data["review"]
 
     def forget_merchant(self, key: str) -> bool:
         return self._data["merchants"].pop(key, None) is not None

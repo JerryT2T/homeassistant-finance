@@ -158,6 +158,10 @@ class FinanceDashboardBenchmarkView(HomeAssistantView):
             return denied
         hass = request.app["hass"]
         manager = _get_manager(hass)
+        if request.query.get("demo") in ("1", "true") or getattr(manager, "demo_mode", False) is True:
+            from ..demo import generate_demo_benchmark
+
+            return self.json(generate_demo_benchmark())
         if not manager:
             return self.json({"error": "Not configured"}, status_code=404)
 

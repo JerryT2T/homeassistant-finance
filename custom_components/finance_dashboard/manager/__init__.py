@@ -74,11 +74,13 @@ from ..transfer_detector import (
     apply_overrides,
 )
 from ..transfer_plan import build_transfer_plan
+from ..plan_wizard import earliest_booked_by_key
 from ._banks import BankMixin
 from ._ownership import OwnershipMixin
 from ._persistence import PersistenceMixin
 from ._questions import QuestionsMixin
 from ._refresh import RefreshMixin
+from ._review import ReviewMixin
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -104,7 +106,7 @@ class AssignmentError(ValueError):
 
 
 class FinanceDashboardManager(
-    RefreshMixin, BankMixin, PersistenceMixin, QuestionsMixin, OwnershipMixin
+    RefreshMixin, BankMixin, PersistenceMixin, QuestionsMixin, OwnershipMixin, ReviewMixin
 ):
     """Central orchestrator for the Finance integration.
 
@@ -1061,8 +1063,13 @@ class FinanceDashboardManager(
         demo: bool = False,
         include_questions: bool = False,
         include_recent: bool = False,
+        year_inputs: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """Home-screen payload from cached data. Never contacts a bank."""
+        """Home-screen payload from cached data. Never contacts a bank.
+
+        ``year_inputs`` (horizon year only, from ``async_year_inputs``):
+        contracts, benchmark teaser and review state the pure year view needs.
+        """
         from ..home import build_home
 
         now = dt_util.now()
@@ -1090,7 +1097,19 @@ class FinanceDashboardManager(
             person=person,
             view=view,
             horizon=horizon,
+            year_inputs=(
+                {
+                    "ledger_earliest": earliest_booked_by_key(getattr(self, "_ledger", None)),
+                    **(year_inputs or {}),
+                }
+                if horizon == "year"
+                else None
+            ),
         )
+
+    def _ledger_earliest(self) -> dict[str, str | None]:
+        """Earliest booked date per account key from the ledger (cache only)."""
+        return earliest_booked_by_key(getattr(self, "_ledger", None))
 
     def get_household_summary(
         self, *, cycle: str = "current", person: str | None = None, is_admin: bool = False
@@ -1399,25 +1418,30 @@ class FinanceDashboardManager(
             household_size=len(plan.persons) or None,
         )
 
-        comparisons: list[dict[str, Any]] = []
-        for metric_category, source_categories in BENCHMARK_METRIC_SOURCES.items():
-            numerator = round(sum(by_category.get(c, 0.0) for c in source_categories), 2)
-            if numerator <= 0:
-                continue
-            benchmark = provider.get_benchmark_for_category(metric_category, **location)
-            if not benchmark:
-                continue
-            if benchmark.get("unit") == "%":
-                if income <= 0:
-                    continue
-                our_value = round(numerator / income * 100, 2)
-            else:
-                our_value = numerator
-            result = provider.compare(metric_category, our_value, **location)
-            if result:
-                result["our_amount"] = numerator
-                result["source_categories"] = source_categories
-                comparisons.append(result)
+        from ..benchmark import compare_all, teaser
+        from ..year_view import actual_year
+
+        # B1: the household's own side is the ACTUAL spend of the year (counted
+        # figures by category, whole household); the plan is the second mark.
+        actual = actual_year(
+            self._counted_view(),
+            self._classifier(),
+            self.persons,
+            now.date(),
+            self._ledger_earliest(),
+            target_year,
+        )
+        comparisons: list[dict[str, Any]] = compare_all(
+            provider,
+            BENCHMARK_METRIC_SOURCES,
+            actual_monthly=actual["by_category_monthly"],
+            plan_monthly=by_category,
+            income_actual=actual["income_monthly"],
+            income_plan=income,
+            months_covered=actual["months_covered"],
+            year=target_year,
+            location=location,
+        )
 
         # Consumption metrics cannot be derived from banking data — the utility
         # statement is the only source. Kept as an explicit option so the
@@ -1456,6 +1480,14 @@ class FinanceDashboardManager(
             "year": target_year,
             "income_net_total": income,
             "comparisons": comparisons,
+            "teaser": teaser(comparisons),
+            "basis": {
+                "year": target_year,
+                "months_covered": actual["months_covered"],
+                "extrapolated": 0 < actual["months_covered"] < 12,  # noqa: PLR2004
+                "has_actual": actual["months_covered"] > 0,
+                "scale": {"typical_tolerance": 0.1, "min": 0.0, "max": 1.0},
+            },
             "references": provider.references(**location),
             "unavailable": provider.unavailable(),
             "dataset": provider.dataset_info(),
