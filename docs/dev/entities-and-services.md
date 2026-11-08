@@ -60,8 +60,9 @@ Home screen (`api/home.py`, `home.py`, `pots.py`, `cycle.py`):
 - `GET|PUT /assignments` (`api/assignments.py`, admin only, 403 `admin_required`) - the "Personen & Konten"
   settings. GET returns `persons` (name + `ha_users`), `ha_users` (id, name, is_admin, `suggested`,
   `reason` person|active_user|system|inactive), `accounts` (`key`, name, institution, `iban_last4`,
-  `owner` person|shared|"", `household` bool, `owner_kind` open|person|person_household|household)
-  and `plan_persons`. PUT takes `{persons, accounts:[{key, owner, household?}]}` (`household: true` only
+  `owner` person|shared|"", `household` bool, `owner_kind` open|person|person_household|household,
+  `card_owners` `{last 4 digits: person}`, only kept for `shared` accounts)
+  and `plan_persons`. PUT takes `{persons, accounts:[{key, owner, household?, card_owners?}]}` (`card_owners`: keys exactly 4 digits and values existing persons, else 400 `invalid_card_suffix`/`unknown_card_person`/`invalid_card_owners`; dropped when the account is not household-only) (`household: true` only
   with a person; `shared`/"" + household, or a non-boolean, is 400 `invalid_owner_set`/`invalid_household`),
   validates (unique names <= 40 chars, existing HA users, one person per user, owner shared or a
   person, known account keys; else 400 `{error, detail}`), stores `persons` in the config entry and

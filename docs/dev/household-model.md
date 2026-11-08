@@ -31,6 +31,13 @@ boolean `household_use` (only with a person; old configs lack it = `False`, same
 an owner set re-derives the stored bookings (`async_apply_owner_change`, ledger replay, no bank call);
 corrections and rules live in the merchant memory and stay.
 
+**Card signal (`{household}` accounts only).** A joint account can be used with each person's own card. The
+account may carry `card_owners` (`{last 4 digits: person}`, user-owned like `household_use`, survives re-link).
+The derive step stamps `_card_person` when a booking's card fields or remittance text carry a mapped suffix
+(`ownership.card_suffixes`, needs a marker such as `*`, `xxxx`, `Karte`; parsed locally, never sent anywhere).
+Resolution on `{H}`: correction > merchant rule > plan > series > card (person, source `card`, confidence 80,
+only outside the household categories) > household. Other owner sets ignore the mapping.
+
 One resolver, `ownership.resolve_owner_detail(tx, position, correction) -> (owner, source, confidence)`;
 `plan_match.resolve_owner` returns its first element and `Classifier.classify_detail` adds it to the
 classification, so `figures` and `home.py` can never disagree. The chain:
