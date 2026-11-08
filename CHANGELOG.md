@@ -9,6 +9,8 @@ All notable changes to the Finance will be documented in this file.
 
 ### Changed
 - The unused month_cycle.py is gone (#169)
+- Repository links, issue tracker and code owner point to the renamed GitHub account JerryT2T
+- The README explains how to remove the leftover add-on repository from the Home Assistant app store, where it shows up as "unknown"
 
 ### Fixed
 - Every view now counts the same bookings by one rule - monthly summary, sensors, plan vs actual, home, household summary, notifications, contracts and the wizards show the same total for the same period (#166)

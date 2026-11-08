@@ -2,13 +2,15 @@
 
 **Your personal finance command center — right inside Home Assistant.**
 
+**Version: 0.40.0**
+
 > [!WARNING]
 > **Alpha — not recommended for use.** Finance is under active redesign. Features, data model and storage format may change without migration, and things may break. Do not rely on it for your real finances yet.
 
-[![Version](https://img.shields.io/github/v/release/Jerry0022/homeassistant-finance?style=flat-square)](https://github.com/Jerry0022/homeassistant-finance/releases)
+[![Version](https://img.shields.io/github/v/release/JerryT2T/homeassistant-finance?style=flat-square)](https://github.com/JerryT2T/homeassistant-finance/releases)
 [![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
 [![HACS](https://img.shields.io/badge/HACS-compatible-orange?style=flat-square)](https://hacs.xyz)
-[![CI](https://img.shields.io/github/actions/workflow/status/Jerry0022/homeassistant-finance/validate.yml?style=flat-square&label=CI)](https://github.com/Jerry0022/homeassistant-finance/actions)
+[![CI](https://img.shields.io/github/actions/workflow/status/JerryT2T/homeassistant-finance/validate.yml?style=flat-square&label=CI)](https://github.com/JerryT2T/homeassistant-finance/actions)
 [![HA](https://img.shields.io/badge/Home%20Assistant-2026.3+-41BDF5?style=flat-square&logo=homeassistant&logoColor=white)](https://www.home-assistant.io)
 
 <!-- TODO: Add screenshot of the Finance Dashboard sidebar panel -->
@@ -55,12 +57,14 @@ HACS is the only supported install path. The integration is not yet in the HACS 
 
 1. Open HACS in Home Assistant
 2. Open the three-dot menu → **Custom repositories**
-3. Add `https://github.com/Jerry0022/homeassistant-finance` with category **Integration**
+3. Add `https://github.com/JerryT2T/homeassistant-finance` with category **Integration**
 4. Search for **Finance** in HACS and download it
 5. Restart Home Assistant
 6. Go to **Settings → Devices & services → Add integration** and select **Finance**
 
 Updates are offered by HACS whenever a new GitHub Release is published.
+
+> **Upgrading from the old companion add-on?** This repository no longer ships an add-on (app). If it is still listed under **Settings → Apps → App store → ⋮ → Repositories** (shown as `unknown`), remove it there.
 
 ### Manual Installation
 
