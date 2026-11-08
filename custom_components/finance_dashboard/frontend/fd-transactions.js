@@ -110,6 +110,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .row + .row { border-top: 1px solid var(--fd-line); }
 .row .l { min-width: 0; }
 .row .p { font-weight: 500; overflow-wrap: anywhere; }
+.row .oc { margin-top: 4px; }
 .row .d { color: var(--fd-t2); font-size: 12px; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .row .m { grid-column: 1 / -1; min-width: 0; color: var(--fd-t2); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .row .a { grid-column: 2; grid-row: 1; flex: none; text-align: right; white-space: nowrap; font-weight: 500; font-variant-numeric: tabular-nums; }
@@ -311,7 +312,7 @@ class FdTransactions extends HTMLElement {
       const dh = x.date !== lastDay ? `<div class="day">${e(dayName(x.date))}</div>` : "";
       lastDay = x.date;
       return `${dh}<div class="row${multi ? "" : " noac"}${x.status && x.status !== "booked" ? " pend" : ""}"${open}>
-  <div class="l"><div class="p">${e(party)}${pend}</div><div class="d">${e(x.description)}</div>${cat}</div>
+  <div class="l"><div class="p">${e(party)}${pend}</div><div class="d">${e(x.description)}</div>${cat}${x.ledger_id && x.counted !== false && x.owner !== undefined ? `<div class="oc"><fd-owner-chip data-i="${idx}"></fd-owner-chip></div>` : ""}</div>
   <div class="a ${n > 0 ? "in" : ""}">${e(fmtAmt(x))}</div>
   <div class="lb"><div class="lcs">${chips}</div></div>
   ${multi ? `<div class="m"><span class="ac">${e(x.account_name || "")}</span></div>` : ""}
@@ -329,10 +330,18 @@ class FdTransactions extends HTMLElement {
 </div>`;
     list.querySelector("#prev").addEventListener("click", () => this._load(Math.max(0, t.offset - PAGE_SIZE)));
     list.querySelector("#next").addEventListener("click", () => this._load(t.offset + PAGE_SIZE));
+    // Owner chip: tap-to-correct (E1). Payload fields: owner, owner_source, owner_confidence.
+    list.querySelectorAll("fd-owner-chip").forEach((c) => {
+      const x = t.items[Number(c.dataset.i)];
+      c.hass = this._hass;
+      c.ledgerId = x.ledger_id; c.owner = x.owner || ""; c.source = x.owner_source || "";
+      c.confidence = x.owner_confidence; c.merchant = x.creditor || x.debtor || "";
+      c.addEventListener("fd-owner-changed", () => this._load(t.offset));
+    });
     list.querySelectorAll(".row[data-i]").forEach((r) => {
       const open = () => this._openDialog(Number(r.dataset.i), r);
       r.addEventListener("click", open);
-      r.addEventListener("keydown", (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); open(); } });
+      r.addEventListener("keydown", (ev) => { if (ev.target.localName === "fd-owner-chip") return; if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); open(); } });
     });
   }
 

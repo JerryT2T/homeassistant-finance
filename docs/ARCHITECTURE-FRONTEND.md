@@ -108,6 +108,17 @@ Datenstand (`fd-freshness`) shows Stand, last import / processing, the bank conn
 monthly validity and the derivation check (`/freshness`, admin details). Desktop pointers get a link to the
 transaction list.
 
+## Owner chip (`fd-owner-chip.js`)
+
+One tap-to-correct component for "whose is this booking?". Used in the transaction list; Jahr and the review reuse it unchanged.
+
+- Properties: `ledgerId` (attr `ledger-id`), `owner` (`"shared"` | person name | `""`), `source` (`correction|merchant_rule|plan|series|category|ai|account`), `confidence` (0-100), `merchant` (enables "für alle von X merken" = reach `merchant`), `persons` (names or `{name, display_name}`; default read once from `GET /assignments`), `hass`, `editable` (default `hass.user.is_admin`; read-only label otherwise), `compact`.
+- Events: `fd-owner-changed` `{ledgerId, owner, reach, merchant}` (owner `null` = back to automatic; the host re-fetches), `fd-toast`.
+- Backend: `POST /ownership/correct {ledger_id, owner, reach}`. Keyboard: Enter/Space opens, `1..n` pick, Esc closes; below 600 px the popover is a bottom sheet.
+- Needed payload fields per booking: `ledger_id`, `owner`, `owner_source`, `owner_confidence`.
+
+Settings -> Konten (`fd-settings.js`) offers per account one person OR Haushalt (or Offen) plus the toggle "Auch für den Haushalt genutzt" for a person, and an editor for the household categories (`/ownership/household-categories`).
+
 ## Events
 
 | Event | Source | Handled by | Purpose |
