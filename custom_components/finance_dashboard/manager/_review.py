@@ -115,10 +115,17 @@ class ReviewMixin:
         try:
             payload, txs = self._review_build(series_list)
             today = dt_util.now().date()
+            # One counting rule: the year's expenses are the sum of the cycle
+            # figures over the year's cycle windows, as in the year view.
+            from ..household_summary import figures, plan_persons
+            from ..year_view import month_windows
+
+            booked = [t for t in txs if t.get("_status", "booked") == "booked"]
+            clf = self._classifier()
             year_expenses = sum(
-                -rv.amount_of(t)
-                for t in txs
-                if (d := rv.effective_day(t)) and d.year == today.year and not rv.is_income_line(t)
+                figures(booked, window, clf)["expenses"]
+                for _m, window in month_windows(booked, today.year, plan_persons(self.budget_plan, self._accounts))
+                if window is not None and window[0] <= today
             )
             out["review"]["hint"] = rv.hint(payload, state, year_expenses)
         except Exception:  # noqa: BLE001

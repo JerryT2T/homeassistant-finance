@@ -87,7 +87,6 @@ const FB = {
     "settings.hhcat.default": "Standard",
     "settings.recalculated": "Zahlen werden neu berechnet",
     "settings.ai.reconsent": "Neu fragen: Der Zweck ist gewachsen, Finance schlägt jetzt auch gemeinsam oder persönlich vor. Bitte erneut zustimmen.",
-    "settings.ai.reconsent_off": "Bis dahin bleibt dieser Zweck wie bisher aktiv.",
     "settings.ai.reconsent_btn": "Erneut zustimmen",
     "settings.no_accounts": "Noch keine Konten verbunden.",
     "settings.connect_bank": "Bank verbinden",
@@ -252,7 +251,6 @@ const FB = {
     "settings.hhcat.default": "Default",
     "settings.recalculated": "Numbers are being recalculated",
     "settings.ai.reconsent": "Asking again: the purpose has grown, Finance now also suggests shared or personal. Please consent again.",
-    "settings.ai.reconsent_off": "Until then this purpose stays active as before.",
     "settings.ai.reconsent_btn": "Consent again",
     "settings.no_accounts": "No accounts connected yet.",
     "settings.connect_bank": "Connect a bank",
@@ -443,8 +441,8 @@ summary { min-height: var(--fd-touch); display: flex; align-items: center; color
 .reask { margin: 8px 0; padding: 8px 12px; border-radius: 10px; border-left: 3px solid var(--fd-warn, var(--fd-a500)); background: var(--fd-sunk); font-size: 12.5px; display: flex; flex-direction: column; gap: 4px; }
 .acc .nm b { font-weight: 500; }
 .acc .nm span { display: block; color: var(--fd-t2); font-size: 11.5px; }
-.seg { display: flex; flex-wrap: nowrap; gap: 6px; margin-top: 6px; overflow-x: auto; scroll-snap-type: x proximity; padding-bottom: 2px; min-width: 0; }
-.seg button { flex: none; scroll-snap-align: start; min-height: 40px; padding: 0 12px 0 6px; border: 1px solid var(--fd-line); border-radius: var(--fd-r-pill); background: transparent; display: inline-flex; align-items: center; gap: 6px; max-width: 100%; }
+.seg { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; min-width: 0; }
+.seg button { flex: none; min-height: 40px; padding: 0 12px 0 6px; border: 1px solid var(--fd-line); border-radius: var(--fd-r-pill); background: transparent; display: inline-flex; align-items: center; gap: 6px; max-width: 100%; }
 .seg .av { flex: none; width: 24px; height: 24px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: var(--c, var(--fd-t3)); color: #fff; font-size: 11.5px; font-weight: 600; }
 .seg .lb { max-width: 16ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .seg button[aria-checked="true"] { background: var(--fd-a50); border-color: var(--c, var(--fd-a500)); color: var(--fd-a900); font-weight: 500; }
@@ -964,7 +962,7 @@ class FdSettings extends HTMLElement {
       const pros = (info.pros || []).slice(0, 3), risks = (info.risks || []).slice(0, 3);
       return `<div class="cons"><div class="row" style="border:0"><div class="who"><b>${escHtml(title)}${mode ? `<span class="chip">${escHtml(tr("ai.mode." + mode))}</span>` : ""}</b><span>${escHtml(meta)}</span></div>
           <span class="hit"><button type="button" class="sw" role="switch" aria-checked="${on}" data-consent="${escHtml(id)}" aria-label="${escHtml(title)}"></button></span></div>
-        ${re ? `<div class="reask" role="status"><span>${escHtml(tr("settings.ai.reconsent"))}</span>${on ? `<span class="muted">${escHtml(tr("settings.ai.reconsent_off"))}</span>` : ""}<button type="button" class="btn sm" data-reconsent="${escHtml(id)}">${escHtml(tr("settings.ai.reconsent_btn"))}</button></div>` : ""}
+        ${re ? `<div class="reask" role="status"><span>${escHtml(tr("settings.ai.reconsent"))}</span><button type="button" class="btn sm" data-reconsent="${escHtml(id)}">${escHtml(tr("settings.ai.reconsent_btn"))}</button></div>` : ""}
         ${pros.length ? `<div class="lbl">${escHtml(tr("settings.ai.pros"))}</div><ul class="pc">${pros.map((k) => line(k, id)).join("")}</ul>` : ""}
         ${risks.length ? `<div class="lbl">${escHtml(tr("settings.ai.risks"))}</div><ul class="pc">${risks.map((k) => line(k, id)).join("")}</ul>` : ""}</div>`;
     }).join("");

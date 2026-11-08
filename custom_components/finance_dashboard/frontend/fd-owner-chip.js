@@ -65,7 +65,11 @@ button.chip:hover { border-color: var(--fd-a500); }
 .opts kbd { font: inherit; font-size: 11px; color: var(--fd-t3); border: 1px solid var(--fd-line); border-radius: 4px; padding: 0 4px; }
 @media (pointer: coarse) { .opts kbd { display: none; } }
 .rem { display: flex; align-items: center; gap: 10px; margin-top: 10px; min-height: 40px; color: var(--fd-t2); overflow-wrap: anywhere; }
-.rem input { flex: none; width: 20px; height: 20px; accent-color: var(--fd-a700); }
+.rem .sw { box-sizing: border-box; flex: none; position: relative; width: 52px; min-width: 52px; height: 32px; border-radius: 16px; border: 1px solid var(--fd-line); background: var(--fd-sunk); padding: 0; margin: 0; cursor: pointer; }
+.rem .sw::after { content: ""; position: absolute; top: 3px; left: 3px; width: 24px; height: 24px; border-radius: 50%; background: var(--fd-t3); transition: transform .15s, background .15s; }
+.rem .sw[aria-checked="true"] { background: var(--fd-a700); border-color: var(--fd-a700); }
+.rem .sw[aria-checked="true"]::after { transform: translateX(20px); background: #fff; }
+.rem .sw:focus-visible { outline: 2px solid var(--fd-a500); outline-offset: 2px; }
 .msg { margin-top: 8px; color: var(--fd-err, #b3261e); font-size: 12px; }
 .x { position: absolute; top: 4px; right: 4px; min-width: 40px; min-height: 40px; border: 0; background: transparent; color: var(--fd-t2); font-size: 18px; }
 .scrim { position: fixed; inset: 0; z-index: 59; background: transparent; }
@@ -160,7 +164,7 @@ class FdOwnerChip extends HTMLElement {
   _popHtml() {
     const e = window._fd.escHtml;
     const opts = this._optList().map((x, i) => `<button type="button" role="radio" aria-checked="${x.v !== null && x.v === this._o.owner}" data-v="${x.v === null ? "" : e(x.v)}" data-auto="${x.v === null ? 1 : 0}" style="--c:${x.c}" ${this._busy ? "disabled" : ""}><span class="dot" style="--c:${x.c}" aria-hidden="true"></span>${e(x.l)}${i < 9 ? `<kbd aria-hidden="true">${i + 1}</kbd>` : ""}</button>`).join("");
-    const rem = this._o.merchant ? `<label class="rem"><input type="checkbox" id="rem" ${this._remember ? "checked" : ""}><span>${e(tr("ownchip.remember", { merchant: this._o.merchant }))}</span></label>` : "";
+    const rem = this._o.merchant ? `<div class="rem"><button type="button" class="sw" role="switch" id="rem" aria-checked="${!!this._remember}" aria-labelledby="remt"></button><span id="remt">${e(tr("ownchip.remember", { merchant: this._o.merchant }))}</span></div>` : "";
     return `<div class="scrim" id="scrim"></div><div class="pop" role="dialog" aria-label="${e(tr("ownchip.title"))}" id="pop">
 <button type="button" class="x" id="x" aria-label="${e(tr("ownchip.close"))}">×</button>
 <h5>${e(tr("ownchip.title"))}</h5><div class="opts" role="radiogroup" aria-label="${e(tr("ownchip.title"))}">${opts}</div>${rem}
@@ -182,16 +186,16 @@ ${this._msg ? `<div class="msg" role="alert">${e(this._msg)}</div>` : ""}</div>`
     sh.getElementById("scrim").addEventListener("click", (ev) => { ev.stopPropagation(); this._close(true); });
     sh.getElementById("x").addEventListener("click", () => this._close(true));
     const rem = sh.getElementById("rem");
-    if (rem) rem.addEventListener("change", () => { this._remember = rem.checked; });
+    if (rem) rem.addEventListener("click", () => { this._remember = !this._remember; rem.setAttribute("aria-checked", String(this._remember)); });
     const btns = [...sh.querySelectorAll(".opts button")];
     btns.forEach((b) => b.addEventListener("click", () => this._pick(b.dataset.auto === "1" ? null : b.dataset.v)));
     pop.addEventListener("keydown", (ev) => {
       ev.stopPropagation();
       if (ev.key === "Escape") { this._close(true); return; }
       const n = Number(ev.key);
-      if (n >= 1 && n <= btns.length && !ev.ctrlKey && !ev.metaKey && !ev.altKey && ev.target.type !== "checkbox") { ev.preventDefault(); btns[n - 1].click(); }
+      if (n >= 1 && n <= btns.length && !ev.ctrlKey && !ev.metaKey && !ev.altKey && ev.target.id !== "rem") { ev.preventDefault(); btns[n - 1].click(); }
       if (ev.key === "Tab") {
-        const f = [...pop.querySelectorAll("button:not([disabled]),input")];
+        const f = [...pop.querySelectorAll("button:not([disabled])")];
         const first = f[0], last = f[f.length - 1], act = sh.activeElement;
         if (ev.shiftKey && act === first) { ev.preventDefault(); last.focus(); }
         else if (!ev.shiftKey && act === last) { ev.preventDefault(); first.focus(); }

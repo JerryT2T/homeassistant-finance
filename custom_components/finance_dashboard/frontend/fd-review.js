@@ -57,6 +57,7 @@ const FB = {
     "review.prev": "Zurück",
     "review.bookings": "$n Buchungen",
     "review.bookings_one": "1 Buchung",
+    "review.no_booking": "ohne Buchung",
     "review.bookings_more": "Zeigt die neuesten $n Buchungen.",
     "review.confirm": "Bestätigen",
     "review.confirm_as": "Bestätigen: $what",
@@ -193,6 +194,7 @@ const FB = {
     "review.prev": "Back",
     "review.bookings": "$n bookings",
     "review.bookings_one": "1 booking",
+    "review.no_booking": "no booking",
     "review.bookings_more": "Showing the newest $n bookings.",
     "review.confirm": "Confirm",
     "review.confirm_as": "Confirm: $what",
@@ -632,7 +634,7 @@ class FdReview extends HTMLElement {
     if (g.suspended) metas.push(`<span class="pill">${e(tr("review.suspended"))}</span>`);
     if (conf != null) metas.push(`<span class="pill conf${g.auto || g.confirmed ? " hi" : ""}">${e(tr("review.conf", { pct: conf }))}</span>`);
     metas.push(`<span class="muted">${e(g.source === "ai" || g.reason === "ai" ? tr("review.reason.ai") : this._reason(g))}</span>`);
-    const bcount = g.count === 1 ? tr("review.bookings_one") : tr("review.bookings", { n: g.count || 0 });
+    const bcount = !g.count ? tr("review.no_booking") : g.count === 1 ? tr("review.bookings_one") : tr("review.bookings", { n: g.count });
     return `<li class="grp${g.confirmed ? " done" : ""}${this._hl.has(g.group_id) ? " hl" : ""}" data-g="${gid}">
       <button type="button" class="gh" data-toggle="${gid}" aria-expanded="${expanded}" aria-controls="bk-${gid}">
         <span class="nm">${e(g.label || g.key)} <span class="muted">· ${e(bcount)}</span></span>
@@ -909,7 +911,11 @@ class FdReview extends HTMLElement {
       g.confidence = (res && res.confidence) || 95;
       g.reason = "confirmed";
       g.source = "confirmed";
-      if (body.owner) g.owner = (res && res.owner) || body.owner;
+      if (body.owner) {
+        g.owner = (res && res.owner) || body.owner;
+        for (const b of g.bookings || []) { b.owner = g.owner; b.owner_source = "confirmed"; b.owner_confidence = g.confidence; }
+        if (this._open.has(gid)) this._open.delete(gid), this._open.add(gid);
+      }
       if (body.category) { g.category = body.category; g.suggested_category = body.category; }
       if (body.confirmed !== undefined) g.is_transfer = body.confirmed;
       if (body.suspended !== undefined) g.suspended = body.suspended;

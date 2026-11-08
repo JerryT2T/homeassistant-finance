@@ -868,7 +868,11 @@ _ONE_OFFS: dict[int, tuple[str, str, str, float, int]] = {
 
 
 def demo_plan() -> Any:
-    """A small invented household plan (two persons, five positions)."""
+    """A small invented household plan (two persons, seven positions).
+
+    The variable positions sit close to the invented monthly spending, so the
+    year bars read ok / knapp / over instead of all "over".
+    """
     from .budget_plan import BudgetPlan
 
     return BudgetPlan.from_dict(
@@ -881,7 +885,9 @@ def demo_plan() -> Any:
             "positions": [
                 {"id": "miete", "name": "Vermieter Schmidt", "owner": "shared", "amount": 1150.0, "category": "housing_cold"},
                 {"id": "strom", "name": "Stadtwerke", "owner": "shared", "amount": 118.0, "category": "housing_warm"},
-                {"id": "essen", "name": "Lebensmittel", "owner": "shared", "kind": "buffer", "buffer_units": 4.5, "buffer_unit_price": 60.0, "category": "groceries"},
+                {"id": "essen", "name": "Lebensmittel", "owner": "shared", "kind": "buffer", "buffer_units": 4.5, "buffer_unit_price": 62.0, "category": "groceries"},
+                {"id": "mobil", "name": "Tanken", "owner": "Max", "kind": "buffer", "buffer_units": 1.0, "buffer_unit_price": 60.0, "category": "mobility"},
+                {"id": "freizeit", "name": "Freizeit", "owner": "shared", "kind": "buffer", "buffer_units": 3.0, "buffer_unit_price": 50.0, "category": "leisure"},
                 {"id": "stream", "name": "Streamingdienst", "owner": "Anna", "amount": 9.99, "category": "media"},
                 {"id": "kfz", "name": "Autoversicherung", "owner": "Max", "amount": 64.5, "category": "insurance"},
             ],
@@ -965,7 +971,7 @@ def generate_demo_review() -> dict[str, Any]:
     return rv.build_review(
         raw=txs, txs=counted, accounts=accounts, plan=plan, clf=clf,
         persons=plan_persons(plan, accounts), series_list=[], state={}, today=now.date(),
-        ai_merchants={"baumarkt hornbach": "household"},
+        ai_merchants={"baumarkt hornbach": "housing_cold"},
     )
 
 
