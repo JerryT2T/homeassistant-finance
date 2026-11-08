@@ -93,7 +93,7 @@ class FdOwnerChip extends HTMLElement {
   }
 
   get ledgerId() { return this._o.ledgerId; } set ledgerId(v) { this._set("ledgerId", v || ""); }
-  get owner() { return this._o.owner; } set owner(v) { this._set("owner", v || ""); }
+  get owner() { return this._o.owner; } set owner(v) { this._set("owner", v === "__shared__" ? "shared" : v || ""); }
   get source() { return this._o.source; } set source(v) { this._set("source", v || ""); }
   get merchant() { return this._o.merchant; } set merchant(v) { this._set("merchant", v || ""); }
   get confidence() { return this._o.confidence; } set confidence(v) { this._set("confidence", v == null || v === "" ? null : Number(v)); }
