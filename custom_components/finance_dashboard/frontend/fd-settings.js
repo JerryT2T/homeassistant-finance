@@ -79,6 +79,13 @@ const FB = {
     "settings.owner_none": "Offen",
     "settings.owner_household_too": "Auch für den Haushalt genutzt",
     "settings.owner_household_hint": "Was nicht als Haushalt erkannt wird, zählt für die Person.",
+    "settings.cards.title": "Karten auf diesem Konto",
+    "settings.cards.hint": "Wird mit der Karte einer Person bezahlt, zählt die Buchung für sie – außer bei Haushaltskategorien wie Lebensmittel. Die Nummer wird nur lokal gelesen.",
+    "settings.cards.suffix": "Letzte 4 Ziffern",
+    "settings.cards.person": "Person",
+    "settings.cards.add": "Karte hinzufügen",
+    "settings.cards.remove": "Karte entfernen",
+    "settings.cards.err": "Kartenkennung: genau 4 Ziffern und eine Person angeben.",
     "settings.owner_rule": "Ein Konto gehört einer Person, einer Person und dem Haushalt, oder nur dem Haushalt.",
     "settings.hhcat.title": "Haushalt-Kategorien",
     "settings.hhcat.hint": "Auf Konten mit Person und Haushalt zählen diese Kategorien standardmäßig zum Haushalt.",
@@ -243,6 +250,13 @@ const FB = {
     "settings.owner_none": "Open",
     "settings.owner_household_too": "Also used for the household",
     "settings.owner_household_hint": "Whatever is not recognised as household counts for the person.",
+    "settings.cards.title": "Cards on this account",
+    "settings.cards.hint": "When a person's own card pays, the booking counts for them – except household categories such as groceries. The number is only read locally.",
+    "settings.cards.suffix": "Last 4 digits",
+    "settings.cards.person": "Person",
+    "settings.cards.add": "Add card",
+    "settings.cards.remove": "Remove card",
+    "settings.cards.err": "Card: enter exactly 4 digits and a person.",
     "settings.owner_rule": "An account belongs to one person, one person and the household, or the household only.",
     "settings.hhcat.title": "Household categories",
     "settings.hhcat.hint": "On accounts with a person and the household, these categories count as household by default.",
@@ -434,6 +448,14 @@ summary { min-height: var(--fd-touch); display: flex; align-items: center; color
 .hhrow { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 8px; padding-left: 4px; min-width: 0; }
 .hhrow .who { min-width: 0; display: flex; flex-direction: column; overflow-wrap: anywhere; }
 .hhrow .who span { color: var(--fd-t2); font-size: 12px; }
+.cards { margin-top: 10px; padding-left: 4px; display: flex; flex-direction: column; gap: 8px; align-items: flex-start; min-width: 0; }
+.cards .who { display: flex; flex-direction: column; overflow-wrap: anywhere; }
+.cards .who span { color: var(--fd-t2); font-size: 12px; }
+.cardrow { display: flex; gap: 8px; align-items: center; width: 100%; min-width: 0; }
+.cardrow input { flex: 0 0 96px; width: 96px; min-width: 0; }
+.cardrow select { flex: 1 1 0; min-width: 0; min-height: var(--fd-touch); padding: 0 8px; border: 1px solid var(--fd-line); border-radius: 10px; background: var(--fd-page); color: var(--fd-t1); font: inherit; }
+.cardrow .cardx { flex: none; min-width: var(--fd-touch); }
+.cardrow input:focus-visible, .cardrow select:focus-visible { outline: 2px solid var(--fd-a700); outline-offset: 2px; }
 .pills { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .pill { min-height: 40px; padding: 0 12px; border: 1px solid var(--fd-line); border-radius: var(--fd-r-pill); background: transparent; display: inline-flex; align-items: center; gap: 6px; max-width: 100%; }
 .pill[aria-pressed="true"] { background: var(--fd-a50); border-color: var(--fd-a500); color: var(--fd-a900); font-weight: 500; }
@@ -628,6 +650,7 @@ class FdSettings extends HTMLElement {
       })),
       owners: Object.fromEntries((d.accounts || []).map((a) => [a.key, a.owner || ""])),
       households: Object.fromEntries((d.accounts || []).map((a) => [a.key, !!a.household && !!a.owner && a.owner !== "shared"])),
+      cards: Object.fromEntries((d.accounts || []).map((a) => [a.key, Object.entries(a.card_owners || {}).map(([suffix, person]) => ({ suffix, person }))])),
     };
   }
 
@@ -811,9 +834,23 @@ class FdSettings extends HTMLElement {
       const hhOn = isPerson && !!this._draft.households[a.key];
       const hh = isPerson ? `<div class="hhrow"><div class="who"><b>${escHtml(tr("settings.owner_household_too"))}</b>${hhOn ? `<span>${escHtml(tr("settings.owner_household_hint"))}</span>` : ""}</div><span class="hit"><button type="button" class="sw" role="switch" aria-checked="${hhOn}" data-hh="${escHtml(a.key)}" aria-label="${escHtml(tr("settings.owner_household_too") + ": " + a.name)}"></button></span></div>` : "";
       return `<div class="acc"><div class="nm"><b>${escHtml(a.name)}</b><span>${escHtml(meta)}${a.iban_last4 ? ` · ••${escHtml(a.iban_last4)}` : ""}</span></div>
-  <div class="seg" role="radiogroup" aria-label="${escHtml(a.name)}">${opts.join("")}</div>${hh}</div>`;
+  <div class="seg" role="radiogroup" aria-label="${escHtml(a.name)}">${opts.join("")}</div>${hh}${cur === "shared" ? this._cardsHtml(a) : ""}</div>`;
     }).join("");
     return `${head}<p class="muted">${escHtml(tr("settings.owner_rule"))}</p>${note}${rows}${this._bar("assign")}${this._hhcatHtml()}`;
+  }
+
+  /** Card-suffix -> person mapping of a household-only account (read locally, never sent anywhere). */
+  _cardsHtml(a) {
+    const { escHtml } = window._fd;
+    const rows = (this._draft.cards[a.key] || []).map((c, i) => {
+      const opts = ['<option value=""></option>'].concat(this._draft.persons.filter((p) => p.name).map((p) =>
+        `<option value="${escHtml(p.name)}"${p.name === c.person ? " selected" : ""}>${escHtml(this._dn(p))}</option>`)).join("");
+      return `<div class="cardrow"><input type="text" inputmode="numeric" maxlength="4" pattern="[0-9]{4}" autocomplete="off" value="${escHtml(c.suffix)}" data-cs="${escHtml(a.key)}:${i}" aria-label="${escHtml(tr("settings.cards.suffix"))}" placeholder="1234">
+<select data-cp="${escHtml(a.key)}:${i}" aria-label="${escHtml(tr("settings.cards.person"))}">${opts}</select>
+<button type="button" class="btn ghost sm cardx" data-cx="${escHtml(a.key)}:${i}" aria-label="${escHtml(tr("settings.cards.remove"))}">×</button></div>`;
+    }).join("");
+    return `<div class="cards"><div class="who"><b>${escHtml(tr("settings.cards.title"))}</b><span>${escHtml(tr("settings.cards.hint"))}</span></div>${rows}
+<button type="button" class="btn ghost sm" data-ca="${escHtml(a.key)}">${escHtml(tr("settings.cards.add"))}</button></div>`;
   }
 
   /** Editor for the categories that count as household on person + household accounts. */
@@ -1119,6 +1156,15 @@ class FdSettings extends HTMLElement {
       } else if (d.rm !== undefined) {
         this._removePerson(this._draft.persons[Number(d.rm)]);
         this._renderSec("persons"); this._renderSec("accounts");
+      } else if (d.ca) {
+        (this._draft.cards[d.ca] ||= []).push({ suffix: "", person: "" });
+        this._renderSec("accounts");
+        const ins = sh.querySelectorAll(`[data-cs^="${CSS.escape(d.ca)}:"]`);
+        ins[ins.length - 1]?.focus();
+      } else if (d.cx) {
+        const j = d.cx.lastIndexOf(":");
+        this._draft.cards[d.cx.slice(0, j)]?.splice(Number(d.cx.slice(j + 1)), 1);
+        this._renderSec("accounts");
       } else if (d.hh) {
         this._draft.households[d.hh] = !this._draft.households[d.hh];
         this._renderSec("accounts");
@@ -1197,6 +1243,9 @@ class FdSettings extends HTMLElement {
         }
         return;
       }
+      const cardAt = (v) => { const j = v.lastIndexOf(":"); return this._draft.cards[v.slice(0, j)]?.[Number(v.slice(j + 1))]; };
+      if (d.cs !== undefined) { const c = cardAt(d.cs); if (c) { c.suffix = el.value.replace(/\D/g, "").slice(0, 4); if (el.value !== c.suffix) el.value = c.suffix; } return; }
+      if (d.cp !== undefined) { const c = cardAt(d.cp); if (c) c.person = el.value; return; }
       let person = null;
       if (d.name) person = this._personOf(d.name);
       else if (d.free !== undefined) person = this._draft.persons[Number(d.free)];
@@ -1206,6 +1255,7 @@ class FdSettings extends HTMLElement {
       const old = person.name;
       person.name = el.value;
       for (const k of Object.keys(this._draft.owners)) if (this._draft.owners[k] === old) this._draft.owners[k] = el.value;
+      for (const rows of Object.values(this._draft.cards)) for (const c of rows) if (c.person === old) c.person = el.value;
       this._renderSec("accounts");
     });
   }
@@ -1363,14 +1413,27 @@ class FdSettings extends HTMLElement {
     const names = this._draft.persons.map((p) => p.name.trim());
     if (names.some((n) => !n)) return this._fail(tr("settings.err_name")), false;
     if (new Set(names.map((n) => n.toLowerCase())).size !== names.length) return this._fail(tr("settings.err_dup")), false;
+    let cardErr = false;
+    const cardMap = (a) => {
+      const out = {};
+      if (this._draft.owners[a.key] !== "shared") return out;
+      for (const c of this._draft.cards[a.key] || []) {
+        if (!c.suffix && !c.person) continue;
+        if (!/^\d{4}$/.test(c.suffix) || !c.person.trim()) { cardErr = true; continue; }
+        out[c.suffix] = c.person.trim();
+      }
+      return out;
+    };
     const body = {
       persons: this._draft.persons.map((p) => ({ name: p.name.trim(), display_name: (p.display_name || "").trim(), ha_users: p.ha_users })),
       accounts: (this._data.accounts || []).map((a) => ({
         key: a.key,
         owner: (this._draft.owners[a.key] || "").trim(),
         household: !!this._draft.households[a.key] && !!this._draft.owners[a.key] && this._draft.owners[a.key] !== "shared",
+        card_owners: cardMap(a),
       })),
     };
+    if (cardErr) return this._fail(tr("settings.cards.err"), "accounts"), false;
     this._saving = true;
     const btns = this.shadowRoot.querySelectorAll("[data-save=assign]");
     btns.forEach((b) => { b.disabled = true; b.textContent = tr("settings.saving"); });
@@ -1378,7 +1441,7 @@ class FdSettings extends HTMLElement {
       const resp = await this._hass.callApi("PUT", `${DOMAIN}/assignments`, body);
       this._error = "";
       this._saving = false;
-      const changed = (this._data.accounts || []).some((a) => (a.owner || "") !== (this._draft.owners[a.key] || "") || !!a.household !== !!this._draft.households[a.key]);
+      const changed = (this._data.accounts || []).some((a) => (a.owner || "") !== (this._draft.owners[a.key] || "") || !!a.household !== !!this._draft.households[a.key] || JSON.stringify(a.card_owners || {}) !== JSON.stringify(cardMap(a)));
       this.data = resp;
       this._toast(tr("settings.saved"), "success");
       if (changed) this._toast(tr("settings.recalculated"), "success");

@@ -69,7 +69,6 @@ class FdBudgetPlan extends HTMLElement {
     this._hass = null;
     this._plan = null;
     this._transfer = null;
-    this._benchmark = null;
     this._error = null;
     this._loading = false;
     this._loaded = false;
@@ -133,18 +132,14 @@ class FdBudgetPlan extends HTMLElement {
 
     try {
       // Fetched in parallel — none depends on another.
-      const [plan, transfer, benchmark] = await Promise.all([
+      const [plan, transfer] = await Promise.all([
         this._hass.callApi("GET", `finance_dashboard/budget_plan${suffix}`),
         this._hass
           .callApi("GET", `finance_dashboard/transfer_plan${suffix}`)
           .catch(() => null),
-        this._hass
-          .callApi("GET", `finance_dashboard/benchmark${suffix}`)
-          .catch(() => null),
       ]);
       this._plan = plan;
       this._transfer = transfer;
-      this._benchmark = benchmark;
       this._loaded = true;
     } catch (err) {
       this._error = (err && err.message) || T("hh.plan.load_error", "Haushaltsplan konnte nicht geladen werden", "Could not load the household plan");
@@ -316,9 +311,6 @@ tbody tr + tr td { border-top: 1px solid var(--fd-line); }
 .pocket .brk { margin-top: 4px; font-size: 11px; color: var(--fd-t2); line-height: 1.5; }
 .empty { padding: 4px 0; color: var(--fd-t2); line-height: 1.6; }
 .empty code { display: block; margin-top: 10px; padding: 10px 12px; border-radius: 8px; background: var(--fd-sunk); font-size: 12px; white-space: pre-wrap; word-break: break-word; color: var(--fd-t1); }
-.bm-row { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 7px 0; }
-.bm-row + .bm-row { border-top: 1px solid var(--fd-line); }
-.bm-src { font-size: 10.5px; color: var(--fd-t2); }
 @container bp (min-width: 640px) {
   .tiles { grid-template-columns: repeat(2, 1fr); }
   .cat.extra { display: block; }
@@ -365,13 +357,12 @@ tbody tr + tr td { border-top: 1px solid var(--fd-line); }
 ${this._renderCategories(m, escHtml)}</div>
 ${this._renderSharedList(plan, escHtml)}
 <div class="mob dnote"><span class="dtag">${T("hh.desktop", "Nur am Desktop", "Desktop only")}</span>
-  ${T("hh.mobile_note", "Einkommen, Positionen je Person, Umbuchungen und Vergleich findest du am Desktop.", "Income, positions per person, transfers and benchmark are on desktop.")}</div>
+  ${T("hh.mobile_note", "Einkommen, Positionen je Person und Umbuchungen findest du am Desktop.", "Income, positions per person and transfers are on desktop.")}</div>
 <div class="dsk">
 ${this._renderPockets(plan, escHtml)}
 ${this._renderIncome(plan, escHtml)}
 ${this._renderLedger(plan, escHtml)}
 ${this._renderTransfer(escHtml)}
-${this._renderBenchmark(escHtml)}
 </div>`);
   }
 
@@ -588,20 +579,6 @@ ${this._renderBenchmark(escHtml)}
     return `<div class="card dcard"><div class="h"><span>${T("hh.transfer.title", "Monatliche Umbuchungen", "Monthly transfers")} <span class="dtag">${T("hh.desktop", "Nur am Desktop", "Desktop only")}</span></span>${badge}</div>
 <div class="scroll"><table><thead><tr><th>${T("hh.transfer.step", "Schritt", "Step")}</th>${head}</tr></thead><tbody>${rows}</tbody></table></div>
 ${unplacedNote}${settle ? `<div class="empty">${settle}</div>` : ""}</div>`;
-  }
-
-  _renderBenchmark(escHtml) {
-    const bm = this._benchmark;
-    const items = (bm && bm.comparisons) || [];
-    if (!items.length) return "";
-    const rows = items.map((c) => {
-      const d = c.unit === "%" ? 1 : 2;
-      const s = c.better ? "ok" : "near";
-      return `<div class="bm-row"><div>${escHtml(c.label)}<div class="bm-src">${escHtml(c.source || "")}${c.survey_year ? ` · ${c.survey_year}` : ""}</div></div>
-<div class="st-${s}"><span class="chip">${(c.user_value || 0).toFixed(d)}${c.unit === "%" ? " %" : ` ${escHtml(c.unit || "")}`}</span>
-<span class="muted"> Ø ${(c.benchmark_value || 0).toFixed(d)}</span></div></div>`;
-    }).join("");
-    return `<div class="card dcard"><div class="h"><span>${T("hh.bm.title", "Vergleich Deutschland", "Comparison Germany")} <span class="dtag">${T("hh.desktop", "Nur am Desktop", "Desktop only")}</span></span></div>${rows}</div>`;
   }
 }
 
