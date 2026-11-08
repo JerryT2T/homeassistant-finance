@@ -25,6 +25,7 @@ from ..const import (
     LEGACY_BANK_ID,
     SUBENTRY_TYPE_BANK,
 )
+from ..ownership import card_person
 from ..tx_dates import effective_date_str
 
 _LOGGER = logging.getLogger(__name__)
@@ -360,6 +361,9 @@ class BankMixin:
                 tx["_account_type"] = account.get("type", "personal")
                 tx["_account_person"] = account.get("person", "")
                 tx["_account_household_use"] = bool(account.get("household_use"))
+                tx["_card_person"] = (
+                    card_person(tx, account.get("card_owners")) if tx["_account_type"] == "shared" else ""
+                )
                 tx["_account_ha_users"] = account.get("ha_users", [])
                 tx["category"] = categorizer.categorize(tx) if categorizer else "other"
                 # a booking answer without an owner must not hide the merchant's owner

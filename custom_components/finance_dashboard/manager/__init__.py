@@ -67,7 +67,7 @@ from ..household_summary import (
     window_of_month,
 )
 from ..labels import apply_contract_categories, contract_categories
-from ..ownership import account_kind, apply_owner_set, owner_set_label
+from ..ownership import account_kind, apply_owner_set, clean_card_owners, owner_set_label
 from ..plan_match import assign_positions
 from ..tx_dates import effective_date_str, effective_day
 from ..transfer_detector import (
@@ -460,6 +460,8 @@ class FinanceDashboardManager(
                 acc_data["person"] = account.get("person", "")
                 acc_data["household_use"] = bool(account.get("household_use"))
                 acc_data["ha_users"] = account.get("ha_users", [])
+                if account.get("card_owners"):
+                    acc_data["card_owners"] = dict(account["card_owners"])
                 acc_data["custom_name"] = account.get("custom_name", "")
                 acc_data["savings"] = bool(account.get("savings"))
                 acc_data["institution"] = account.get("institution", "")
@@ -910,6 +912,7 @@ class FinanceDashboardManager(
                     "owner": owner_set["owner"],
                     "household": owner_set["household"],
                     "owner_kind": account_kind(acc),
+                    "card_owners": dict(acc.get("card_owners") or {}),
                 }
             )
         return {
@@ -978,6 +981,7 @@ class FinanceDashboardManager(
         base = self._entry.data.get("accounts", []) or []
         keys = {account_key(a) for a in base}
         owners: dict[str, tuple[str, bool]] = {}
+        cards: dict[str, dict[str, str]] = {}
         for item in raw_accounts:
             if not isinstance(item, dict):
                 raise AssignmentError("invalid_account", "Account must be an object")
@@ -996,6 +1000,11 @@ class FinanceDashboardManager(
                     "Allowed: one person, one person + household, or household only",
                 )
             owners[key] = (owner, household)
+            if "card_owners" in item:
+                try:
+                    cards[key] = clean_card_owners(item["card_owners"], set(by_name))
+                except ValueError as err:
+                    raise AssignmentError(str(err), "card_owners: {last 4 digits: person}") from err
 
         new_accounts = []
         changed = False
@@ -1009,6 +1018,14 @@ class FinanceDashboardManager(
                 if owner and owner != "shared":
                     acc["ha_users"] = list(by_name[owner]["ha_users"])
                 changed = changed or before != (account_kind(acc), acc.get("person") or "")
+            if key in cards or "card_owners" in acc:
+                # only a household-only account carries a card mapping
+                new_cards = cards.get(key, acc.get("card_owners") or {}) if account_kind(acc) == "household" else {}
+                changed = changed or new_cards != (acc.get("card_owners") or {})
+                if new_cards:
+                    acc["card_owners"] = new_cards
+                else:
+                    acc.pop("card_owners", None)
             new_accounts.append(acc)
 
         self._hass.config_entries.async_update_entry(

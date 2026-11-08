@@ -23,6 +23,7 @@ Pure functions; no I/O.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from .const import (
@@ -47,12 +48,14 @@ SOURCE_SERIES = "series"
 SOURCE_CATEGORY = "category"
 SOURCE_AI = "ai"
 SOURCE_ACCOUNT = "account"
+SOURCE_CARD = "card"
 
 CONFIDENCE = {
     SOURCE_CORRECTION: 100,
     SOURCE_MERCHANT_RULE: 95,
     SOURCE_PLAN: 90,
     SOURCE_SERIES: 85,
+    SOURCE_CARD: 80,
     SOURCE_CATEGORY: 70,
     SOURCE_AI: 60,
 }
@@ -64,6 +67,56 @@ SCOPE_MERCHANT = "merchant"
 
 # Sensible defaults: what a household buys together. Configurable (MerchantMemory).
 DEFAULT_HOUSEHOLD_CATEGORIES = (CATEGORY_HOUSING_COLD, CATEGORY_HOUSING_WARM, CATEGORY_GROCERIES)
+
+
+_CARD_CONTEXT = re.compile(
+    r"(?:[*•·]+|x{2,}|karte(?:n(?:nr|nummer)?)?\.?|card(?:\s*(?:no|number))?\.?|pan)\s*[:#]?\s*(?:[*xX•·.\s-]*)(\d{4})(?!\d)",
+    re.IGNORECASE,
+)
+
+
+def card_suffixes(tx: dict[str, Any]) -> list[str]:
+    """Card suffixes (last 4 digits) a booking carries. Local parsing only.
+
+    Reads the card fields and the remittance text; a bare 4-digit number
+    (a year, an amount) never counts, it needs a card marker (``*``, ``xxxx``,
+    ``Karte``, ``Card``) in front.
+    """
+    out: list[str] = []
+    for key in ("cardNumber", "maskedPan", "card_number"):
+        digits = re.sub(r"\D", "", str(tx.get(key) or ""))
+        if len(digits) >= 4:
+            out.append(digits[-4:])
+    texts = [str(tx.get("remittanceInformationUnstructured") or "")]
+    texts += [str(a) for a in tx.get("remittanceInformationUnstructuredArray") or []]
+    for text in texts:
+        out += _CARD_CONTEXT.findall(text)
+    return out
+
+
+def clean_card_owners(raw: Any, persons: set[str]) -> dict[str, str]:
+    """Validate a ``{suffix: person}`` mapping. Raises ``ValueError``."""
+    if not isinstance(raw, dict):
+        raise ValueError("invalid_card_owners")
+    out: dict[str, str] = {}
+    for suffix, person in raw.items():
+        suffix = str(suffix).strip()
+        if not (len(suffix) == 4 and suffix.isascii() and suffix.isdigit()):
+            raise ValueError("invalid_card_suffix")
+        if str(person) not in persons:
+            raise ValueError("unknown_card_person")
+        out[suffix] = str(person)
+    return out
+
+
+def card_person(tx: dict[str, Any], card_owners: dict[str, str] | None) -> str:
+    """Person whose mapped card suffix the booking carries, else ``""``."""
+    if not card_owners:
+        return ""
+    for suffix in card_suffixes(tx):
+        if suffix in card_owners:
+            return card_owners[suffix]
+    return ""
 
 
 def account_kind(account: dict[str, Any]) -> str:
@@ -147,6 +200,14 @@ def resolve_owner_detail(  # noqa: PLR0911
     kind = tx_kind(tx)
     person = str(tx.get("_account_person") or "")
     if kind == KIND_HOUSEHOLD:
+        # a household account used with a person's own card: that person pays
+        # personally -- unless a series owner speaks or it is a household category
+        card = str(tx.get("_card_person") or "")
+        if card and not tx.get("_series_owner"):
+            cats = tx.get("_household_categories")
+            cats = DEFAULT_HOUSEHOLD_CATEGORIES if cats is None else cats
+            if tx.get("category") not in cats:
+                return card, SOURCE_CARD, CONFIDENCE[SOURCE_CARD]
         return OWNER_SHARED, SOURCE_ACCOUNT, 100
     if kind == KIND_PERSON:
         return person, SOURCE_ACCOUNT, 100
