@@ -223,3 +223,70 @@ def test_report_views_privacy_and_diff(world):
 def test_demo_review_and_report_run():
     assert demo.generate_demo_review()["steps"]
     assert demo.generate_demo_report()["diff"] is not None
+
+
+# --- manager: confirm / complete / composite ledger id ----------------------
+
+
+def _review_manager():
+    import asyncio
+    from unittest.mock import MagicMock
+
+    from custom_components.finance_dashboard.manager._ownership import OwnershipMixin
+    from custom_components.finance_dashboard.manager._review import ReviewMixin
+    from custom_components.finance_dashboard.merchants import MerchantMemory
+
+    async def noop():
+        return None
+
+    class Mgr(ReviewMixin, OwnershipMixin):
+        def __init__(self):
+            self._memory = MerchantMemory(store=MagicMock())
+            self._memory.async_save = noop
+            self._demo_mode = False
+            self._hass = MagicMock()
+            self.persons = [{"name": "Anna"}]
+            self._accounts = [{"person": "Anna", "id": "a", "key": "k"}]
+            self._transactions = [
+                {"_ledger_id": "L1", "_account_key": "k", "creditorName": "REWE", "category": "groceries",
+                 "bookingDate": "2026-05-02", "transactionAmount": {"amount": "-20", "currency": "EUR"}, "_status": "booked"},
+            ]
+            self.derived = 0
+
+        def _valid_owners(self):
+            return {"Anna", "shared"}
+
+        async def async_apply_owner_change(self):
+            self.derived += 1
+
+        async def _contracts_list(self):
+            return []
+
+        def _classifier(self):
+            from custom_components.finance_dashboard.household_summary import Classifier
+
+            return Classifier(None, [], None, [])
+
+        budget_plan = None
+
+    return Mgr(), asyncio
+
+
+def test_confirm_writes_rule_marks_done_and_validates(monkeypatch):
+    from custom_components.finance_dashboard.manager import _review
+    from custom_components.finance_dashboard.manager._questions import QuestionError
+
+    monkeypatch.setattr(_review, "_refund_allocations_of", lambda _m: {})
+    mgr, aio = _review_manager()
+    out = aio.run(mgr.async_review_confirm(group_id="merchant:rewe", kind="merchant", owner="shared"))
+    assert out["confidence"] == 95
+    mem = mgr._memory  # noqa: SLF001
+    assert mem.known_merchants()["rewe"]["owner"] == "shared"
+    assert "merchant:rewe" in mem.review_state()["confirmed"] and mgr.derived == 1
+    with pytest.raises(QuestionError):
+        aio.run(mgr.async_review_confirm(group_id="series:x", kind="merchant", owner="shared"))
+    with pytest.raises(QuestionError):
+        aio.run(mgr.async_review_confirm(group_id="merchant:rewe", kind="merchant", owner="Bob"))
+    # the list's composite "<account_key>|<id>" works for the owner correction too
+    res = aio.run(mgr.async_correct_owner(ledger_id="k|L1", owner="Anna", reach="booking"))
+    assert res["ledger_id"] == "L1"

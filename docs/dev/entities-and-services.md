@@ -115,6 +115,44 @@ bank call; errors are 400 `{error, detail}`):
   `{asked, categorized, tendencies, skipped_budget, reason}` (`reason` `no_consent` |
   `provider_unusable` | `unavailable` | null). An AI category never replaces a user rule.
 
+Year view and benchmark (cache only, `year_view.py`, `benchmark.py`):
+- `GET /home?horizon=year` (both views) -> `year`: `cycles[12]` `{month, year, start, end, current, future,
+  before_history, spent, income, budget (that month's plan, null without a plan), status, spent_shared}`
+  (a cycle belongs to the month of its 15th); `balance` `{income, expenses, saved, savings_rate, fixed,
+  variable, through, cycles_counted}` year to date; `categories` top 8 `{category, amount, share,
+  delta_prev?}` (`delta_prev` only with a complete prior year; `categories_scope` `own` | `shared`);
+  `fixed_year` `{yearly, monthly, count, link: "contracts", items}`; `split` `{shared, persons: {name: total},
+  open?, own?: {person, total, shared_share}}` (other persons as totals only); `outliers` `{count, total,
+  items}` (items admin only, each with `ledger_id`, `owner`, `owner_source`, `owner_confidence`);
+  `vs_last_year` `{through, spent, spent_last_year, delta, delta_pct, income(_last_year), saved(_last_year)}`
+  **only present** when every counted account has bookings from before the prior-year window opens;
+  `benchmark_teaser` (admin, top 3 deviations), `reviewed_at`, `review_hint` `{open_groups, open_amount}`
+  (admin, only when new unreviewed groups sum to >= 100 EUR or > 2 % of the year's expenses).
+  Household cycle/year payloads also carry `settlement` `{start, end, balances: {person: {owes_household,
+  household_owes, net}}}` (net > 0: the person owes the household).
+- `GET /benchmark` (admin): `comparisons` ordered by relative deviation, each with the dataset labels
+  (`statistic`, `source`, `survey_year`, `level`) plus `basis` (`actual` | `plan`), `user_value`, `actual_value`,
+  `plan_value`, `deviation_pct`, `position` (0..1, 0.5 typical), `band` (`below` | `typical` | `above`, +-10 %),
+  `extrapolated`, `months_covered`; top-level `basis` `{year, months_covered, extrapolated, has_actual}`, `teaser`.
+
+Reconciliation review (`review.py`, `api/review.py`, admin only, cache only; `?demo=1` answers from the demo
+household and stores nothing):
+- `GET /review[?since=last]` -> `{steps: [acc, links, fixed, owner, cat, check], start_step, window, reviewed_at,
+  threshold}`; a step is `{id, open_count, auto_count, new_count, open_amount, group_ids, groups}`; a group is
+  `{group_id "<kind>:<key>", kind series|merchant|category|account|chain|position|link, label, amount, count,
+  owner, source, confidence, reason, auto (confidence >= 85), confirmed, category, bookings[<=20 with ledger_id,
+  owner, owner_source, owner_confidence]}`. `check` carries `criteria` `accounts, open_ownership (>50 EUR),
+  transfers, reconcile (difference to the cent + group ids), plan (shortfalls)` and `ok`.
+- `POST /review/start` stores the before-snapshot (idempotent); `POST /review/confirm` `{group_id, kind, owner?,
+  category?, confirmed? (chain), suspended? (position)}` writes the rule (merchant rule / series decision /
+  booking owners) and marks the group done at 95; `POST /review/ai` `{group_ids}` runs the AI review pass for
+  those groups' merchants (consent + monthly budget; `reason` when refused) and returns `{..., groups}`;
+  `POST /review/complete` stores `reviewed_at` and the seen groups.
+- `GET /review/report` -> `{hh_year, hh_cycle (plan vs actual per position), p_year, p_cycle (full detail for the
+  viewer, totals for others), settle {cycle, year}, diff (before/after/delta), reviewed_at}`.
+- `GET /transactions` (admin) rows carry `ledger_id` (`"<account_key>|<id>"`, accepted by `/ownership/correct`),
+  `owner` (`"shared"` | person | `""`), `owner_source`, `owner_confidence`.
+
 ## AI consent and spreadsheet ideas
 
 AI consent is per purpose (`ai_consent.py`, own store `finance_dashboard.ai_consent`; first load

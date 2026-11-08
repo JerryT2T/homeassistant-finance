@@ -54,6 +54,17 @@ Settlement (`household_settle.settlement_balances`): from the counted, netted bo
 paid from a `{H}` account is owed to the household by that person; household spend paid from a `{P}` or
 `{P,H}` account is owed by the household to the payer. `net` > 0: the person owes the household.
 
+## Year, review and settlement
+
+The year view (`year_view.py`) and the review (`review.py`) add no counting of their own: every figure is
+`household_summary.figures` inside a cycle from `window_of_month` (the cycle holding the 15th of a month, one
+cycle per month), owners from `Classifier.classify_detail`. A cycle before the first booking is
+`before_history`, one after today `future`; the prior-year comparison needs every counted account to reach back
+to the prior-year window start, else the whole `vs_last_year` block and every `delta_prev` are omitted. In the
+household view only the shared bucket carries categories and outliers; persons appear as totals. A plan
+position may be marked `suspended` (paused on purpose): the review's plan check then does not expect a booking.
+`settlement_balances` is shown per household cycle and in the review report.
+
 ## Income cycle (`cycle.py`, used by every view)
 
 No view uses the calendar month; home, household summary, monthly summary (and with it the sensors
