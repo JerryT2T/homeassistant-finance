@@ -52,9 +52,36 @@ def api(method: str, path: str, query: dict[str, list[str]]):
         return demo.generate_demo_report()
     if path == "benchmark" and method == "GET":
         return demo.generate_demo_benchmark()
+    if path == "assignments" and method == "GET":
+        return _demo_assignments()
     if method != "GET":
         return {"ok": True}
     return {}
+
+
+def _demo_assignments() -> dict:
+    """Settings → Konten: two invented persons and three invented accounts, one per owner set."""
+    persons = [
+        {"name": "Anna", "display_name": "Anna", "ha_users": ["u-anna"]},
+        {"name": "Ben", "display_name": "Ben", "ha_users": ["u-ben"]},
+    ]
+    users = [
+        {"id": f"u-{p['name'].lower()}", "name": p["name"], "is_admin": p["name"] == "Anna",
+         "suggested": True, "reason": "person"}
+        for p in persons
+    ]
+    accounts = [
+        {"key": "demo-giro-anna", "name": "Girokonto Anna", "institution": "Demo Bank",
+         "iban_last4": "0001", "owner": "Anna", "household": True, "owner_kind": "person_household",
+         "card_owners": {}},
+        {"key": "demo-giro-ben", "name": "Girokonto Ben", "institution": "Demo Bank",
+         "iban_last4": "0002", "owner": "Ben", "household": False, "owner_kind": "person",
+         "card_owners": {}},
+        {"key": "demo-joint", "name": "Gemeinschaftskonto", "institution": "Demo Bank",
+         "iban_last4": "0003", "owner": "shared", "household": False, "owner_kind": "household",
+         "card_owners": {"1111": "Anna", "2222": "Ben"}},
+    ]
+    return {"persons": persons, "ha_users": users, "accounts": accounts, "plan_persons": ["Anna", "Ben"]}
 
 
 class Handler(BaseHTTPRequestHandler):

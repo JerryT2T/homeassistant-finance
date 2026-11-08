@@ -1159,7 +1159,7 @@ class FdSettings extends HTMLElement {
       } else if (d.ca) {
         (this._draft.cards[d.ca] ||= []).push({ suffix: "", person: "" });
         this._renderSec("accounts");
-        const ins = sh.querySelectorAll(`[data-cs^="${CSS.escape(d.ca)}:"]`);
+        const ins = sh.querySelectorAll(`[data-cs^="${window.CSS.escape(d.ca)}:"]`);
         ins[ins.length - 1]?.focus();
       } else if (d.cx) {
         const j = d.cx.lastIndexOf(":");
