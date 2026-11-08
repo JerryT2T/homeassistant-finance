@@ -21,6 +21,39 @@ applying it again would flatten exactly the individual-cost differences the mode
 Additional: remainder split ("no split" or "equal distribution"); optional category-level override
 of the split (not implemented yet).
 
+## Account owner sets and who owns an expense (`ownership.py`)
+
+An account has exactly one owner set: `{person}`, `{person, household}`, `{household}` or none yet
+("open"). No other combination exists (two persons on one account is not allowed), so "not household"
+always means the one person. Stored backward-compatibly: `type` (`personal`/`shared`), `person` and the
+boolean `household_use` (only with a person; old configs lack it = `False`, same meaning as before).
+`ownership.account_kind` reads it, `apply_owner_set` writes it and rejects other combinations. Changing
+an owner set re-derives the stored bookings (`async_apply_owner_change`, ledger replay, no bank call);
+corrections and rules live in the merchant memory and stay.
+
+One resolver, `ownership.resolve_owner_detail(tx, position, correction) -> (owner, source, confidence)`;
+`plan_match.resolve_owner` returns its first element and `Classifier.classify_detail` adds it to the
+classification, so `figures` and `home.py` can never disagree. The chain:
+
+| source | confidence | applies on |
+|---|---|---|
+| `correction` (this booking) | 100 | every account |
+| `merchant_rule` ("für alle von X merken") | 95 | every account |
+| `plan` (matched plan position's owner) | 90 | every account |
+| `series` (a recurring series decided once) | 85 | `{P,H}` only |
+| `category` (household categories; default housing_cold, housing_warm, groceries; configurable) | 70 | `{P,H}` only |
+| `ai` (shared/personal tendency of the merchant) | 60 | `{P,H}` only |
+| `account` default | 100 on `{P}`/`{H}`, 50 = the person on `{P,H}`, 0 = open | - |
+
+A confidence of 85 or more counts as done without asking. The derive step stamps the inputs on each
+booking (`_account_household_use`, `_owner_override` + `_owner_scope` booking|merchant,
+`_series_owner`, `_ai_tendency`, `_household_categories`); the plan position is matched at read time.
+The old card-suffix signal is not built: with at most one person per account it has nothing to decide.
+
+Settlement (`household_settle.settlement_balances`): from the counted, netted bookings, personal spend
+paid from a `{H}` account is owed to the household by that person; household spend paid from a `{P}` or
+`{P,H}` account is owed by the household to the payer. `net` > 0: the person owes the household.
+
 ## Income cycle (`cycle.py`, used by every view)
 
 No view uses the calendar month; home, household summary, monthly summary (and with it the sensors

@@ -60,10 +60,13 @@ Home screen (`api/home.py`, `home.py`, `pots.py`, `cycle.py`):
 - `GET|PUT /assignments` (`api/assignments.py`, admin only, 403 `admin_required`) - the "Personen & Konten"
   settings. GET returns `persons` (name + `ha_users`), `ha_users` (id, name, is_admin, `suggested`,
   `reason` person|active_user|system|inactive), `accounts` (`key`, name, institution, `iban_last4`,
-  `owner` person|shared|"") and `plan_persons`. PUT takes `{persons, accounts:[{key, owner}]}`,
+  `owner` person|shared|"", `household` bool, `owner_kind` open|person|person_household|household)
+  and `plan_persons`. PUT takes `{persons, accounts:[{key, owner, household?}]}` (`household: true` only
+  with a person; `shared`/"" + household, or a non-boolean, is 400 `invalid_owner_set`/`invalid_household`),
   validates (unique names <= 40 chars, existing HA users, one person per user, owner shared or a
   person, known account keys; else 400 `{error, detail}`), stores `persons` in the config entry and
-  writes `type`/`person`/`ha_users` onto the accounts (user-owned fields, kept on bank re-link).
+  writes `type`/`person`/`household_use`/`ha_users` onto the accounts (user-owned fields, kept on bank
+  re-link) and, when an owner set changed, re-derives the stored bookings from the ledger (no bank call).
   `/home` carries `setup {persons, user_mapped, accounts_total, accounts_assigned, pots}`.
 - Demo mode (`manager.demo_mode`, or `demo=1`) serves the same payload from invented data
   (`demo.generate_demo_home`).
@@ -97,11 +100,28 @@ counterparty as an own account; it applies retroactively on every derive.
 in front of the merchant cards (shared weekly quota); `POST /questions/answer` takes
 `{id, type: "contract"|"price", answer}` besides the merchant answer.
 
+Ownership (`api/ownership.py`, all admin only, 403 `admin_required`; cache and merchant memory, never a
+bank call; errors are 400 `{error, detail}`):
+- `POST /ownership/correct` `{ledger_id, owner, reach}` - `owner` a person name, `"shared"` or `null`
+  (undo); `reach` `"booking"` (this booking) or `"merchant"` (every booking of its merchant, "für alle
+  von X merken"). Works for a booking of any category. Answers `{ledger_id, reach, owner, merchant}`.
+  Errors `invalid_id`, `invalid_reach`, `invalid_owner`, `unknown_booking`, `no_merchant`.
+- `POST /ownership/series` `{series_id, owner, ledger_ids?}` - decides a recurring series once
+  (`ledger_ids` as `"<account_key>|<ledger_id>"`); `owner: null` forgets it.
+- `GET|PUT /ownership/household-categories` - `{categories, defaults, available}`; PUT `{categories}`
+  (`null` = defaults) sets the categories treated as household on a `{P,H}` account.
+- `POST /ownership/ai-review` `{merchants: [merchant keys]}` - category + shared/personal tendency for
+  those merchants in the monthly AI budget and only with the categorisation consent; answers
+  `{asked, categorized, tendencies, skipped_budget, reason}` (`reason` `no_consent` |
+  `provider_unusable` | `unavailable` | null). An AI category never replaces a user rule.
+
 ## AI consent and spreadsheet ideas
 
 AI consent is per purpose (`ai_consent.py`, own store `finance_dashboard.ai_consent`; first load
 migrates the legacy wizard flag `ai_opt_in` into `categorize`). Purposes: `categorize`
-(`recurring`: merchant + remittance text of unclassified transactions, stays granted) and
+(`recurring`: merchant + remittance text of unclassified transactions, stays granted; the answer is the
+category plus a shared/personal tendency per merchant, same call; the purpose has `version: 2`, so an
+older grant reads `granted: false, reconsent: true` until the user grants it again) and
 `history_import` (`once`: see below), `contract_query` (`recurring`: the contracts-search question plus names of
 categories, labels and persons, never amounts, IBANs, dates or bookings) and
 `sheet_analysis` (`once`: names of budget-sheet positions local matching could not place; consumed

@@ -1,5 +1,15 @@
 # Build Log
 
+## 0.41.0 — 2026-11-08
+Version: 0.41.0
+Branch: claude/haushalt-konzept-redesign-51897d-core-owner
+Changes:
+- feat(accounts): an account is owned by one person, one person plus the household, or the household only - no other combination; old settings keep their meaning, and changing an account's owners re-derives the stored bookings without a bank call while your corrections stay
+- feat(owners): on a person-plus-household account every expense is assigned by one chain - your correction, a merchant rule, the plan position, a decided recurring series, a household category (groceries, housing by default, configurable), the AI hint, otherwise the person; each assignment records where it came from and how sure it is
+- feat(ai): the categorisation call also hints whether a merchant is shared or personal (no names, same payload, no extra call, cached per merchant); the categorisation consent text names this and is asked again once
+- feat(owners): the owner of any booking, or of all bookings of a merchant or recurring series, can be corrected; the AI can be run on a list of unclear merchants within the monthly budget and with consent
+- feat(settlement): per person, what they owe the household (personal spend from the joint account) or the household owes them (household spend from a personal account)
+
 ## 0.40.0 — 2026-11-04
 Version: 0.40.0
 Branch: claude/funny-shaw-dd8159
