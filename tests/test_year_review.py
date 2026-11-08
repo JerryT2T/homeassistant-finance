@@ -303,3 +303,65 @@ def test_confirm_writes_rule_marks_done_and_validates(monkeypatch):
     # the list's composite "<account_key>|<id>" works for the owner correction too
     res = aio.run(mgr.async_correct_owner(ledger_id="k|L1", owner="Anna", reach="booking"))
     assert res["ledger_id"] == "L1"
+
+
+def _account_review_manager():
+    from types import SimpleNamespace
+
+    mgr, aio = _review_manager()
+    mgr.persons = [{"name": "Anna", "ha_users": ["u1"]}, {"name": "Ben", "ha_users": ["u2"]}]
+    accounts = [
+        {"name": "Giro", "iban": "DE00TEST0000000000000001", "person": "Anna", "type": "personal",
+         "household_use": True},
+        {"name": "Joint", "iban": "DE00TEST0000000000000002", "type": "shared", "card_owners": {"1111": "Anna"}},
+    ]
+    mgr._entry = SimpleNamespace(data={"accounts": accounts})  # noqa: SLF001
+
+    def update(entry, data):
+        entry.data = data
+
+    mgr._hass.config_entries.async_update_entry.side_effect = update  # noqa: SLF001
+    mgr._accounts = accounts  # noqa: SLF001
+    type(mgr)._valid_owners = lambda self: {"Anna", "Ben", "shared"}
+    return mgr, aio
+
+
+def test_confirm_account_group_writes_the_owner_set(monkeypatch):
+    """Picking an owner in the review's account step changes the account, not only a checkmark."""
+    from custom_components.finance_dashboard import review as rv
+    from custom_components.finance_dashboard.account_identity import account_key
+    from custom_components.finance_dashboard.manager import _review
+    from custom_components.finance_dashboard.ownership import account_kind
+
+    monkeypatch.setattr(_review, "_refund_allocations_of", lambda _m: {})
+    mgr, aio = _account_review_manager()
+    giro, joint = (account_key(a) for a in mgr._accounts)  # noqa: SLF001
+
+    aio.run(mgr.async_review_confirm(group_id=f"{rv.KIND_ACCOUNT}:{giro}", kind=rv.KIND_ACCOUNT, owner="Ben"))
+    acc = next(a for a in mgr._accounts if account_key(a) == giro)  # noqa: SLF001
+    assert acc["person"] == "Ben" and acc["household_use"] is True and acc["ha_users"] == ["u2"]
+    assert mgr.derived == 1  # stored bookings re-derived, no bank call
+
+    # the household as the views spell it ("__shared__") is accepted
+    aio.run(mgr.async_review_confirm(group_id=f"{rv.KIND_ACCOUNT}:{giro}", kind=rv.KIND_ACCOUNT, owner="__shared__"))
+    acc = next(a for a in mgr._accounts if account_key(a) == giro)  # noqa: SLF001
+    assert account_kind(acc) == "household"
+
+    # a joint account handed to a person loses its card mapping
+    aio.run(mgr.async_review_confirm(group_id=f"{rv.KIND_ACCOUNT}:{joint}", kind=rv.KIND_ACCOUNT, owner="Anna"))
+    acc = next(a for a in mgr._accounts if account_key(a) == joint)  # noqa: SLF001
+    assert acc["person"] == "Anna" and "card_owners" not in acc
+    assert mgr._entry.data["accounts"] == mgr._accounts  # noqa: SLF001
+
+
+def test_confirm_link_info_group_cannot_be_answered_no(monkeypatch):
+    from custom_components.finance_dashboard.manager import _review
+    from custom_components.finance_dashboard.manager._questions import QuestionError
+
+    monkeypatch.setattr(_review, "_refund_allocations_of", lambda _m: {})
+    mgr, aio = _review_manager()
+    with pytest.raises(QuestionError):
+        aio.run(mgr.async_review_confirm(group_id="link:refunds", kind="link", confirmed=False))
+    out = aio.run(mgr.async_review_confirm(group_id="link:refunds", kind="link", confirmed=True))
+    assert out["group_id"] == "link:refunds"
+    assert "link:refunds" in mgr._memory.review_state()["confirmed"]  # noqa: SLF001

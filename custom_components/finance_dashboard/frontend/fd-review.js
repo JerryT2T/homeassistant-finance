@@ -36,6 +36,7 @@ const FB = {
     "review.step_of": "Schritt $n von $total",
     "review.step.acc": "Konten",
     "review.step.links": "Verknüpfungen",
+    "review.ok": "Passt so",
     "review.step.fixed": "Fixkosten & Verträge",
     "review.step.owner": "Haushalt oder Person",
     "review.step.cat": "Kategorien",
@@ -173,6 +174,7 @@ const FB = {
     "review.step_of": "Step $n of $total",
     "review.step.acc": "Accounts",
     "review.step.links": "Links",
+    "review.ok": "Looks right",
     "review.step.fixed": "Fixed costs & contracts",
     "review.step.owner": "Household or person",
     "review.step.cat": "Categories",
@@ -649,6 +651,11 @@ class FdReview extends HTMLElement {
     const e = window._fd.escHtml;
     const gid = e(g.group_id);
     const dis = busy ? "disabled" : "";
+    if (id === "links" && g.kind === "link") {
+      // counted by the fixed rule: acknowledge only, there is no "no"
+      if (g.confirmed) return `<div class="act"><span class="muted">✓ ${e(tr("review.confirmed"))}</span></div>`;
+      return `<div class="act"><button type="button" class="b sm pri" data-link="${gid}" data-v="1" ${dis}>${e(tr("review.ok"))}</button></div>`;
+    }
     if (id === "links") {
       if (g.confirmed) {
         return `<div class="act"><span class="muted">${e(tr(g.is_transfer === false ? "review.transfer_isnt" : "review.transfer_is"))}</span>

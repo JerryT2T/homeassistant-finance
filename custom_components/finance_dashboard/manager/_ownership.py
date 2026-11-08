@@ -13,7 +13,7 @@ from typing import Any
 
 from homeassistant.util import dt as dt_util
 
-from ..const import CATEGORY_OTHER, DEFAULT_CATEGORIES
+from ..const import CATEGORY_OTHER, DEFAULT_CATEGORIES, OWNER_SHARED
 from ..merchants import merchant_key
 from ._questions import REACH_BOOKING, REACH_MERCHANT, QuestionError
 
@@ -33,6 +33,8 @@ class OwnershipMixin:
     def _check_owner(self, owner: Any) -> str | None:
         if owner in (None, ""):
             return None
+        if owner == OWNER_SHARED:  # the household as the views spell it
+            owner = "shared"
         if not isinstance(owner, str) or owner not in self._valid_owners():
             raise QuestionError("invalid_owner")
         return owner

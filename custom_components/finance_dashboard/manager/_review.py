@@ -19,11 +19,13 @@ from typing import Any
 from homeassistant.util import dt as dt_util
 
 from .. import review as rv
+from ..account_identity import account_key
 from ..contracts import async_get_store, build_contracts, own_account_names
 from ..counted import counted_transactions, net_counted
 from ..household_summary import counted_transactions as _ct  # noqa: F401  (rule re-export)
 from ..household_summary import pending_debits
 from ..merchants import merchant_key
+from ..ownership import account_kind, apply_owner_set
 from ._questions import QuestionError
 
 _SLUG = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
@@ -201,7 +203,7 @@ class ReviewMixin:
         await mem.async_save()
         return {"reviewed_at": state["reviewed_at"]}
 
-    async def async_review_confirm(  # noqa: PLR0912, PLR0913
+    async def async_review_confirm(  # noqa: PLR0912, PLR0913, PLR0915
         self,
         *,
         group_id: str,
@@ -251,6 +253,14 @@ class ReviewMixin:
                 known = mem.known_merchants().get(key if kind == rv.KIND_MERCHANT else "", {})
                 if kind == rv.KIND_MERCHANT:
                     mem.learn_merchant(key, category, owner=known.get("owner"))
+        elif kind == rv.KIND_ACCOUNT:
+            if owner:
+                self._review_set_account_owner(key, owner)
+        elif kind == rv.KIND_LINK:
+            # an information group (counted by the fixed rule): it can be
+            # acknowledged, never answered "no" -- nothing would change.
+            if confirmed is False:
+                raise QuestionError("not_changeable", "this group follows the counting rule")
         elif kind == rv.KIND_CHAIN:
             if not isinstance(confirmed, bool):
                 raise QuestionError("invalid_body", "confirmed (bool) is required for a chain")
@@ -266,6 +276,37 @@ class ReviewMixin:
         state.setdefault("confirmed", {})[group_id] = dt_util.now().isoformat()
         await self._after_ownership_change(mem)
         return {"group_id": group_id, "kind": kind, "owner": owner, "confidence": rv.CONFIRMED_CONFIDENCE}
+
+    def _review_set_account_owner(self, key: str, owner: str) -> None:
+        """Write an account's owner set from the review (same rules as Settings).
+
+        "shared" makes it household-only; a person keeps the account's
+        "also household" flag when it had one. No bank call: the caller
+        re-derives the stored bookings.
+        """
+        persons = {str(p.get("name")): p for p in self.persons if p.get("name")}
+        if owner != "shared" and owner not in persons:
+            raise QuestionError("invalid_owner")
+        base = list(self._entry.data.get("accounts", []) or [])
+        new_accounts, found = [], False
+        for acc in base:
+            acc = dict(acc)
+            if account_key(acc) == key:
+                found = True
+                had_hh = bool(acc.get("person")) and bool(acc.get("household_use"))
+                household = owner != "shared" and had_hh
+                acc = apply_owner_set(acc, owner, household)
+                if owner != "shared":
+                    acc["ha_users"] = list(persons[owner].get("ha_users") or [])
+                if account_kind(acc) != "household":
+                    acc.pop("card_owners", None)
+            new_accounts.append(acc)
+        if not found:
+            raise QuestionError("unknown_group")
+        self._hass.config_entries.async_update_entry(
+            self._entry, data={**self._entry.data, "accounts": new_accounts}
+        )
+        self._accounts = new_accounts
 
     async def async_review_ai(self, group_ids: list[str]) -> dict[str, Any]:
         """D3: the AI pass over the merchants of these groups, then the refreshed groups."""
