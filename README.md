@@ -2,7 +2,7 @@
 
 **Your personal finance command center — right inside Home Assistant.**
 
-**Version: 0.40.0**
+**Version: 0.40.1**
 
 > [!WARNING]
 > **Alpha — not recommended for use.** Finance is under active redesign. Features, data model and storage format may change without migration, and things may break. Do not rely on it for your real finances yet.
