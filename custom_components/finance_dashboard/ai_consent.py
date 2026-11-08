@@ -60,7 +60,9 @@ def _entry(raw: Any, purpose: str) -> dict[str, Any]:
     raw = raw if isinstance(raw, dict) else {}
     seen = raw.get("version") if isinstance(raw.get("version"), int) else 1
     # A grant given for an older, narrower purpose is void until asked again.
-    stale = raw.get("granted") is True and seen < _version(purpose)
+    stale = (raw.get("granted") is True and seen < _version(purpose)) or (
+        raw.get("reconsent") is True
+    )
     return {
         "granted": raw.get("granted") is True and not stale,
         "reconsent": stale,
@@ -115,7 +117,7 @@ async def async_set(hass: HomeAssistant, purpose: str, granted: bool) -> dict[st
     _check(purpose)
     state = await async_load(hass)
     entry = state[purpose]
-    if bool(granted) != entry["granted"] or (granted and entry.get("reconsent")):
+    if bool(granted) != entry["granted"] or entry.get("reconsent"):
         entry["granted"] = bool(granted)
         entry["reconsent"] = False
         entry["version"] = _version(purpose)

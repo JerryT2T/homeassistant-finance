@@ -67,6 +67,7 @@ from ..household_summary import (
     window_of_month,
 )
 from ..labels import apply_contract_categories, contract_categories
+from ..ownership import account_kind, apply_owner_set, owner_set_label
 from ..plan_match import assign_positions
 from ..tx_dates import effective_date_str, effective_day
 from ..transfer_detector import (
@@ -74,6 +75,7 @@ from ..transfer_detector import (
 )
 from ..transfer_plan import build_transfer_plan
 from ._banks import BankMixin
+from ._ownership import OwnershipMixin
 from ._persistence import PersistenceMixin
 from ._questions import QuestionsMixin
 from ._refresh import RefreshMixin
@@ -101,7 +103,9 @@ class AssignmentError(ValueError):
         self.detail = detail
 
 
-class FinanceDashboardManager(RefreshMixin, BankMixin, PersistenceMixin, QuestionsMixin):
+class FinanceDashboardManager(
+    RefreshMixin, BankMixin, PersistenceMixin, QuestionsMixin, OwnershipMixin
+):
     """Central orchestrator for the Finance integration.
 
     Inherits from:
@@ -452,6 +456,7 @@ class FinanceDashboardManager(RefreshMixin, BankMixin, PersistenceMixin, Questio
                 # Preserve assignment info from config
                 acc_data["type"] = account.get("type", "personal")
                 acc_data["person"] = account.get("person", "")
+                acc_data["household_use"] = bool(account.get("household_use"))
                 acc_data["ha_users"] = account.get("ha_users", [])
                 acc_data["custom_name"] = account.get("custom_name", "")
                 acc_data["savings"] = bool(account.get("savings"))
@@ -893,14 +898,16 @@ class FinanceDashboardManager(RefreshMixin, BankMixin, PersistenceMixin, Questio
         for acc in self._accounts:
             iban = normalize_iban(acc.get("iban"))
             institution = str(acc.get("institution") or "")
-            owner = "shared" if acc.get("type") == "shared" else str(acc.get("person") or "")
+            owner_set = owner_set_label(acc)
             accounts.append(
                 {
                     "key": account_key(acc),
                     "name": str(acc.get("custom_name") or acc.get("name") or institution),
                     "institution": institution,
                     "iban_last4": iban[-4:] if iban else "",
-                    "owner": owner,
+                    "owner": owner_set["owner"],
+                    "household": owner_set["household"],
+                    "owner_kind": account_kind(acc),
                 }
             )
         return {
@@ -910,8 +917,15 @@ class FinanceDashboardManager(RefreshMixin, BankMixin, PersistenceMixin, Questio
             "plan_persons": list(self.budget_plan.persons),
         }
 
-    def async_set_assignments(self, data: dict[str, Any], users: list[Any]) -> None:
-        """Validate and persist persons + account owners. Raises ``AssignmentError``."""
+    def async_set_assignments(self, data: dict[str, Any], users: list[Any]) -> bool:
+        """Validate and persist persons + account owner sets. Raises ``AssignmentError``.
+
+        An account's owner set is ``owner`` (person | "shared" | "") plus the
+        optional ``household`` flag, which only a person may carry
+        ({person}, {person, household}, {household}, nothing -- no other set).
+        Returns True when an owner set changed: the caller then re-derives the
+        stored bookings (:meth:`async_apply_owner_change`, no bank call).
+        """
         if self._demo_mode:
             raise AssignmentError("demo_mode", "Not available in demo mode")
         known_users = {str(getattr(u, "id", "")) for u in users}
@@ -961,7 +975,7 @@ class FinanceDashboardManager(RefreshMixin, BankMixin, PersistenceMixin, Questio
 
         base = self._entry.data.get("accounts", []) or []
         keys = {account_key(a) for a in base}
-        owners: dict[str, str] = {}
+        owners: dict[str, tuple[str, bool]] = {}
         for item in raw_accounts:
             if not isinstance(item, dict):
                 raise AssignmentError("invalid_account", "Account must be an object")
@@ -971,28 +985,49 @@ class FinanceDashboardManager(RefreshMixin, BankMixin, PersistenceMixin, Questio
                 raise AssignmentError("unknown_account", "Unknown account key")
             if owner not in ("", "shared") and owner not in by_name:
                 raise AssignmentError("unknown_owner", "Owner must be shared or a person")
-            owners[key] = owner
+            household = item.get("household", False)
+            if not isinstance(household, bool):
+                raise AssignmentError("invalid_household", "household must be a boolean")
+            if household and owner in ("", "shared"):
+                raise AssignmentError(
+                    "invalid_owner_set",
+                    "Allowed: one person, one person + household, or household only",
+                )
+            owners[key] = (owner, household)
 
         new_accounts = []
+        changed = False
         for acc in base:
             acc = dict(acc)
             key = account_key(acc)
             if key in owners:
-                owner = owners[key]
-                if owner == "shared":
-                    acc.update(type="shared", person="")
-                elif owner:
-                    acc.update(
-                        type="personal", person=owner, ha_users=list(by_name[owner]["ha_users"])
-                    )
-                else:
-                    acc.update(type="personal", person="")
+                owner, household = owners[key]
+                before = (account_kind(acc), acc.get("person") or "")
+                acc = apply_owner_set(acc, owner, household)
+                if owner and owner != "shared":
+                    acc["ha_users"] = list(by_name[owner]["ha_users"])
+                changed = changed or before != (account_kind(acc), acc.get("person") or "")
             new_accounts.append(acc)
 
         self._hass.config_entries.async_update_entry(
             self._entry, data={**self._entry.data, "persons": persons, "accounts": new_accounts}
         )
         self._accounts = new_accounts
+        return changed
+
+    async def async_apply_owner_change(self) -> None:
+        """Re-derive every stored booking after an owner set changed (C5).
+
+        Replays the ledger through the derive step -- never a bank call. Rules
+        and corrections live in the merchant memory and so stay untouched.
+        """
+        if not getattr(self, "_ledger", None):
+            return
+        self._derive_from_ledger(self._transfer_overrides)
+        refresh = getattr(self, "_async_refresh_contract_categories", None)
+        if refresh is not None:
+            await refresh()
+        await self._push_coordinator()
 
     async def async_save_pot(self, data: dict[str, Any], *, replace: bool) -> dict[str, Any]:
         """Create (``replace=False``) or replace a pot. Raises ``ValueError``/``KeyError``."""

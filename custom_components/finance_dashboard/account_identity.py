@@ -26,7 +26,7 @@ _LOGGER = logging.getLogger(__name__)
 
 # Fields the user owns. The bank has no say in them, so a re-link must not
 # reset them — unless the wizard explicitly sent a new value.
-_USER_OWNED_FIELDS = ("custom_name", "type", "person", "ha_users")
+_USER_OWNED_FIELDS = ("custom_name", "type", "person", "ha_users", "household_use")
 
 _NON_IBAN_CHARS = re.compile(r"[^A-Z0-9]")
 

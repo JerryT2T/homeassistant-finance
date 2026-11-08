@@ -71,6 +71,7 @@ def test_default_is_denied_and_shape() -> None:
     assert set(state) == {"categorize", "sheet_analysis", "history_import", "contract_query"}
     assert state["categorize"] == {
         "granted": False, "mode": "recurring", "granted_at": None, "used_at": None,
+        "reconsent": False, "version": 2,
     }
     assert state["sheet_analysis"]["mode"] == "once"
 

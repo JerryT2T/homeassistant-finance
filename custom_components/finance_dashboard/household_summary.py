@@ -42,7 +42,8 @@ from .counted import (
     paypal_account_ids,
 )
 from .cycle import calendar_cycle, household_cycle, household_starts
-from .plan_match import best_position, resolve_owner
+from .ownership import resolve_owner_detail
+from .plan_match import best_position
 from .tx_dates import effective_day
 
 CYCLES = ("current", "previous")
@@ -204,8 +205,8 @@ class Classifier:
             if float(p.get("average_amount", 0) or 0) < 0
         } - {""}
 
-    def classify(self, tx: dict[str, Any], on: date) -> tuple[str, bool]:
-        """``(owner, is_fixed)``: account default -> plan match -> correction."""
+    def classify_detail(self, tx: dict[str, Any], on: date) -> tuple[str, bool, str, int]:
+        """``(owner, is_fixed, source, confidence)`` -- the one chain, see ``ownership``."""
         pos = None
         if self.plan is not None:
             pos = best_position(tx, self.plan.active_positions(on.month, on.year), self.persons)
@@ -213,7 +214,13 @@ class Classifier:
             pos is not None and pos.kind == POSITION_KIND_FIXED
         )
         correction = self.corrections.get(str(tx.get("transactionId") or ""))
-        return resolve_owner(tx, pos, correction), fixed
+        owner, source, confidence = resolve_owner_detail(tx, pos, correction)
+        return owner, fixed, source, confidence
+
+    def classify(self, tx: dict[str, Any], on: date) -> tuple[str, bool]:
+        """``(owner, is_fixed)``: correction -> rule -> plan match -> account default."""
+        owner, fixed, _source, _conf = self.classify_detail(tx, on)
+        return owner, fixed
 
 
 def plan_persons(plan: BudgetPlan | None, accounts: list[dict[str, Any]] | None) -> list[str]:

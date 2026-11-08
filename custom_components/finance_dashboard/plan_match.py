@@ -2,7 +2,8 @@
 
 Ownership resolves in the fixed chain from CLAUDE.md: the account's owner is the
 default, a matched plan position overrides it, a user correction overrides both.
-Every view resolves it here (#175).
+Every view resolves it here (#175); the chain itself, with the source and
+confidence of each answer, lives in ``ownership.resolve_owner_detail``.
 
 Matching: the distinctive words (4+ letters) of a position name against the
 booking's text. A booking matches at most one position, the most specific one:
@@ -16,10 +17,9 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from .const import OWNER_SHARED
+from .ownership import resolve_owner_detail
 
 _TOKEN_RE = re.compile(r"[a-zäöüß]{4,}")
-_OPEN = "open"
 _GENERIC = frozenset({
     "kosten", "konto", "beitrag", "gebühr", "gebühren", "rate", "raten", "sonstiges",
     "sparen", "rücklage", "rücklagen", "gemeinsam", "haushalt", "person", "monat", "jahr",
@@ -69,14 +69,5 @@ def assign_positions(
 
 
 def resolve_owner(tx: dict[str, Any], position: Any | None, correction: str | None = None) -> str:
-    """Owner of an expense: account default -> plan position -> user correction."""
-    corrected = str(correction or tx.get("_owner_override") or "")
-    if corrected:
-        # The memory stores a shared answer as "shared", the plan as OWNER_SHARED.
-        return OWNER_SHARED if corrected == "shared" else corrected
-    if position is not None:
-        owner = str(position.owner or OWNER_SHARED)
-        return OWNER_SHARED if owner == "shared" else owner
-    if tx.get("_account_type") == "shared":
-        return OWNER_SHARED
-    return str(tx.get("_account_person") or "") or _OPEN
+    """Owner of an expense (the one chain, see ``ownership``): a person, shared or open."""
+    return resolve_owner_detail(tx, position, correction)[0]

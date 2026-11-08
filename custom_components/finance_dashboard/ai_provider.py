@@ -99,11 +99,16 @@ def build_payload(merchant: str, remittance: str) -> dict[str, str]:
     }
 
 
+TENDENCIES = ("shared", "personal")
+
+
 def build_prompt(payload: dict[str, str], categories: list[str]) -> str:
     return (
         "Classify a bank-statement merchant into exactly one category. "
         f"Allowed categories: {', '.join(categories)}. "
-        "Answer with the category slug only.\n"
+        "Then say whether the purchase usually serves the whole household (shared) "
+        "or one person alone (personal). "
+        "Answer with the category slug, a space, then shared or personal.\n"
         f"Merchant: {payload['merchant']}\nPurpose: {payload['remittance']}"
     )
 
