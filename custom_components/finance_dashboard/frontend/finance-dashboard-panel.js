@@ -12,7 +12,8 @@
  *   transactions  Transaktionen (fd-transactions, desktop entry from Datenstand)
  *   questions     Fragen (fd-questions, star in the Start top bar)
  *   contracts     Verträge (fd-contracts)
- *   benchmark     Vergleich (fd-benchmark)
+ *   benchmark     Vergleich (fd-benchmark), reachable only from Haushalt -> Jahr
+ *   review        Abgleich (fd-review), from Einstellungen -> Abgleich
  *   plan          Haushaltsplan (fd-budget-plan)
  *   setup         the guided setup wizard (fd-setup, its own full-screen layer)
  *   back          closes the open subpage (fd-subpage-header's back button)
@@ -53,6 +54,7 @@ const SUBPAGES = {
   questions: { tag: "fd-questions", title: "sub.questions", header: false },
   contracts: { tag: "fd-contracts", title: "sub.contracts", header: false },
   benchmark: { tag: "fd-benchmark", title: "sub.benchmark", header: false },
+  review: { tag: "fd-review", title: "sub.review", header: false },
   plan: { tag: "fd-budget-plan", title: "sub.plan", header: false },
 };
 
@@ -237,7 +239,7 @@ ${SHARED_CSS}
         if (detail && detail.section) el.setAttribute("section", detail.section);
       }
       el.classList.add("subbody");
-      if (target === "freshness") el.demo = this._demo;
+      if (target === "freshness" || target === "benchmark" || target === "review") el.demo = this._demo;
       el.hass = this._hass;
       host.append(el);
       this._subEl = el;
