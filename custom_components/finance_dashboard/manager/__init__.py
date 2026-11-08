@@ -67,16 +67,20 @@ from ..household_summary import (
     window_of_month,
 )
 from ..labels import apply_contract_categories, contract_categories
+from ..ownership import account_kind, apply_owner_set, clean_card_owners, owner_set_label
 from ..plan_match import assign_positions
 from ..tx_dates import effective_date_str, effective_day
 from ..transfer_detector import (
     apply_overrides,
 )
 from ..transfer_plan import build_transfer_plan
+from ..plan_wizard import earliest_booked_by_key
 from ._banks import BankMixin
+from ._ownership import OwnershipMixin
 from ._persistence import PersistenceMixin
 from ._questions import QuestionsMixin
 from ._refresh import RefreshMixin
+from ._review import ReviewMixin
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -101,7 +105,9 @@ class AssignmentError(ValueError):
         self.detail = detail
 
 
-class FinanceDashboardManager(RefreshMixin, BankMixin, PersistenceMixin, QuestionsMixin):
+class FinanceDashboardManager(
+    RefreshMixin, BankMixin, PersistenceMixin, QuestionsMixin, OwnershipMixin, ReviewMixin
+):
     """Central orchestrator for the Finance integration.
 
     Inherits from:
@@ -452,7 +458,10 @@ class FinanceDashboardManager(RefreshMixin, BankMixin, PersistenceMixin, Questio
                 # Preserve assignment info from config
                 acc_data["type"] = account.get("type", "personal")
                 acc_data["person"] = account.get("person", "")
+                acc_data["household_use"] = bool(account.get("household_use"))
                 acc_data["ha_users"] = account.get("ha_users", [])
+                if account.get("card_owners"):
+                    acc_data["card_owners"] = dict(account["card_owners"])
                 acc_data["custom_name"] = account.get("custom_name", "")
                 acc_data["savings"] = bool(account.get("savings"))
                 acc_data["institution"] = account.get("institution", "")
@@ -893,14 +902,17 @@ class FinanceDashboardManager(RefreshMixin, BankMixin, PersistenceMixin, Questio
         for acc in self._accounts:
             iban = normalize_iban(acc.get("iban"))
             institution = str(acc.get("institution") or "")
-            owner = "shared" if acc.get("type") == "shared" else str(acc.get("person") or "")
+            owner_set = owner_set_label(acc)
             accounts.append(
                 {
                     "key": account_key(acc),
                     "name": str(acc.get("custom_name") or acc.get("name") or institution),
                     "institution": institution,
                     "iban_last4": iban[-4:] if iban else "",
-                    "owner": owner,
+                    "owner": owner_set["owner"],
+                    "household": owner_set["household"],
+                    "owner_kind": account_kind(acc),
+                    "card_owners": dict(acc.get("card_owners") or {}),
                 }
             )
         return {
@@ -910,8 +922,15 @@ class FinanceDashboardManager(RefreshMixin, BankMixin, PersistenceMixin, Questio
             "plan_persons": list(self.budget_plan.persons),
         }
 
-    def async_set_assignments(self, data: dict[str, Any], users: list[Any]) -> None:
-        """Validate and persist persons + account owners. Raises ``AssignmentError``."""
+    def async_set_assignments(self, data: dict[str, Any], users: list[Any]) -> bool:
+        """Validate and persist persons + account owner sets. Raises ``AssignmentError``.
+
+        An account's owner set is ``owner`` (person | "shared" | "") plus the
+        optional ``household`` flag, which only a person may carry
+        ({person}, {person, household}, {household}, nothing -- no other set).
+        Returns True when an owner set changed: the caller then re-derives the
+        stored bookings (:meth:`async_apply_owner_change`, no bank call).
+        """
         if self._demo_mode:
             raise AssignmentError("demo_mode", "Not available in demo mode")
         known_users = {str(getattr(u, "id", "")) for u in users}
@@ -961,7 +980,8 @@ class FinanceDashboardManager(RefreshMixin, BankMixin, PersistenceMixin, Questio
 
         base = self._entry.data.get("accounts", []) or []
         keys = {account_key(a) for a in base}
-        owners: dict[str, str] = {}
+        owners: dict[str, tuple[str, bool]] = {}
+        cards: dict[str, dict[str, str]] = {}
         for item in raw_accounts:
             if not isinstance(item, dict):
                 raise AssignmentError("invalid_account", "Account must be an object")
@@ -971,28 +991,62 @@ class FinanceDashboardManager(RefreshMixin, BankMixin, PersistenceMixin, Questio
                 raise AssignmentError("unknown_account", "Unknown account key")
             if owner not in ("", "shared") and owner not in by_name:
                 raise AssignmentError("unknown_owner", "Owner must be shared or a person")
-            owners[key] = owner
+            household = item.get("household", False)
+            if not isinstance(household, bool):
+                raise AssignmentError("invalid_household", "household must be a boolean")
+            if household and owner in ("", "shared"):
+                raise AssignmentError(
+                    "invalid_owner_set",
+                    "Allowed: one person, one person + household, or household only",
+                )
+            owners[key] = (owner, household)
+            if "card_owners" in item:
+                try:
+                    cards[key] = clean_card_owners(item["card_owners"], set(by_name))
+                except ValueError as err:
+                    raise AssignmentError(str(err), "card_owners: {last 4 digits: person}") from err
 
         new_accounts = []
+        changed = False
         for acc in base:
             acc = dict(acc)
             key = account_key(acc)
             if key in owners:
-                owner = owners[key]
-                if owner == "shared":
-                    acc.update(type="shared", person="")
-                elif owner:
-                    acc.update(
-                        type="personal", person=owner, ha_users=list(by_name[owner]["ha_users"])
-                    )
+                owner, household = owners[key]
+                before = (account_kind(acc), acc.get("person") or "")
+                acc = apply_owner_set(acc, owner, household)
+                if owner and owner != "shared":
+                    acc["ha_users"] = list(by_name[owner]["ha_users"])
+                changed = changed or before != (account_kind(acc), acc.get("person") or "")
+            if key in cards or "card_owners" in acc:
+                # only a household-only account carries a card mapping
+                new_cards = cards.get(key, acc.get("card_owners") or {}) if account_kind(acc) == "household" else {}
+                changed = changed or new_cards != (acc.get("card_owners") or {})
+                if new_cards:
+                    acc["card_owners"] = new_cards
                 else:
-                    acc.update(type="personal", person="")
+                    acc.pop("card_owners", None)
             new_accounts.append(acc)
 
         self._hass.config_entries.async_update_entry(
             self._entry, data={**self._entry.data, "persons": persons, "accounts": new_accounts}
         )
         self._accounts = new_accounts
+        return changed
+
+    async def async_apply_owner_change(self) -> None:
+        """Re-derive every stored booking after an owner set changed (C5).
+
+        Replays the ledger through the derive step -- never a bank call. Rules
+        and corrections live in the merchant memory and so stay untouched.
+        """
+        if not getattr(self, "_ledger", None):
+            return
+        self._derive_from_ledger(self._transfer_overrides)
+        refresh = getattr(self, "_async_refresh_contract_categories", None)
+        if refresh is not None:
+            await refresh()
+        await self._push_coordinator()
 
     async def async_save_pot(self, data: dict[str, Any], *, replace: bool) -> dict[str, Any]:
         """Create (``replace=False``) or replace a pot. Raises ``ValueError``/``KeyError``."""
@@ -1026,8 +1080,13 @@ class FinanceDashboardManager(RefreshMixin, BankMixin, PersistenceMixin, Questio
         demo: bool = False,
         include_questions: bool = False,
         include_recent: bool = False,
+        year_inputs: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """Home-screen payload from cached data. Never contacts a bank."""
+        """Home-screen payload from cached data. Never contacts a bank.
+
+        ``year_inputs`` (horizon year only, from ``async_year_inputs``):
+        contracts, benchmark teaser and review state the pure year view needs.
+        """
         from ..home import build_home
 
         now = dt_util.now()
@@ -1055,7 +1114,20 @@ class FinanceDashboardManager(RefreshMixin, BankMixin, PersistenceMixin, Questio
             person=person,
             view=view,
             horizon=horizon,
+            year_inputs=(
+                {
+                    "ledger_earliest": earliest_booked_by_key(getattr(self, "_ledger", None)),
+                    "split_options": self._split_options(),
+                    **(year_inputs or {}),
+                }
+                if horizon == "year"
+                else None
+            ),
         )
+
+    def _ledger_earliest(self) -> dict[str, str | None]:
+        """Earliest booked date per account key from the ledger (cache only)."""
+        return earliest_booked_by_key(getattr(self, "_ledger", None))
 
     def get_household_summary(
         self, *, cycle: str = "current", person: str | None = None, is_admin: bool = False
@@ -1364,25 +1436,30 @@ class FinanceDashboardManager(RefreshMixin, BankMixin, PersistenceMixin, Questio
             household_size=len(plan.persons) or None,
         )
 
-        comparisons: list[dict[str, Any]] = []
-        for metric_category, source_categories in BENCHMARK_METRIC_SOURCES.items():
-            numerator = round(sum(by_category.get(c, 0.0) for c in source_categories), 2)
-            if numerator <= 0:
-                continue
-            benchmark = provider.get_benchmark_for_category(metric_category, **location)
-            if not benchmark:
-                continue
-            if benchmark.get("unit") == "%":
-                if income <= 0:
-                    continue
-                our_value = round(numerator / income * 100, 2)
-            else:
-                our_value = numerator
-            result = provider.compare(metric_category, our_value, **location)
-            if result:
-                result["our_amount"] = numerator
-                result["source_categories"] = source_categories
-                comparisons.append(result)
+        from ..benchmark import compare_all, teaser
+        from ..year_view import actual_year
+
+        # B1: the household's own side is the ACTUAL spend of the year (counted
+        # figures by category, whole household); the plan is the second mark.
+        actual = actual_year(
+            self._counted_view(),
+            self._classifier(),
+            self.persons,
+            now.date(),
+            self._ledger_earliest(),
+            target_year,
+        )
+        comparisons: list[dict[str, Any]] = compare_all(
+            provider,
+            BENCHMARK_METRIC_SOURCES,
+            actual_monthly=actual["by_category_monthly"],
+            plan_monthly=by_category,
+            income_actual=actual["income_monthly"],
+            income_plan=income,
+            months_covered=actual["months_covered"],
+            year=target_year,
+            location=location,
+        )
 
         # Consumption metrics cannot be derived from banking data — the utility
         # statement is the only source. Kept as an explicit option so the
@@ -1421,6 +1498,14 @@ class FinanceDashboardManager(RefreshMixin, BankMixin, PersistenceMixin, Questio
             "year": target_year,
             "income_net_total": income,
             "comparisons": comparisons,
+            "teaser": teaser(comparisons),
+            "basis": {
+                "year": target_year,
+                "months_covered": actual["months_covered"],
+                "extrapolated": 0 < actual["months_covered"] < 12,  # noqa: PLR2004
+                "has_actual": actual["months_covered"] > 0,
+                "scale": {"typical_tolerance": 0.1, "min": 0.0, "max": 1.0},
+            },
             "references": provider.references(**location),
             "unavailable": provider.unavailable(),
             "dataset": provider.dataset_info(),

@@ -25,6 +25,7 @@ from ..const import (
     LEGACY_BANK_ID,
     SUBENTRY_TYPE_BANK,
 )
+from ..ownership import card_person
 from ..tx_dates import effective_date_str
 
 _LOGGER = logging.getLogger(__name__)
@@ -332,6 +333,9 @@ class BankMixin:
         """
         from ..account_identity import account_key
         from ..labels import apply_contract_categories
+
+        # Data version: whatever is derived from the ledger changed (cache keys).
+        self._derive_version = getattr(self, "_derive_version", 0) + 1
         from ..own_accounts import OwnAccounts
         from ..transfer_detector import (
             apply_overrides,
@@ -346,6 +350,7 @@ class BankMixin:
         if categorizer and hasattr(categorizer, "set_own_accounts"):
             categorizer.set_own_accounts(OwnAccounts.of(self._accounts))
 
+        hh_categories = memory.household_categories() if memory else None
         tx_by_account: dict[str, list[dict[str, Any]]] = {}
         for akey in self._ledger.account_keys():
             uid = uid_for_key.get(akey, akey)
@@ -358,10 +363,20 @@ class BankMixin:
                 tx["_account_name"] = display
                 tx["_account_type"] = account.get("type", "personal")
                 tx["_account_person"] = account.get("person", "")
+                tx["_account_household_use"] = bool(account.get("household_use"))
+                tx["_card_person"] = (
+                    card_person(tx, account.get("card_owners")) if tx["_account_type"] == "shared" else ""
+                )
                 tx["_account_ha_users"] = account.get("ha_users", [])
                 tx["category"] = categorizer.categorize(tx) if categorizer else "other"
-                rule = memory.resolve(tx) if memory else None
-                tx["_owner_override"] = (rule or {}).get("owner")
+                # a booking answer without an owner must not hide the merchant's owner
+                brule = (memory.booking_rule(tx) if memory else None) or {}
+                mrule = (memory.merchant_rule(tx) if memory else None) or {}
+                tx["_owner_override"] = brule.get("owner") or mrule.get("owner")
+                tx["_owner_scope"] = "booking" if brule.get("owner") else "merchant"
+                tx["_series_owner"] = memory.series_owner(tx) if memory else None
+                tx["_ai_tendency"] = memory.tendency(tx) if memory else None
+                tx["_household_categories"] = hh_categories
             tx_by_account[uid] = txs
 
         flat = [tx for txs in tx_by_account.values() for tx in txs]

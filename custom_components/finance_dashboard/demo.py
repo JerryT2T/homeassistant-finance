@@ -786,58 +786,18 @@ def generate_demo_home(
     Anna's salary lands on the 1st, Max's on the 28th: the household cycle
     therefore starts on Max's pay day (7-day rule), which demonstrates the rule.
     """
-    from datetime import timedelta
-
     from .home import build_home
     from .pots import Pot
 
     now = now or datetime.now().astimezone()
-    today = now.date()
-    accounts = _build_accounts()
-    acc_map = {a["id"]: a for a in accounts}
-
-    def _tx(acc_id: str, creditor: str, cat: str, amount: float, day, *, pending=False):
-        acc = acc_map[acc_id]
-        return {
-            "transactionId": f"demo-home-{creditor}-{day.isoformat()}-{cat}",
-            "bookingDate": day.isoformat(),
-            "transactionAmount": {"amount": str(amount), "currency": "EUR"},
-            "creditorName": creditor,
-            "category": migrate_slug(cat, creditor),
-            "_account_id": acc_id,
-            "_account_type": acc.get("type", "personal"),
-            "_account_person": acc.get("person", ""),
-            "_status": "pending" if pending else "booked",
-        }
-
-    txs: list[dict[str, Any]] = []
-    # Over a year of salaries so the year view has cycles to show.
-    month_start = today.replace(day=1)
-    first = month_start
-    for i in range(14):
-        if i:
-            first = (first - timedelta(days=1)).replace(day=1)
-        txs.append(_tx("demo-sparkasse-anna", "Arbeitgeber A", "income", 3100.0, first))
-        prev_end = first - timedelta(days=1)
-        txs.append(
-            _tx("demo-dkb-max", "Arbeitgeber M", "income", 2400.0, prev_end.replace(day=28))
-        )
-    for acc_id, creditor, cat, amount, ago in _DEMO_HOME_SPENDING:
-        txs.append(_tx(acc_id, creditor, cat, amount, today - timedelta(days=ago)))
-    txs.append(_tx("demo-ing-shared", "Markt Frisch", "food", -18.5, today, pending=True))
-    txs.append(
-        _tx("demo-sparkasse-anna", "Streamingdienst", "subscriptions", -9.99, today, pending=True)
-    )
-    # Salaries dated in the future would distort the cycle: keep history only.
-    txs = [t for t in txs if t["_status"] == "pending" or effective_date_str(t) <= today.isoformat()]
-    txs.sort(key=effective_date_str, reverse=True)
+    accounts, txs, plan = demo_world(now)
 
     if view == "person" and person not in {"Anna", "Max"}:
         person = "Anna"
     out = build_home(
         accounts=accounts,
         transactions=txs,
-        plan=None,
+        plan=plan,
         pots=[Pot.from_dict(p) for p in DEMO_POTS],
         recurring=[],
         banks=[],
@@ -859,6 +819,218 @@ def generate_demo_home(
         "accounts_assigned": len(accounts),
         "pots": len(DEMO_POTS),
     }
+    if horizon == "year":
+        from .year_view import fixed_year
+
+        out["year"]["fixed_year"] = fixed_year(
+            _DEMO_CONTRACTS, out["view"], (out.get("person") or {}).get("id")
+        )
+    if horizon == "year" and include_recent:
+        bench = generate_demo_benchmark()
+        out["year"]["benchmark_teaser"] = bench["teaser"]
+        steps = generate_demo_review()["steps"]
+        open_groups = [g for s in steps if s["id"] != "check" for g in s["groups"] if not g["auto"]]
+        out["year"]["review_hint"] = {
+            "open_groups": len(open_groups),
+            "open_amount": round(sum(abs(g["amount"]) for g in open_groups), 2),
+        }
     if horizon in ("cycle", "year") and out.get("fixed_costs_covered") is None:
         out["fixed_costs_covered"] = True
     return out
+
+
+# ---------------------------------------------------------------------------
+# One invented household for every demo payload (home, year, review, benchmark)
+# ---------------------------------------------------------------------------
+
+_HISTORY_MONTHS = 26  # two full years: the prior-year comparison has data to show
+_MONTHLY: list[tuple[str, str, str, float, int]] = [
+    # account, creditor, category, amount, day of month
+    ("demo-ing-shared", "Vermieter Schmidt", "housing_cold", -1150.0, 3),
+    ("demo-ing-shared", "Stadtwerke", "housing_warm", -118.0, 5),
+    ("demo-sparkasse-anna", "Streamingdienst", "media", -9.99, 8),
+    ("demo-sparkasse-anna", "Fitnessstudio", "leisure", -29.9, 9),
+    ("demo-dkb-max", "Autoversicherung", "insurance", -64.5, 12),
+    ("demo-dkb-max", "Tankstelle", "mobility", -58.7, 14),
+    ("demo-ing-shared", "Markt Frisch", "groceries", -78.0, 6),
+    ("demo-ing-shared", "Markt Frisch", "groceries", -64.0, 13),
+    ("demo-ing-shared", "Markt Frisch", "groceries", -91.0, 20),
+    ("demo-ing-shared", "Wochenmarkt", "groceries", -31.0, 25),
+    ("demo-sparkasse-anna", "Kino", "other", -24.0, 17),
+    ("demo-sparkasse-anna", "Restaurant Bella", "leisure", -46.0, 22),
+    ("demo-dkb-max", "Baumarkt Hornbach", "other", -52.0, 19),
+]
+_ONE_OFFS: dict[int, tuple[str, str, str, float, int]] = {
+    3: ("demo-ing-shared", "Reisebuero Sonne", "leisure", -1480.0, 11),
+    8: ("demo-ing-shared", "Elektro Markt", "other", -649.0, 16),
+    14: ("demo-dkb-max", "Reisebuero Sonne", "leisure", -980.0, 10),
+}
+
+
+def demo_plan() -> Any:
+    """A small invented household plan (two persons, seven positions).
+
+    The variable positions sit close to the invented monthly spending, so the
+    year bars read ok / knapp / over instead of all "over".
+    """
+    from .budget_plan import BudgetPlan
+
+    return BudgetPlan.from_dict(
+        {
+            "persons": ["Anna", "Max"],
+            "income": [
+                {"person": "Anna", "deposit": 3100.0},
+                {"person": "Max", "deposit": 2400.0},
+            ],
+            "positions": [
+                {"id": "miete", "name": "Vermieter Schmidt", "owner": "shared", "amount": 1150.0, "category": "housing_cold"},
+                {"id": "strom", "name": "Stadtwerke", "owner": "shared", "amount": 118.0, "category": "housing_warm"},
+                {"id": "essen", "name": "Lebensmittel", "owner": "shared", "kind": "buffer", "buffer_units": 4.5, "buffer_unit_price": 62.0, "category": "groceries"},
+                {"id": "mobil", "name": "Tanken", "owner": "Max", "kind": "buffer", "buffer_units": 1.0, "buffer_unit_price": 60.0, "category": "mobility"},
+                {"id": "freizeit", "name": "Freizeit", "owner": "shared", "kind": "buffer", "buffer_units": 3.0, "buffer_unit_price": 50.0, "category": "leisure"},
+                {"id": "stream", "name": "Streamingdienst", "owner": "Anna", "amount": 9.99, "category": "media"},
+                {"id": "kfz", "name": "Autoversicherung", "owner": "Max", "amount": 64.5, "category": "insurance"},
+            ],
+        }
+    )
+
+
+def demo_world(now: datetime) -> tuple[list[dict[str, Any]], list[dict[str, Any]], Any]:
+    """``(accounts, transactions, plan)``: two years of invented bookings."""
+    from datetime import timedelta
+
+    from .account_identity import account_key
+
+    today = now.date()
+    accounts = _build_accounts()
+    acc_map = {a["id"]: a for a in accounts}
+    counter = {"n": 0}
+
+    def _tx(acc_id: str, creditor: str, cat: str, amount: float, day, *, pending=False):
+        acc = acc_map[acc_id]
+        counter["n"] += 1
+        tid = f"demo-home-{counter['n']}"
+        return {
+            "transactionId": tid,
+            "_ledger_id": tid,
+            "bookingDate": day.isoformat(),
+            "transactionAmount": {"amount": str(amount), "currency": "EUR"},
+            "creditorName": creditor,
+            "category": migrate_slug(cat, creditor),
+            "_account_id": acc_id,
+            "_account_key": account_key(acc),
+            "_account_name": acc.get("custom_name", ""),
+            "_account_type": acc.get("type", "personal"),
+            "_account_person": acc.get("person", ""),
+            "_status": "pending" if pending else "booked",
+        }
+
+    txs: list[dict[str, Any]] = []
+    first = today.replace(day=1)
+    for i in range(_HISTORY_MONTHS):
+        if i:
+            first = (first - timedelta(days=1)).replace(day=1)
+        txs.append(_tx("demo-sparkasse-anna", "Arbeitgeber A", "income", 3100.0, first))
+        prev_end = first - timedelta(days=1)
+        txs.append(_tx("demo-dkb-max", "Arbeitgeber M", "income", 2400.0, prev_end.replace(day=28)))
+        wobble = 1 + ((i * 7) % 5 - 2) / 40  # a few percent up and down, deterministic
+        for acc_id, creditor, cat, amount, dom in _MONTHLY:
+            if i == 0 and first.replace(day=dom) > today:
+                continue
+            txs.append(_tx(acc_id, creditor, cat, round(amount * (wobble if cat in ("groceries", "mobility", "leisure") else 1), 2), first.replace(day=dom)))
+        if i in _ONE_OFFS and i > 0:
+            acc_id, creditor, cat, amount, dom = _ONE_OFFS[i]
+            txs.append(_tx(acc_id, creditor, cat, amount, first.replace(day=dom)))
+    for acc_id, creditor, cat, amount, ago in _DEMO_HOME_SPENDING:
+        txs.append(_tx(acc_id, creditor, cat, amount, today - timedelta(days=ago)))
+    txs.append(_tx("demo-ing-shared", "Markt Frisch", "food", -18.5, today, pending=True))
+    txs.append(_tx("demo-sparkasse-anna", "Streamingdienst", "subscriptions", -9.99, today, pending=True))
+    txs = [t for t in txs if t["_status"] == "pending" or effective_date_str(t) <= today.isoformat()]
+    txs.sort(key=effective_date_str, reverse=True)
+    return accounts, txs, demo_plan()
+
+
+def _demo_context(now: datetime | None = None):
+    """Everything the pure review / benchmark code needs, from the invented household."""
+    from .counted import counted_transactions, net_counted
+    from .household_summary import Classifier, plan_persons
+
+    now = now or datetime.now().astimezone()
+    accounts, txs, plan = demo_world(now)
+    counted = net_counted(counted_transactions(txs, accounts))
+    clf = Classifier(plan, [], None, plan_persons(plan, accounts))
+    return now, accounts, txs, counted, plan, clf
+
+
+def generate_demo_review() -> dict[str, Any]:
+    """The review payload for ``?demo=1`` (same code path as the live one)."""
+    from . import review as rv
+    from .household_summary import plan_persons
+
+    now, accounts, txs, counted, plan, clf = _demo_context()
+    return rv.build_review(
+        raw=txs, txs=counted, accounts=accounts, plan=plan, clf=clf,
+        persons=plan_persons(plan, accounts), series_list=[], state={}, today=now.date(),
+        ai_merchants={"baumarkt hornbach": "housing_cold"},
+    )
+
+
+def generate_demo_report() -> dict[str, Any]:
+    """The review report for ``?demo=1`` (viewer: Anna)."""
+    from . import review as rv
+    from .household_summary import plan_persons
+
+    now, accounts, txs, counted, plan, clf = _demo_context()
+    payload = generate_demo_review()
+    names = plan_persons(plan, accounts)
+    state = {
+        "started_snapshot": {
+            "owners": {"__shared__": 9000.0, "Anna": 3100.0, "Max": 2500.0, "open": 400.0},
+            "open_groups": 9, "open_amount": 1500.0, "settle": {"Anna": 0.0, "Max": 0.0},
+        },
+        "reviewed_at": None,
+    }
+    return rv.build_report(
+        txs=counted, plan=plan, clf=clf, persons_cfg=[{"name": n} for n in names],
+        person_names=names, today=now.date(), viewer_person="Anna", contracts=[],
+        review=payload, state=state,
+    )
+
+
+def generate_demo_benchmark() -> dict[str, Any]:
+    """The benchmark payload for ``?demo=1``: demo actuals against the bundled dataset."""
+    from .benchmark import BenchmarkProvider, compare_all, teaser
+    from .const import BENCHMARK_METRIC_SOURCES
+    from .year_view import actual_year
+
+    now, _accounts, _txs, counted, plan, clf = _demo_context()
+    provider = BenchmarkProvider()
+    actual = actual_year(counted, clf, [{"name": "Anna"}, {"name": "Max"}], now.date())
+    income = plan.income_net_total()
+    location = {"state": None, "postcode": None, "household_size": 2}
+    comparisons = compare_all(
+        provider, BENCHMARK_METRIC_SOURCES,
+        actual_monthly=actual["by_category_monthly"],
+        plan_monthly=plan.category_totals(now.month, now.year),
+        income_actual=actual["income_monthly"], income_plan=income,
+        months_covered=actual["months_covered"], year=now.year, location=location,
+    )
+    return {
+        "month": now.month, "year": now.year, "income_net_total": income,
+        "comparisons": comparisons, "teaser": teaser(comparisons),
+        "basis": {
+            "year": now.year, "months_covered": actual["months_covered"],
+            "extrapolated": 0 < actual["months_covered"] < 12, "has_actual": actual["months_covered"] > 0,
+            "scale": {"typical_tolerance": 0.1, "min": 0.0, "max": 1.0},
+        },
+        "references": provider.references(**location), "unavailable": provider.unavailable(),
+        "dataset": provider.dataset_info(), "location": location, "has_plan": True, "demo": True,
+    }
+
+
+_DEMO_CONTRACTS: list[dict[str, Any]] = [
+    {"id": "demo-miete", "display_name": "Vermieter Schmidt", "owner": "shared", "annual_cost": 13800.0, "interval": "monthly", "kind": "contract", "status": "active"},
+    {"id": "demo-strom", "display_name": "Stadtwerke", "owner": "shared", "annual_cost": 1416.0, "interval": "monthly", "kind": "contract", "status": "active"},
+    {"id": "demo-stream", "display_name": "Streamingdienst", "owner": "Anna", "annual_cost": 119.88, "interval": "monthly", "kind": "subscription", "status": "active"},
+    {"id": "demo-kfz", "display_name": "Autoversicherung", "owner": "Max", "annual_cost": 774.0, "interval": "monthly", "kind": "contract", "status": "active"},
+]

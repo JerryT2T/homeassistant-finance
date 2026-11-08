@@ -26,6 +26,11 @@ class _Manager:
     def resolve_person(self, user):
         return None
 
+    def _classifier(self):
+        from custom_components.finance_dashboard.household_summary import Classifier
+
+        return Classifier(None, [], None, [])
+
     def __init__(self, options=None):
         self._entry = MagicMock()
         self._entry.options = options or {}
@@ -184,3 +189,15 @@ async def test_transactions_admin_filters_and_paging():
     assert resp.data["limit"] == api_data.DEFAULT_PAGE_LIMIT
     assert resp.data["offset"] == 0
     assert m.live_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_transactions_carry_owner_fields_for_the_chip():
+    """E1-backend-payload: ledger_id + owner / source / confidence on every row (admin list)."""
+    resp = await _call(api_data.FinanceDashboardTransactionsView, _request(True, {"limit": "5"}), _Manager())
+    rows = resp.data["transactions"]
+    assert rows
+    for row in rows:
+        assert {"ledger_id", "owner", "owner_source", "owner_confidence"} <= row.keys()
+        assert row["owner"] in ("shared", "", "Anna", "Max") or isinstance(row["owner"], str)
+    assert all(isinstance(r["owner_confidence"], int) for r in rows)

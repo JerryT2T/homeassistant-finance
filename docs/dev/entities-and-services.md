@@ -60,10 +60,14 @@ Home screen (`api/home.py`, `home.py`, `pots.py`, `cycle.py`):
 - `GET|PUT /assignments` (`api/assignments.py`, admin only, 403 `admin_required`) - the "Personen & Konten"
   settings. GET returns `persons` (name + `ha_users`), `ha_users` (id, name, is_admin, `suggested`,
   `reason` person|active_user|system|inactive), `accounts` (`key`, name, institution, `iban_last4`,
-  `owner` person|shared|"") and `plan_persons`. PUT takes `{persons, accounts:[{key, owner}]}`,
+  `owner` person|shared|"", `household` bool, `owner_kind` open|person|person_household|household,
+  `card_owners` `{last 4 digits: person}`, only kept for `shared` accounts)
+  and `plan_persons`. PUT takes `{persons, accounts:[{key, owner, household?, card_owners?}]}` (`card_owners`: keys exactly 4 digits and values existing persons, else 400 `invalid_card_suffix`/`unknown_card_person`/`invalid_card_owners`; dropped when the account is not household-only) (`household: true` only
+  with a person; `shared`/"" + household, or a non-boolean, is 400 `invalid_owner_set`/`invalid_household`),
   validates (unique names <= 40 chars, existing HA users, one person per user, owner shared or a
   person, known account keys; else 400 `{error, detail}`), stores `persons` in the config entry and
-  writes `type`/`person`/`ha_users` onto the accounts (user-owned fields, kept on bank re-link).
+  writes `type`/`person`/`household_use`/`ha_users` onto the accounts (user-owned fields, kept on bank
+  re-link) and, when an owner set changed, re-derives the stored bookings from the ledger (no bank call).
   `/home` carries `setup {persons, user_mapped, accounts_total, accounts_assigned, pots}`.
 - Demo mode (`manager.demo_mode`, or `demo=1`) serves the same payload from invented data
   (`demo.generate_demo_home`).
@@ -97,11 +101,66 @@ counterparty as an own account; it applies retroactively on every derive.
 in front of the merchant cards (shared weekly quota); `POST /questions/answer` takes
 `{id, type: "contract"|"price", answer}` besides the merchant answer.
 
+Ownership (`api/ownership.py`, all admin only, 403 `admin_required`; cache and merchant memory, never a
+bank call; errors are 400 `{error, detail}`):
+- `POST /ownership/correct` `{ledger_id, owner, reach}` - `owner` a person name, `"shared"` or `null`
+  (undo); `reach` `"booking"` (this booking) or `"merchant"` (every booking of its merchant, "für alle
+  von X merken"). Works for a booking of any category. Answers `{ledger_id, reach, owner, merchant}`.
+  Errors `invalid_id`, `invalid_reach`, `invalid_owner`, `unknown_booking`, `no_merchant`.
+- `POST /ownership/series` `{series_id, owner, ledger_ids?}` - decides a recurring series once
+  (`ledger_ids` as `"<account_key>|<ledger_id>"`); `owner: null` forgets it.
+- `GET|PUT /ownership/household-categories` - `{categories, defaults, available}`; PUT `{categories}`
+  (`null` = defaults) sets the categories treated as household on a `{P,H}` account.
+- `POST /ownership/ai-review` `{merchants: [merchant keys]}` - category + shared/personal tendency for
+  those merchants in the monthly AI budget and only with the categorisation consent; answers
+  `{asked, categorized, tendencies, skipped_budget, reason}` (`reason` `no_consent` |
+  `provider_unusable` | `unavailable` | null). An AI category never replaces a user rule.
+
+Year view and benchmark (cache only, `year_view.py`, `benchmark.py`):
+- `GET /home?horizon=year` (both views) -> `year`: `cycles[12]` `{month, year, start, end, current, future,
+  before_history, spent, income, budget (that month's plan, null without a plan), status, spent_shared}`
+  (a cycle belongs to the month of its 15th); `balance` `{income, expenses, saved, savings_rate, fixed,
+  variable, through, cycles_counted}` year to date; `categories` top 8 `{category, amount, share,
+  delta_prev?}` (`delta_prev` only with a complete prior year; `categories_scope` `own` | `shared`);
+  `fixed_year` `{yearly, monthly, count, link: "contracts", items}`; `split` `{shared, persons: {name: total},
+  open?, own?: {person, total, shared_share}}` (other persons as totals only); `outliers` `{count, total,
+  items}` (items admin only, each with `ledger_id`, `owner`, `owner_source`, `owner_confidence`);
+  `vs_last_year` `{through, spent, spent_last_year, delta, delta_pct, income(_last_year), saved(_last_year)}`
+  **only present** when every counted account has bookings from before the prior-year window opens;
+  `benchmark_teaser` (admin, top 3 deviations), `reviewed_at`, `review_hint` `{open_groups, open_amount}`
+  (admin, only when new unreviewed groups sum to >= 100 EUR or > 2 % of the year's expenses).
+  Household cycle/year payloads also carry `settlement` `{start, end, balances: {person: {owes_household,
+  household_owes, net}}}` (net > 0: the person owes the household).
+- `GET /benchmark` (admin): `comparisons` ordered by relative deviation, each with the dataset labels
+  (`statistic`, `source`, `survey_year`, `level`) plus `basis` (`actual` | `plan`), `user_value`, `actual_value`,
+  `plan_value`, `deviation_pct`, `position` (0..1, 0.5 typical), `band` (`below` | `typical` | `above`, +-10 %),
+  `extrapolated`, `months_covered`; top-level `basis` `{year, months_covered, extrapolated, has_actual}`, `teaser`.
+
+Reconciliation review (`review.py`, `api/review.py`, admin only, cache only; `?demo=1` answers from the demo
+household and stores nothing):
+- `GET /review[?since=last]` -> `{steps: [acc, links, fixed, owner, cat, check], start_step, window, reviewed_at,
+  threshold}`; a step is `{id, open_count, auto_count, new_count, open_amount, group_ids, groups}`; a group is
+  `{group_id "<kind>:<key>", kind series|merchant|category|account|chain|position|link, label, amount, count,
+  owner, source, confidence, reason, auto (confidence >= 85), confirmed, category, bookings[<=20 with ledger_id,
+  owner, owner_source, owner_confidence]}`. `check` carries `criteria` `accounts, open_ownership (>50 EUR),
+  transfers, reconcile (difference to the cent + group ids), plan (shortfalls)` and `ok`.
+- `POST /review/start` stores the before-snapshot (idempotent); `POST /review/confirm` `{group_id, kind, owner?,
+  category?, confirmed? (chain), suspended? (position)}` writes the rule (merchant rule / series decision /
+  booking owners) and marks the group done at 95; `POST /review/ai` `{group_ids}` runs the AI review pass for
+  those groups' merchants (consent + monthly budget; `reason` when refused) and returns `{..., groups}`;
+  `POST /review/complete` stores `reviewed_at` and the seen groups.
+- `GET /review/report` -> `{hh_year, hh_cycle (plan vs actual per position), p_year, p_cycle (full detail for the
+  viewer, totals for others), settle {cycle, year}, diff (before/after/delta), reviewed_at}`.
+- `GET /transactions` (admin) rows carry `ledger_id` (`"<account_key>|<id>"`, accepted by `/ownership/correct`),
+  `owner` (`"shared"` | person | `""`), `owner_source`, `owner_confidence`.
+
 ## AI consent and spreadsheet ideas
 
 AI consent is per purpose (`ai_consent.py`, own store `finance_dashboard.ai_consent`; first load
 migrates the legacy wizard flag `ai_opt_in` into `categorize`). Purposes: `categorize`
-(`recurring`: merchant + remittance text of unclassified transactions, stays granted) and
+(`recurring`: merchant + remittance text of unclassified transactions, stays granted; the answer is the
+category plus a shared/personal tendency per merchant, same call; the purpose has `version: 2`, so an
+older grant reads `granted: false, reconsent: true` until the user grants it again) and
 `history_import` (`once`: see below), `contract_query` (`recurring`: the contracts-search question plus names of
 categories, labels and persons, never amounts, IBANs, dates or bookings) and
 `sheet_analysis` (`once`: names of budget-sheet positions local matching could not place; consumed

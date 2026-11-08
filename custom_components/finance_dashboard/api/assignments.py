@@ -25,7 +25,12 @@ class FinanceDashboardAssignmentsView(HomeAssistantView):
         return bool(user and user.is_admin)
 
     async def get(self, request: web.Request) -> web.Response:
-        """Return persons, HA users, accounts (IBAN last 4 only) and plan persons."""
+        """Return persons, HA users, accounts (IBAN last 4 only) and plan persons.
+
+        Each account carries its owner set: ``owner`` (person | "shared" | ""),
+        ``household`` (bool, a person account also used for the household) and
+        ``owner_kind`` (open | person | person_household | household).
+        """
         if not self._is_admin(request):
             return self.json({"error": "admin_required"}, status_code=403)
         hass = request.app["hass"]
@@ -68,7 +73,9 @@ class FinanceDashboardAssignmentsView(HomeAssistantView):
             )
         users = await hass.auth.async_get_users()
         try:
-            manager.async_set_assignments(body, users)
+            changed = manager.async_set_assignments(body, users)
         except AssignmentError as err:
             return self.json({"error": err.code, "detail": err.detail}, status_code=400)
+        if changed:  # re-derive stored bookings from the ledger: no bank call
+            await manager.async_apply_owner_change()
         return self.json(self._with_account_info(manager, manager.get_assignments(users)))

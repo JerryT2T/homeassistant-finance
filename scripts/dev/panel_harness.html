@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Finance harness</title>
+<style>
+  body { margin: 0; font-family: Roboto, system-ui, sans-serif; background: var(--primary-background-color); color: var(--primary-text-color); }
+  body.dark { --primary-background-color: #111318; --card-background-color: #1c1e24; --primary-text-color: #e3e4e8; --secondary-text-color: #a0a4ae; --divider-color: #2e3038; color-scheme: dark; }
+  body.light { --primary-background-color: #f4f6f8; --card-background-color: #fff; --primary-text-color: #1b1f24; --secondary-text-color: #5b6470; --divider-color: #e6e9ed; }
+  #bar { display: flex; flex-wrap: wrap; gap: 6px 14px; padding: 6px 10px; font-size: 12px; background: #263238; color: #eceff1; }
+  #bar label { display: inline-flex; gap: 4px; align-items: center; }
+  #stage { margin: 0 auto; padding: 8px; box-sizing: border-box; }
+  #log { font: 11px monospace; color: #b0bec5; }
+</style></head><body class="light">
+<div id="bar">
+  <label>element <input id="el" size="14" value="fd-home"></label>
+  <label><input type="checkbox" id="admin" checked> admin</label>
+  <label>lang <select id="lang"><option>de</option><option>en</option></select></label>
+  <label>theme <select id="theme"><option>light</option><option>dark</option></select></label>
+  <label>width <select id="width"><option value="">full</option><option>375</option><option>768</option><option>1100</option></select></label>
+  <span id="log"></span>
+</div>
+<div id="stage"></div>
+<script type="module">
+const $ = (id) => document.getElementById(id);
+const p = new URLSearchParams(location.search);
+$("el").value = p.get("el") || "fd-home";
+$("admin").checked = p.get("admin") !== "0";
+$("lang").value = p.get("lang") || "de";
+$("theme").value = p.get("theme") || "light";
+$("width").value = p.get("width") || "";
+const log = (m) => { $("log").textContent = m; console.info("[harness]", m); };
+
+const hass = {
+  language: "de",
+  user: { is_admin: true, name: "Anna" },
+  callApi: async (method, path, body) => {
+    const sep = path.includes("?") ? "&" : "?";
+    const r = await fetch(`/api/${path}${method === "GET" ? sep + "admin=" + (hass.user.is_admin ? 1 : 0) : ""}`, {
+      method, headers: { "Content-Type": "application/json" }, body: method === "GET" ? undefined : JSON.stringify(body || {}),
+    });
+    const j = await r.json();
+    if (!r.ok) { const e = new Error(j.error || r.status); e.status_code = r.status; throw e; }
+    return j;
+  },
+};
+window.hass = hass;
+function apply() {
+  hass.user.is_admin = $("admin").checked;
+  hass.language = $("lang").value;
+  document.documentElement.lang = hass.language;
+  document.body.className = $("theme").value;
+  const w = $("width").value;
+  $("stage").style.width = w ? w + "px" : "auto";
+}
+apply();
+window._fd = window._fd || {};
+window._fd._hass = hass;
+await import("/finance_dashboard_static/finance-dashboard-kit.js?v=harness");
+window._fd._hass = hass;
+function mount() {
+  apply();
+  window._fd._hass = hass;
+  const stage = $("stage");
+  stage.innerHTML = "";
+  const el = document.createElement($("el").value);
+  stage.appendChild(el);
+  el.hass = hass;
+  if ($("el").value === "fd-home") el.demo = true;
+  for (const ev of ["fd-navigate", "fd-toast", "fd-demo-toggle"]) el.addEventListener(ev, (e) => log(`${ev} ${JSON.stringify(e.detail || {})}`));
+}
+for (const id of ["el", "admin", "lang", "theme", "width"]) {
+  $(id).addEventListener("change", () => {
+    const u = new URL(location.href);
+    u.searchParams.set(id, id === "admin" ? ($("admin").checked ? "1" : "0") : $(id).value);
+    history.replaceState(null, "", u);
+    mount();
+  });
+}
+mount();
+</script></body></html>

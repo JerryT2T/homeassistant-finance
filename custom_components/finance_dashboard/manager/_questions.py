@@ -151,7 +151,7 @@ class QuestionsMixin:
             # Cached merchants stay candidates: a cached answer is learned below
             # without a call, so a result whose memory save got lost is not stranded.
             skip=tried,
-            has_rule=lambda k: k in mem.known_merchants(),
+            has_rule=lambda k: bool((mem.known_merchants().get(k) or {}).get("category")),
         )
         known = [
             *DEFAULT_CATEGORIES,
@@ -166,7 +166,7 @@ class QuestionsMixin:
             if cand["id"] not in current["cache"] and ai.usage_view(current, today)["remaining"] <= 0:
                 continue  # monthly cap reached - only cached answers are still free
             tried.add(cand["id"])
-            category = await ai.async_categorize(
+            category, tendency = await ai.async_categorize_full(
                 self._hass,
                 credentials=creds,
                 opt_in=True,
@@ -182,6 +182,8 @@ class QuestionsMixin:
                 and mem.learn_ai_merchant(cand["id"], category)
             ):
                 learned += 1
+            if tendency and mem.learn_tendency(cand["id"], tendency):
+                learned += 1  # saved and re-derived below like a category
         if learned:
             await mem.async_save()
             self._derive_from_ledger(self._transfer_overrides)

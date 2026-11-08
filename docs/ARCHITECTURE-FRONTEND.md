@@ -24,7 +24,8 @@ finance-dashboard-panel            shell: fd-home + subpage router + toast host
       |-- fd-transactions          (own header) transaction list (read-only on phones and tablets, categorising on desktop)
       |-- fd-questions             (own header) Fragen / flash cards
       |-- fd-contracts             (own header) Verträge
-      |-- fd-benchmark             (own header) Vergleich
+      |-- fd-benchmark             (own header) Vergleich (overview on one deviation scale; reachable only from Jahr)
+      |-- fd-review                (own header) Abgleich (stepper Konten..Abschluss-Check, KI fragen, report; from Einstellungen)
       '-- fd-budget-plan           (own header) Haushaltsplan
  fd-setup                          Einrichtung wizard (persons, accounts, payday, region, notifications, AI, points, done), its own full-screen layer
  fd-categorize (dialog)            desktop link from Fragen
@@ -83,7 +84,7 @@ Desktop side column (`@container ≥ 760 px`, purple ◆ marker):
 |---|---|
 | `freshness` | Datenstand (fd-freshness, shell draws fd-subpage-header) |
 | `settings` | `<fd-settings mode="page" section=…>` (shell draws the header) |
-| `transactions`, `questions`, `contracts`, `benchmark`, `plan` | the component, which draws its own header |
+| `transactions`, `questions`, `contracts`, `benchmark`, `review`, `plan` | the component, which draws its own header |
 | `setup` | the wizard layer (fd-setup) |
 | `back`, `settings-closed` | closes the subpage |
 
@@ -107,6 +108,17 @@ Datenstand (`fd-freshness`) shows Stand, last import / processing, the bank conn
 (consent, today's background budget, last manual fetch, block, last error, renew / manage link), the import log,
 monthly validity and the derivation check (`/freshness`, admin details). Desktop pointers get a link to the
 transaction list.
+
+## Owner chip (`fd-owner-chip.js`)
+
+One tap-to-correct component for "whose is this booking?". Used in the transaction list; Jahr and the review reuse it unchanged.
+
+- Properties: `ledgerId` (attr `ledger-id`), `owner` (`"shared"` | person name | `""`), `source` (`correction|merchant_rule|plan|series|category|ai|account`), `confidence` (0-100), `merchant` (enables "für alle von X merken" = reach `merchant`), `persons` (names or `{name, display_name}`; default read once from `GET /assignments`), `hass`, `editable` (default `hass.user.is_admin`; read-only label otherwise), `compact`.
+- Events: `fd-owner-changed` `{ledgerId, owner, reach, merchant}` (owner `null` = back to automatic; the host re-fetches), `fd-toast`.
+- Backend: `POST /ownership/correct {ledger_id, owner, reach}`. Keyboard: Enter/Space opens, `1..n` pick, Esc closes; below 600 px the popover is a bottom sheet.
+- Needed payload fields per booking: `ledger_id`, `owner`, `owner_source`, `owner_confidence`.
+
+Settings -> Konten (`fd-settings.js`) offers per account one person OR Haushalt (or Offen) plus the toggle "Auch für den Haushalt genutzt" for a person, and an editor for the household categories (`/ownership/household-categories`).
 
 ## Events
 
@@ -132,7 +144,7 @@ transaction list.
 
 `frontend/locales/de.json` and `en.json` hold the shell, Start and Datenstand strings (`sub.*`, `shell.*`,
 `home.*`, `fr.*`, …). Components built in parallel (fd-cycle-detail, fd-transactions, fd-subpage-header,
-fd-setup, fd-settings, fd-questions, fd-contracts, fd-benchmark) carry fallback dictionaries in their own file.
+fd-setup, fd-settings, fd-questions, fd-contracts, fd-benchmark, fd-review) carry fallback dictionaries in their own file.
 Placeholders use `$name`; plurals use a `_one` sibling key.
 
 ## Kit loading

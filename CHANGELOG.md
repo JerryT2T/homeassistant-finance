@@ -2,6 +2,23 @@
 
 All notable changes to the Finance will be documented in this file.
 
+## [0.41.0] — 2026-11-08
+
+### Added
+- Household → Year: a calendar year in twelve cycles with income, expenses, saved, savings rate, categories, fixed costs, split and the largest single expenses; the comparison with last year appears only when every account reaches back far enough
+- In the person view of the year, the person's budget includes their free money from the split, and "saved" carries their share of the shared costs
+- A reconciliation review ("Abgleich"), reachable again at any time: accounts, links, fixed costs, household or person, categories and a final check, grouped by euro impact, with AI suggestions, a report per household/person × year/cycle and a stored "reviewed at"
+- An account is owned by one person, one person plus the household, or the household only - no other combination; old settings keep their meaning, and changing an account's owners re-derives the stored bookings without a bank call while your corrections stay
+- On a person-plus-household account every expense is assigned by one chain - your correction, a merchant rule, the plan position, a decided recurring series, a household category (groceries, housing by default, configurable), the AI hint, otherwise the person; each assignment records where it came from and how sure it is
+- A household-only account can map the last 4 digits of a person's card to that person (Settings → Accounts); such bookings count for the person unless the category is a household one - read locally, never sent anywhere
+- The categorisation call also hints whether a merchant is shared or personal (no names, same payload, no extra call, cached per merchant); the categorisation consent text names this and is asked again once
+- The owner of any booking, or of all bookings of a merchant or recurring series, can be corrected; the AI can be run on a list of unclear merchants within the monthly budget and with consent
+- Per person, what they owe the household (personal spend from the joint account) or the household owes them (household spend from a personal account)
+
+### Changed
+- The typical-household comparison is redesigned: it uses your actual yearly spend (extrapolated and labelled when the year is incomplete), keeps the plan as second value, sorts outliers first and shows a below/typical/above position; it is reached from the year view only, and the old comparison card in the budget plan is gone
+- Contract detection for the year view and the review is cached per data version
+
 ## [0.40.1] — 2026-11-08
 
 ### Changed

@@ -21,6 +21,57 @@ applying it again would flatten exactly the individual-cost differences the mode
 Additional: remainder split ("no split" or "equal distribution"); optional category-level override
 of the split (not implemented yet).
 
+## Account owner sets and who owns an expense (`ownership.py`)
+
+An account has exactly one owner set: `{person}`, `{person, household}`, `{household}` or none yet
+("open"). No other combination exists (two persons on one account is not allowed), so "not household"
+always means the one person. Stored backward-compatibly: `type` (`personal`/`shared`), `person` and the
+boolean `household_use` (only with a person; old configs lack it = `False`, same meaning as before).
+`ownership.account_kind` reads it, `apply_owner_set` writes it and rejects other combinations. Changing
+an owner set re-derives the stored bookings (`async_apply_owner_change`, ledger replay, no bank call);
+corrections and rules live in the merchant memory and stay.
+
+**Card signal (`{household}` accounts only).** A joint account can be used with each person's own card. The
+account may carry `card_owners` (`{last 4 digits: person}`, user-owned like `household_use`, survives re-link).
+The derive step stamps `_card_person` when a booking's card fields or remittance text carry a mapped suffix
+(`ownership.card_suffixes`, needs a marker such as `*`, `xxxx`, `Karte`; parsed locally, never sent anywhere).
+Resolution on `{H}`: correction > merchant rule > plan > series > card (person, source `card`, confidence 80,
+only outside the household categories) > household. Other owner sets ignore the mapping.
+
+One resolver, `ownership.resolve_owner_detail(tx, position, correction) -> (owner, source, confidence)`;
+`plan_match.resolve_owner` returns its first element and `Classifier.classify_detail` adds it to the
+classification, so `figures` and `home.py` can never disagree. The chain:
+
+| source | confidence | applies on |
+|---|---|---|
+| `correction` (this booking) | 100 | every account |
+| `merchant_rule` ("für alle von X merken") | 95 | every account |
+| `plan` (matched plan position's owner) | 90 | every account |
+| `series` (a recurring series decided once) | 85 | `{P,H}` only |
+| `category` (household categories; default housing_cold, housing_warm, groceries; configurable) | 70 | `{P,H}` only |
+| `ai` (shared/personal tendency of the merchant) | 60 | `{P,H}` only |
+| `account` default | 100 on `{P}`/`{H}`, 50 = the person on `{P,H}`, 0 = open | - |
+
+A confidence of 85 or more counts as done without asking. The derive step stamps the inputs on each
+booking (`_account_household_use`, `_owner_override` + `_owner_scope` booking|merchant,
+`_series_owner`, `_ai_tendency`, `_household_categories`); the plan position is matched at read time.
+The old card-suffix signal is not built: with at most one person per account it has nothing to decide.
+
+Settlement (`household_settle.settlement_balances`): from the counted, netted bookings, personal spend
+paid from a `{H}` account is owed to the household by that person; household spend paid from a `{P}` or
+`{P,H}` account is owed by the household to the payer. `net` > 0: the person owes the household.
+
+## Year, review and settlement
+
+The year view (`year_view.py`) and the review (`review.py`) add no counting of their own: every figure is
+`household_summary.figures` inside a cycle from `window_of_month` (the cycle holding the 15th of a month, one
+cycle per month), owners from `Classifier.classify_detail`. A cycle before the first booking is
+`before_history`, one after today `future`; the prior-year comparison needs every counted account to reach back
+to the prior-year window start, else the whole `vs_last_year` block and every `delta_prev` are omitted. In the
+household view only the shared bucket carries categories and outliers; persons appear as totals. A plan
+position may be marked `suspended` (paused on purpose): the review's plan check then does not expect a booking.
+`settlement_balances` is shown per household cycle and in the review report.
+
 ## Income cycle (`cycle.py`, used by every view)
 
 No view uses the calendar month; home, household summary, monthly summary (and with it the sensors

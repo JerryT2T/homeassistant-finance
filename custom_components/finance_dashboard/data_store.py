@@ -47,7 +47,8 @@ MigrateFunc = Callable[[int, int, Any], Awaitable[Any]]
 
 # Keys that are derived (from rules / user settings), never ledger data.
 _DERIVED_PREFIXES = ("_account_", "_transfer", "_refund_")
-_DERIVED_KEYS = ("category", "_own_category", "_owner_override", "_net_expense")
+_DERIVED_KEYS = ("category", "_own_category", "_owner_override", "_owner_scope", "_series_owner",
+                 "_ai_tendency", "_household_categories", "_net_expense")
 PENDING_MATCH_DAYS = 3
 SHORT_ANSWER_DAYS = 31
 _STRING_FIELDS = (

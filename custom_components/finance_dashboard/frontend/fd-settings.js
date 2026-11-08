@@ -31,7 +31,7 @@
  */
 
 const DOMAIN = "finance_dashboard";
-const ALL = ["persons", "accounts", "payday", "region", "notifications", "ai", "history", "points", "goals", "banks", "advanced"];
+const ALL = ["persons", "accounts", "review", "payday", "region", "notifications", "ai", "history", "points", "goals", "banks", "advanced"];
 const POINTS_EVENT = "finance_dashboard_points_awarded";
 const STATES = [
   ["DE-BW", "Baden-Württemberg"], ["DE-BY", "Bayern"], ["DE-BE", "Berlin"], ["DE-BB", "Brandenburg"],
@@ -77,6 +77,24 @@ const FB = {
     "settings.step2_hint": "Offen heißt: noch nicht entschieden. Haushalt = gemeinsames Konto.",
     "settings.owner_shared": "Haushalt",
     "settings.owner_none": "Offen",
+    "settings.owner_household_too": "Auch für den Haushalt genutzt",
+    "settings.owner_household_hint": "Was nicht als Haushalt erkannt wird, zählt für die Person.",
+    "settings.cards.title": "Karten auf diesem Konto",
+    "settings.cards.hint": "Wird mit der Karte einer Person bezahlt, zählt die Buchung für sie – außer bei Haushaltskategorien wie Lebensmittel. Die Nummer wird nur lokal gelesen.",
+    "settings.cards.suffix": "Letzte 4 Ziffern",
+    "settings.cards.person": "Person",
+    "settings.cards.add": "Karte hinzufügen",
+    "settings.cards.remove": "Karte entfernen",
+    "settings.cards.err": "Kartenkennung: genau 4 Ziffern und eine Person angeben.",
+    "settings.owner_rule": "Ein Konto gehört einer Person, einer Person und dem Haushalt, oder nur dem Haushalt.",
+    "settings.hhcat.title": "Haushalt-Kategorien",
+    "settings.hhcat.hint": "Auf Konten mit Person und Haushalt zählen diese Kategorien standardmäßig zum Haushalt.",
+    "settings.hhcat.reset": "Auf Standard zurücksetzen",
+    "settings.hhcat.saved": "Haushalt-Kategorien gespeichert",
+    "settings.hhcat.default": "Standard",
+    "settings.recalculated": "Zahlen werden neu berechnet",
+    "settings.ai.reconsent": "Neu fragen: Der Zweck ist gewachsen, Finance schlägt jetzt auch gemeinsam oder persönlich vor. Bitte erneut zustimmen.",
+    "settings.ai.reconsent_btn": "Erneut zustimmen",
     "settings.no_accounts": "Noch keine Konten verbunden.",
     "settings.connect_bank": "Bank verbinden",
     "settings.acc.since": "Daten ab $month",
@@ -117,6 +135,12 @@ const FB = {
     "settings.sec.goals": "Sparziele",
     "settings.sec.banks": "Banken",
     "settings.sec.advanced": "Erweitert",
+    "settings.sec.review": "Abgleich",
+    "settings.review.hint": "Prüfe Schritt für Schritt, ob Konten, Zuordnung (Haushalt oder Person) und Kategorien stimmen. Danach zeigen alle Ansichten dieselbe Wahrheit. Du kannst jederzeit erneut abgleichen.",
+    "settings.review.start": "Abgleich starten",
+    "settings.review.again": "Erneut prüfen",
+    "settings.review.checked": "Stand geprüft am $date",
+    "settings.review.never": "Noch nicht abgeglichen",
     "settings.payday_hint": "Dein Monat beginnt mit dem Gehalt. Leer lassen heißt: Kalendermonat.",
     "settings.payday_day": "Tag im Monat",
     "settings.payday_err": "Der Tag muss zwischen 1 und 31 liegen.",
@@ -224,6 +248,24 @@ const FB = {
     "settings.step2_hint": "Open means not decided yet. Household = shared account.",
     "settings.owner_shared": "Household",
     "settings.owner_none": "Open",
+    "settings.owner_household_too": "Also used for the household",
+    "settings.owner_household_hint": "Whatever is not recognised as household counts for the person.",
+    "settings.cards.title": "Cards on this account",
+    "settings.cards.hint": "When a person's own card pays, the booking counts for them – except household categories such as groceries. The number is only read locally.",
+    "settings.cards.suffix": "Last 4 digits",
+    "settings.cards.person": "Person",
+    "settings.cards.add": "Add card",
+    "settings.cards.remove": "Remove card",
+    "settings.cards.err": "Card: enter exactly 4 digits and a person.",
+    "settings.owner_rule": "An account belongs to one person, one person and the household, or the household only.",
+    "settings.hhcat.title": "Household categories",
+    "settings.hhcat.hint": "On accounts with a person and the household, these categories count as household by default.",
+    "settings.hhcat.reset": "Reset to defaults",
+    "settings.hhcat.saved": "Household categories saved",
+    "settings.hhcat.default": "Default",
+    "settings.recalculated": "Numbers are being recalculated",
+    "settings.ai.reconsent": "Asking again: the purpose has grown, Finance now also suggests shared or personal. Please consent again.",
+    "settings.ai.reconsent_btn": "Consent again",
     "settings.no_accounts": "No accounts connected yet.",
     "settings.connect_bank": "Connect a bank",
     "settings.acc.since": "Data from $month",
@@ -264,6 +306,12 @@ const FB = {
     "settings.sec.goals": "Savings goals",
     "settings.sec.banks": "Banks",
     "settings.sec.advanced": "Advanced",
+    "settings.sec.review": "Reconciliation",
+    "settings.review.hint": "Check step by step that accounts, assignment (household or person) and categories are right. Afterwards every view shows the same truth. You can reconcile again at any time.",
+    "settings.review.start": "Start reconciliation",
+    "settings.review.again": "Check again",
+    "settings.review.checked": "Checked on $date",
+    "settings.review.never": "Not reconciled yet",
     "settings.payday_hint": "Your month starts with your salary. Leave empty to use the calendar month.",
     "settings.payday_day": "Day of month",
     "settings.payday_err": "The day must be between 1 and 31.",
@@ -397,10 +445,26 @@ summary { min-height: var(--fd-touch); display: flex; align-items: center; color
 .acc { padding: 8px 0; min-width: 0; }
 .acc + .acc { border-top: 1px solid var(--fd-line); }
 .acc .nm { overflow-wrap: anywhere; min-width: 0; }
+.hhrow { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 8px; padding-left: 4px; min-width: 0; }
+.hhrow .who { min-width: 0; display: flex; flex-direction: column; overflow-wrap: anywhere; }
+.hhrow .who span { color: var(--fd-t2); font-size: 12px; }
+.cards { margin-top: 10px; padding-left: 4px; display: flex; flex-direction: column; gap: 8px; align-items: flex-start; min-width: 0; }
+.cards .who { display: flex; flex-direction: column; overflow-wrap: anywhere; }
+.cards .who span { color: var(--fd-t2); font-size: 12px; }
+.cardrow { display: flex; gap: 8px; align-items: center; width: 100%; min-width: 0; }
+.cardrow input { flex: 0 0 96px; width: 96px; min-width: 0; }
+.cardrow select { flex: 1 1 0; min-width: 0; min-height: var(--fd-touch); padding: 0 8px; border: 1px solid var(--fd-line); border-radius: 10px; background: var(--fd-page); color: var(--fd-t1); font: inherit; }
+.cardrow .cardx { flex: none; min-width: var(--fd-touch); }
+.cardrow input:focus-visible, .cardrow select:focus-visible { outline: 2px solid var(--fd-a700); outline-offset: 2px; }
+.pills { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.pill { min-height: 40px; padding: 0 12px; border: 1px solid var(--fd-line); border-radius: var(--fd-r-pill); background: transparent; display: inline-flex; align-items: center; gap: 6px; max-width: 100%; }
+.pill[aria-pressed="true"] { background: var(--fd-a50); border-color: var(--fd-a500); color: var(--fd-a900); font-weight: 500; }
+.pill .dflt { font-size: 11px; color: var(--fd-t3); }
+.reask { margin: 8px 0; padding: 8px 12px; border-radius: 10px; border-left: 3px solid var(--fd-warn, var(--fd-a500)); background: var(--fd-sunk); font-size: 12.5px; display: flex; flex-direction: column; gap: 4px; }
 .acc .nm b { font-weight: 500; }
 .acc .nm span { display: block; color: var(--fd-t2); font-size: 11.5px; }
-.seg { display: flex; flex-wrap: nowrap; gap: 6px; margin-top: 6px; overflow-x: auto; scroll-snap-type: x proximity; padding-bottom: 2px; min-width: 0; }
-.seg button { flex: none; scroll-snap-align: start; min-height: 40px; padding: 0 12px 0 6px; border: 1px solid var(--fd-line); border-radius: var(--fd-r-pill); background: transparent; display: inline-flex; align-items: center; gap: 6px; max-width: 100%; }
+.seg { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; min-width: 0; }
+.seg button { flex: none; min-height: 40px; padding: 0 12px 0 6px; border: 1px solid var(--fd-line); border-radius: var(--fd-r-pill); background: transparent; display: inline-flex; align-items: center; gap: 6px; max-width: 100%; }
 .seg .av { flex: none; width: 24px; height: 24px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: var(--c, var(--fd-t3)); color: #fff; font-size: 11.5px; font-weight: 600; }
 .seg .lb { max-width: 16ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .seg button[aria-checked="true"] { background: var(--fd-a50); border-color: var(--c, var(--fd-a500)); color: var(--fd-a900); font-weight: 500; }
@@ -535,6 +599,8 @@ class FdSettings extends HTMLElement {
     const need = {
       payday: [["setup", "setup"]], region: [["setup", "setup"]], notifications: [["setup", "setup"]],
       goals: [["setup", "setup"], ["goals", "setup/goals"]],
+      accounts: [["hhcat", "ownership/household-categories"]],
+      review: [["review", "review"]],
       ai: [["ai", "setup/ai"], ["consents", "setup/ai/consents"]], points: [["points", "setup/points"]],
     }[sec] || [];
     for (const [key, path] of need) {
@@ -569,6 +635,8 @@ class FdSettings extends HTMLElement {
         provider: v.provider || "ha", model: v.model || "", ha_agent: v.ha_agent || "",
         budget_cap: (v.budget || {}).cap ?? 100, api_key: "",
       };
+    } else if (key === "hhcat") {
+      this._dr.hhcat = new Set(v.categories || []);
     } else if (key === "points") {
       this._dr.points = { entity_id: v.entity_id || "", q: "" };
     }
@@ -581,6 +649,8 @@ class FdSettings extends HTMLElement {
         display_name: p.display_name && p.display_name !== p.name ? p.display_name : "",
       })),
       owners: Object.fromEntries((d.accounts || []).map((a) => [a.key, a.owner || ""])),
+      households: Object.fromEntries((d.accounts || []).map((a) => [a.key, !!a.household && !!a.owner && a.owner !== "shared"])),
+      cards: Object.fromEntries((d.accounts || []).map((a) => [a.key, Object.entries(a.card_owners || {}).map(([suffix, person]) => ({ suffix, person }))])),
     };
   }
 
@@ -760,10 +830,51 @@ class FdSettings extends HTMLElement {
       const kind = a.account_type && tr(`settings.acc.type.${a.account_type}`) !== `settings.acc.type.${a.account_type}` ? tr(`settings.acc.type.${a.account_type}`) : "";
       const since = this._sinceText(a.earliest_booked);
       const meta = [a.institution || "", kind, since].filter(Boolean).join(" · ");
+      const isPerson = cur && cur !== "shared";
+      const hhOn = isPerson && !!this._draft.households[a.key];
+      const hh = isPerson ? `<div class="hhrow"><div class="who"><b>${escHtml(tr("settings.owner_household_too"))}</b>${hhOn ? `<span>${escHtml(tr("settings.owner_household_hint"))}</span>` : ""}</div><span class="hit"><button type="button" class="sw" role="switch" aria-checked="${hhOn}" data-hh="${escHtml(a.key)}" aria-label="${escHtml(tr("settings.owner_household_too") + ": " + a.name)}"></button></span></div>` : "";
       return `<div class="acc"><div class="nm"><b>${escHtml(a.name)}</b><span>${escHtml(meta)}${a.iban_last4 ? ` · ••${escHtml(a.iban_last4)}` : ""}</span></div>
-  <div class="seg" role="radiogroup" aria-label="${escHtml(a.name)}">${opts.join("")}</div></div>`;
+  <div class="seg" role="radiogroup" aria-label="${escHtml(a.name)}">${opts.join("")}</div>${hh}${cur === "shared" ? this._cardsHtml(a) : ""}</div>`;
     }).join("");
-    return `${head}${note}${rows}${this._bar("assign")}`;
+    return `${head}<p class="muted">${escHtml(tr("settings.owner_rule"))}</p>${note}${rows}${this._bar("assign")}${this._hhcatHtml()}`;
+  }
+
+  /** Card-suffix -> person mapping of a household-only account (read locally, never sent anywhere). */
+  _cardsHtml(a) {
+    const { escHtml } = window._fd;
+    const rows = (this._draft.cards[a.key] || []).map((c, i) => {
+      const opts = ['<option value=""></option>'].concat(this._draft.persons.filter((p) => p.name).map((p) =>
+        `<option value="${escHtml(p.name)}"${p.name === c.person ? " selected" : ""}>${escHtml(this._dn(p))}</option>`)).join("");
+      return `<div class="cardrow"><input type="text" inputmode="numeric" maxlength="4" pattern="[0-9]{4}" autocomplete="off" value="${escHtml(c.suffix)}" data-cs="${escHtml(a.key)}:${i}" aria-label="${escHtml(tr("settings.cards.suffix"))}" placeholder="1234">
+<select data-cp="${escHtml(a.key)}:${i}" aria-label="${escHtml(tr("settings.cards.person"))}">${opts}</select>
+<button type="button" class="btn ghost sm cardx" data-cx="${escHtml(a.key)}:${i}" aria-label="${escHtml(tr("settings.cards.remove"))}">×</button></div>`;
+    }).join("");
+    return `<div class="cards"><div class="who"><b>${escHtml(tr("settings.cards.title"))}</b><span>${escHtml(tr("settings.cards.hint"))}</span></div>${rows}
+<button type="button" class="btn ghost sm" data-ca="${escHtml(a.key)}">${escHtml(tr("settings.cards.add"))}</button></div>`;
+  }
+
+  /** Editor for the categories that count as household on person + household accounts. */
+  _hhcatHtml() {
+    const { escHtml, catLabel } = window._fd;
+    const v = this._d.hhcat;
+    if (this._embedded || !v || !Object.values(this._draft.households).some(Boolean)) return "";
+    const sel = this._dr.hhcat || new Set();
+    const defaults = new Set(v.defaults || []);
+    const chips = (v.available || []).map((c) => { const id = typeof c === "string" ? c : c.id; return `<button type="button" class="pill" aria-pressed="${sel.has(id)}" data-hhc="${escHtml(id)}">${escHtml(catLabel(id))}${defaults.has(id) ? `<span class="dflt">${escHtml(tr("settings.hhcat.default"))}</span>` : ""}</button>`; }).join("");
+    return `<h4 style="margin:18px 0 4px">${escHtml(tr("settings.hhcat.title"))}</h4><p class="muted">${escHtml(tr("settings.hhcat.hint"))}</p>
+      <div class="pills" role="group" aria-label="${escHtml(tr("settings.hhcat.title"))}">${chips}</div>
+      <div class="bar" style="gap:8px"><button type="button" class="btn ghost" data-hhreset="1">${escHtml(tr("settings.hhcat.reset"))}</button><button type="button" class="btn" data-save="hhcat">${escHtml(tr("settings.save"))}</button></div>`;
+  }
+
+  async _saveHhcat(reset) {
+    const v = this._d.hhcat;
+    try {
+      const res = await this._hass.callApi("PUT", `${DOMAIN}/ownership/household-categories`, { categories: reset ? null : [...this._dr.hhcat] });
+      this._d.hhcat = res; this._initDraft("hhcat");
+      this._renderSec("accounts");
+      this._toast(tr("settings.hhcat.saved"), "success");
+      this._toast(tr("settings.recalculated"), "success");
+    } catch (e) { this._d.hhcat = v; this._fail(this._errText(e), "accounts"); }
   }
 
   /** "Daten ab Oktober 2025" from a YYYY-MM-DD date; empty without one. */
@@ -882,21 +993,23 @@ class FdSettings extends HTMLElement {
       const mode = st.mode || info.mode;
       const tk = `ai.purpose.${id}.title`;
       const title = tr(tk) === tk ? id : tr(tk);
+      const re = !!st.reconsent;
       const meta = [on && st.granted_at ? tr("settings.ai.consent_on", { date: fmtDate(st.granted_at, true) }) : tr("settings.ai.consent_off"),
         st.used_at ? tr("settings.ai.used", { date: fmtDate(st.used_at, true) }) : tr("settings.ai.used_never")].join(" · ");
       const pros = (info.pros || []).slice(0, 3), risks = (info.risks || []).slice(0, 3);
       return `<div class="cons"><div class="row" style="border:0"><div class="who"><b>${escHtml(title)}${mode ? `<span class="chip">${escHtml(tr("ai.mode." + mode))}</span>` : ""}</b><span>${escHtml(meta)}</span></div>
           <span class="hit"><button type="button" class="sw" role="switch" aria-checked="${on}" data-consent="${escHtml(id)}" aria-label="${escHtml(title)}"></button></span></div>
+        ${re ? `<div class="reask" role="status"><span>${escHtml(tr("settings.ai.reconsent"))}</span><button type="button" class="btn sm" data-reconsent="${escHtml(id)}">${escHtml(tr("settings.ai.reconsent_btn"))}</button></div>` : ""}
         ${pros.length ? `<div class="lbl">${escHtml(tr("settings.ai.pros"))}</div><ul class="pc">${pros.map((k) => line(k, id)).join("")}</ul>` : ""}
         ${risks.length ? `<div class="lbl">${escHtml(tr("settings.ai.risks"))}</div><ul class="pc">${risks.map((k) => line(k, id)).join("")}</ul>` : ""}</div>`;
     }).join("");
     return this._embedded ? blocks : `<div class="lbl" style="margin-top:8px">${escHtml(tr("settings.ai.consent_title"))}</div>${blocks}`;
   }
 
-  async _toggleConsent(purpose) {
+  async _toggleConsent(purpose, again) {
     const cur = ((this._d.consents || {}).consents || {})[purpose] || {};
     try {
-      const res = await this._put("setup/ai/consents", { purpose, granted: !cur.granted });
+      const res = await this._put("setup/ai/consents", { purpose, granted: again ? true : !cur.granted });
       this._d.consents = res && res.consents ? res : await this._hass.callApi("GET", `${DOMAIN}/setup/ai/consents`);
       this._msg.ai = "";
       this._renderSec("ai");
@@ -994,6 +1107,15 @@ class FdSettings extends HTMLElement {
       <div class="bar"><button type="button" class="btn" data-goal-add>${escHtml(tr("settings.goals.add"))}</button></div>`;
   }
 
+  _s_review() {
+    const { escHtml, fmtDate } = window._fd;
+    const at = this._d.review && this._d.review.reviewed_at;
+    const stand = at ? tr("settings.review.checked", { date: fmtDate(at, true) }) : tr("settings.review.never");
+    return `<p class="muted" style="font-size:12.5px">${escHtml(tr("settings.review.hint"))}</p>
+      <div class="row" style="border:0"><div class="who"><b>${escHtml(stand)}</b></div>
+        <button type="button" class="btn" data-adv="review">${escHtml(tr(at ? "settings.review.again" : "settings.review.start"))}</button></div>`;
+  }
+
   _s_banks() {
     const { escHtml } = window._fd;
     return `<p class="muted" style="font-size:12.5px">${escHtml(tr("settings.banks.body"))}</p>
@@ -1034,6 +1156,26 @@ class FdSettings extends HTMLElement {
       } else if (d.rm !== undefined) {
         this._removePerson(this._draft.persons[Number(d.rm)]);
         this._renderSec("persons"); this._renderSec("accounts");
+      } else if (d.ca) {
+        (this._draft.cards[d.ca] ||= []).push({ suffix: "", person: "" });
+        this._renderSec("accounts");
+        const ins = sh.querySelectorAll(`[data-cs^="${window.CSS.escape(d.ca)}:"]`);
+        ins[ins.length - 1]?.focus();
+      } else if (d.cx) {
+        const j = d.cx.lastIndexOf(":");
+        this._draft.cards[d.cx.slice(0, j)]?.splice(Number(d.cx.slice(j + 1)), 1);
+        this._renderSec("accounts");
+      } else if (d.hh) {
+        this._draft.households[d.hh] = !this._draft.households[d.hh];
+        this._renderSec("accounts");
+      } else if (d.hhc) {
+        const set = this._dr.hhcat || (this._dr.hhcat = new Set());
+        if (!set.delete(d.hhc)) set.add(d.hhc);
+        this._renderSec("accounts");
+      } else if (d.hhreset) {
+        this._saveHhcat(true);
+      } else if (d.save === "hhcat") {
+        this._saveHhcat(false);
       } else if (d.acc && d.owner.startsWith("user:")) {
         const u = (this._data.ha_users || []).find((x) => `user:${x.id}` === d.owner);
         if (!u) return;
@@ -1042,6 +1184,7 @@ class FdSettings extends HTMLElement {
         this._renderSec("persons"); this._renderSec("accounts");
       } else if (d.acc) {
         this._draft.owners[d.acc] = d.owner;
+        if (!d.owner || d.owner === "shared") this._draft.households[d.acc] = false;
         this._renderSec("accounts");
       } else if (d.save) {
         this._saveSection(d.save);
@@ -1064,6 +1207,8 @@ class FdSettings extends HTMLElement {
       } else if (d.ptClear !== undefined) {
         this._dr.points.entity_id = "";
         this._renderSec("points");
+      } else if (d.reconsent) {
+        this._toggleConsent(d.reconsent, true);
       } else if (d.consent) {
         this._toggleConsent(d.consent);
       } else if (d.aiRmkey !== undefined) {
@@ -1076,6 +1221,8 @@ class FdSettings extends HTMLElement {
         this._removeGoal(d.goalRm);
       } else if (d.adv === "demo") {
         this._toggleDemo();
+      } else if (d.adv === "review") {
+        this.dispatchEvent(new CustomEvent("fd-navigate", { bubbles: true, composed: true, detail: { target: "review" } }));
       } else if (d.adv === "setup") {
         this.dispatchEvent(new CustomEvent("fd-navigate", { bubbles: true, composed: true, detail: { target: "setup" } }));
       }
@@ -1096,6 +1243,9 @@ class FdSettings extends HTMLElement {
         }
         return;
       }
+      const cardAt = (v) => { const j = v.lastIndexOf(":"); return this._draft.cards[v.slice(0, j)]?.[Number(v.slice(j + 1))]; };
+      if (d.cs !== undefined) { const c = cardAt(d.cs); if (c) { c.suffix = el.value.replace(/\D/g, "").slice(0, 4); if (el.value !== c.suffix) el.value = c.suffix; } return; }
+      if (d.cp !== undefined) { const c = cardAt(d.cp); if (c) c.person = el.value; return; }
       let person = null;
       if (d.name) person = this._personOf(d.name);
       else if (d.free !== undefined) person = this._draft.persons[Number(d.free)];
@@ -1105,6 +1255,7 @@ class FdSettings extends HTMLElement {
       const old = person.name;
       person.name = el.value;
       for (const k of Object.keys(this._draft.owners)) if (this._draft.owners[k] === old) this._draft.owners[k] = el.value;
+      for (const rows of Object.values(this._draft.cards)) for (const c of rows) if (c.person === old) c.person = el.value;
       this._renderSec("accounts");
     });
   }
@@ -1262,13 +1413,27 @@ class FdSettings extends HTMLElement {
     const names = this._draft.persons.map((p) => p.name.trim());
     if (names.some((n) => !n)) return this._fail(tr("settings.err_name")), false;
     if (new Set(names.map((n) => n.toLowerCase())).size !== names.length) return this._fail(tr("settings.err_dup")), false;
+    let cardErr = false;
+    const cardMap = (a) => {
+      const out = {};
+      if (this._draft.owners[a.key] !== "shared") return out;
+      for (const c of this._draft.cards[a.key] || []) {
+        if (!c.suffix && !c.person) continue;
+        if (!/^\d{4}$/.test(c.suffix) || !c.person.trim()) { cardErr = true; continue; }
+        out[c.suffix] = c.person.trim();
+      }
+      return out;
+    };
     const body = {
       persons: this._draft.persons.map((p) => ({ name: p.name.trim(), display_name: (p.display_name || "").trim(), ha_users: p.ha_users })),
       accounts: (this._data.accounts || []).map((a) => ({
         key: a.key,
         owner: (this._draft.owners[a.key] || "").trim(),
+        household: !!this._draft.households[a.key] && !!this._draft.owners[a.key] && this._draft.owners[a.key] !== "shared",
+        card_owners: cardMap(a),
       })),
     };
+    if (cardErr) return this._fail(tr("settings.cards.err"), "accounts"), false;
     this._saving = true;
     const btns = this.shadowRoot.querySelectorAll("[data-save=assign]");
     btns.forEach((b) => { b.disabled = true; b.textContent = tr("settings.saving"); });
@@ -1276,8 +1441,10 @@ class FdSettings extends HTMLElement {
       const resp = await this._hass.callApi("PUT", `${DOMAIN}/assignments`, body);
       this._error = "";
       this._saving = false;
+      const changed = (this._data.accounts || []).some((a) => (a.owner || "") !== (this._draft.owners[a.key] || "") || !!a.household !== !!this._draft.households[a.key] || JSON.stringify(a.card_owners || {}) !== JSON.stringify(cardMap(a)));
       this.data = resp;
       this._toast(tr("settings.saved"), "success");
+      if (changed) this._toast(tr("settings.recalculated"), "success");
       this.dispatchEvent(new CustomEvent("fd-assignments-saved", { bubbles: true, composed: true, detail: { payload: resp } }));
       // Names changed: owner pickers elsewhere on the page show the nickname.
       this._loaded.delete("setup");

@@ -5,7 +5,10 @@ provider is granted on its own, and says what it sends (see the endpoint
 ``/setup/ai/consents``).
 
 * ``categorize``     (recurring) merchant + remittance text of unclassified bank
-                     transactions. Stays granted until revoked.
+                     transactions; the answer is the category and a shared/personal
+                     tendency (version 2: the purpose widened, so a version-1 grant
+                     no longer counts and is asked again once). Stays granted until
+                     revoked.
 * ``sheet_analysis`` (once) names of budget-sheet positions local matching could
                      not place. Consumed by the first analysis that uses it.
 * ``history_import`` (once) rows of an uploaded booking-history file the local
@@ -33,11 +36,15 @@ STORAGE_KEY = f"{DOMAIN}.ai_consent"
 STORAGE_VERSION = 1
 
 PURPOSES: dict[str, dict[str, str]] = {
-    "categorize": {"mode": "recurring"},
+    "categorize": {"mode": "recurring", "version": 2},
     "sheet_analysis": {"mode": "once"},
     "history_import": {"mode": "once"},
     "contract_query": {"mode": "recurring"},
 }
+
+
+def _version(purpose: str) -> int:
+    return int(PURPOSES[purpose].get("version", 1))
 
 
 def _store(hass: HomeAssistant) -> Store:
@@ -51,8 +58,15 @@ def _store(hass: HomeAssistant) -> Store:
 
 def _entry(raw: Any, purpose: str) -> dict[str, Any]:
     raw = raw if isinstance(raw, dict) else {}
+    seen = raw.get("version") if isinstance(raw.get("version"), int) else 1
+    # A grant given for an older, narrower purpose is void until asked again.
+    stale = (raw.get("granted") is True and seen < _version(purpose)) or (
+        raw.get("reconsent") is True
+    )
     return {
-        "granted": raw.get("granted") is True,
+        "granted": raw.get("granted") is True and not stale,
+        "reconsent": stale,
+        "version": _version(purpose) if not stale else seen,
         "mode": PURPOSES[purpose]["mode"],
         "granted_at": raw.get("granted_at") if isinstance(raw.get("granted_at"), str) else None,
         "used_at": raw.get("used_at") if isinstance(raw.get("used_at"), str) else None,
@@ -88,6 +102,7 @@ async def async_load(hass: HomeAssistant) -> dict[str, dict[str, Any]]:
         if await _legacy_opt_in(hass):
             out["categorize"]["granted"] = True
             out["categorize"]["granted_at"] = dt_util.utcnow().isoformat()
+            out["categorize"]["version"] = _version("categorize")
         await _save(hass, out)
         return out
     return {p: _entry(raw.get(p), p) for p in PURPOSES}
@@ -102,8 +117,10 @@ async def async_set(hass: HomeAssistant, purpose: str, granted: bool) -> dict[st
     _check(purpose)
     state = await async_load(hass)
     entry = state[purpose]
-    if bool(granted) != entry["granted"]:
+    if bool(granted) != entry["granted"] or entry.get("reconsent"):
         entry["granted"] = bool(granted)
+        entry["reconsent"] = False
+        entry["version"] = _version(purpose)
         entry["granted_at"] = dt_util.utcnow().isoformat() if granted else None
         if granted:
             entry["used_at"] = None

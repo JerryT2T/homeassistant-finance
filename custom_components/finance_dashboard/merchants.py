@@ -129,7 +129,15 @@ class MerchantMemory:
     @staticmethod
     def _empty() -> dict[str, Any]:
         return {"merchants": {}, "bookings": {}, "answered": 0, "points": 0,
-                "week": "", "week_answered": 0}
+                "week": "", "week_answered": 0,
+                # owner decided once for a recurring series: id -> {owner, ledger_ids}
+                "series": {},
+                # AI tendency per merchant key: "shared" | "personal"
+                "tendencies": {},
+                # None = the defaults of ownership.DEFAULT_HOUSEHOLD_CATEGORIES
+                "household_categories": None,
+                # reconciliation review: confirmed group ids, reviewed_at, snapshots
+                "review": {}}
 
     async def async_load(self) -> None:
         data = await self._store.async_load()
@@ -138,6 +146,9 @@ class MerchantMemory:
             for k in self._data:
                 if k in data and isinstance(data[k], type(self._data[k])):
                     self._data[k] = data[k]
+            hc = data.get("household_categories")
+            if isinstance(hc, list):
+                self._data["household_categories"] = [str(c) for c in hc]
 
     async def async_save(self) -> None:
         await self._store.async_save(self._data)
@@ -176,10 +187,45 @@ class MerchantMemory:
 
     def learn_ai_merchant(self, key: str, category: str) -> bool:
         """Learn an AI-sourced merchant category unless a rule already exists."""
-        if key in self._data["merchants"]:
-            return False
+        existing = self._data["merchants"].get(key)
+        if existing is not None:
+            if existing.get("category"):
+                return False
+            # an owner-only rule (a user's ownership answer) gains the AI category
+            existing.update(category=category, source="ai")
+            return True
         self.learn_merchant(key, category, source="ai")
         return True
+
+    def set_merchant_owner(self, key: str, owner: str | None) -> None:
+        """Owner of a merchant ("für alle von X merken"); category/source stay.
+
+        ``None`` removes the owner; a rule left with nothing is dropped.
+        """
+        rules = self._data["merchants"]
+        rule = rules.get(key)
+        if owner:
+            if rule is None:
+                rules[key] = {"category": None, "owner": owner}
+            else:
+                rule["owner"] = owner
+            return
+        if rule is not None:
+            rule.pop("owner", None)
+            if not rule.get("category"):
+                rules.pop(key, None)
+
+    def set_booking_owner(self, ledger_id: str, owner: str | None, category: str) -> None:
+        """One-off owner of a booking; the booking keeps its current ``category``."""
+        bookings = self._data["bookings"]
+        if owner:
+            rule = bookings.get(ledger_id)
+            if rule is None:
+                self.learn_booking(ledger_id, category, owner)
+            else:
+                rule["owner"] = owner
+        elif ledger_id in bookings:
+            bookings[ledger_id].pop("owner", None)
 
     def learn_booking(self, ledger_id: str, category: str, owner: str | None = None) -> None:
         bookings = self._data["bookings"]
@@ -197,6 +243,76 @@ class MerchantMemory:
         for lid in moved:
             bookings[renames[lid]] = bookings.pop(lid)
         return bool(moved)
+
+    # --- ownership signals (series decision, AI tendency, category default) --
+    def learn_series_owner(
+        self, series_id: str, owner: str, ledger_ids: list[str] | None = None
+    ) -> None:
+        """A recurring series decided once: ``owner`` applies to all its bookings.
+
+        ``ledger_ids`` are the series' bookings as ``"<account_key>|<ledger_id>"``
+        (what ``recurring`` reports), so variants of the series are reached too.
+        """
+        self._data["series"][series_id] = {
+            "owner": owner,
+            "ledger_ids": sorted({str(i) for i in ledger_ids or []})[:2000],
+        }
+
+    def forget_series_owner(self, series_id: str) -> bool:
+        return self._data["series"].pop(series_id, None) is not None
+
+    def series_owner(self, tx: dict[str, Any], sid: str = "") -> str | None:
+        """Decided owner of the series ``tx`` belongs to (by id or by member booking)."""
+        series = self._data["series"]
+        if not series:
+            return None
+        if sid and sid in series:
+            return series[sid].get("owner") or None
+        lid = tx.get("_ledger_id")
+        if lid:
+            ref = f"{tx.get('_account_key') or ''}|{lid}"
+            for rule in series.values():
+                if ref in rule.get("ledger_ids", ()):
+                    return rule.get("owner") or None
+        # a booking not yet in any stored member list: the series of its payee
+        from .recurring import series_id
+
+        name = str(tx.get("creditorName") or tx.get("debtorName") or "")
+        try:
+            negative = float((tx.get("transactionAmount") or {}).get("amount", 0) or 0) < 0
+        except (TypeError, ValueError):
+            return None
+        rule = series.get(series_id(name, negative)) if name else None
+        return (rule or {}).get("owner") or None
+
+    def series_decisions(self) -> dict[str, dict[str, Any]]:
+        return dict(self._data["series"])
+
+    def learn_tendency(self, key: str, tendency: str) -> bool:
+        if tendency not in ("shared", "personal") or not key:
+            return False
+        if self._data["tendencies"].get(key) == tendency:
+            return False
+        self._data["tendencies"][key] = tendency
+        return True
+
+    def tendency(self, tx: dict[str, Any]) -> str | None:
+        key = merchant_key(tx)
+        return self._data["tendencies"].get(key) if key else None
+
+    def household_categories(self) -> tuple[str, ...]:
+        from .ownership import DEFAULT_HOUSEHOLD_CATEGORIES
+
+        cats = self._data["household_categories"]
+        return tuple(cats) if cats is not None else DEFAULT_HOUSEHOLD_CATEGORIES
+
+    def set_household_categories(self, categories: list[str] | None) -> None:
+        """``None`` restores the defaults."""
+        self._data["household_categories"] = None if categories is None else list(categories)
+
+    def review_state(self) -> dict[str, Any]:
+        """The reconciliation review's persisted state (live dict)."""
+        return self._data["review"]
 
     def forget_merchant(self, key: str) -> bool:
         return self._data["merchants"].pop(key, None) is not None
