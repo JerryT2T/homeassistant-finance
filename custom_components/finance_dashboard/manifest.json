@@ -6,7 +6,7 @@
     "recorder"
   ],
   "codeowners": [
-    "@Jerry0022"
+    "@JerryT2T"
   ],
   "config_flow": true,
   "dependencies": [
@@ -15,10 +15,10 @@
     "frontend",
     "panel_custom"
   ],
-  "documentation": "https://github.com/Jerry0022/homeassistant-finance",
+  "documentation": "https://github.com/JerryT2T/homeassistant-finance",
   "integration_type": "service",
   "iot_class": "cloud_polling",
-  "issue_tracker": "https://github.com/Jerry0022/homeassistant-finance/issues",
+  "issue_tracker": "https://github.com/JerryT2T/homeassistant-finance/issues",
   "loggers": [
     "custom_components.finance_dashboard"
   ],
