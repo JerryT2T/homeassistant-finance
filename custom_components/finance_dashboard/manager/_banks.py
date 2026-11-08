@@ -333,6 +333,9 @@ class BankMixin:
         """
         from ..account_identity import account_key
         from ..labels import apply_contract_categories
+
+        # Data version: whatever is derived from the ledger changed (cache keys).
+        self._derive_version = getattr(self, "_derive_version", 0) + 1
         from ..own_accounts import OwnAccounts
         from ..transfer_detector import (
             apply_overrides,

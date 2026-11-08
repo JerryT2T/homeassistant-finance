@@ -9,6 +9,9 @@ bank call. The AI pass reuses ``async_ai_review_pass`` (consent + budget).
 
 from __future__ import annotations
 
+import copy
+import hashlib
+import json
 import re
 from datetime import date
 from typing import Any
@@ -48,15 +51,45 @@ class ReviewMixin:
         mem = self._review_memory()
         return mem.review_state() if mem is not None else {}
 
+    def _contracts_cache_key(self, store: Any) -> str:
+        """Everything the detection reads: derivation version, the user's contract
+        decisions (store + structure), the accounts and the day."""
+        structure = getattr(store, "structure", None)
+        state = {
+            "contracts": {sid: c.to_dict() for sid, c in store.contracts.items()},
+            "aliases": store.aliases,
+            "manual": getattr(store, "manual", {}),
+            "merges": getattr(structure, "merges", None),
+            "splits": getattr(structure, "splits", None),
+            "assignments": getattr(structure, "assignments", None),
+            "accounts": [
+                (a.get("id"), a.get("type"), a.get("person"), bool(a.get("savings"))) for a in self._accounts
+            ],
+        }
+        blob = json.dumps(state, sort_keys=True, default=str)
+        digest = hashlib.sha256(blob.encode()).hexdigest()
+        return f"{getattr(self, '_derive_version', 0)}|{date.today().isoformat()}|{digest}"
+
     async def _contracts_list(self) -> list[dict[str, Any]]:
-        """Expense series with contract fields (cache; same input as the contracts tab)."""
+        """Expense series with contract fields (cache; same input as the contracts tab).
+
+        Detection is memoised per data version (``_derive_version``, bumped by
+        every re-derivation from the ledger) and per contract-store state, so
+        repeated year/review requests with unchanged data run it once.
+        """
         store = await async_get_store(self._hass)
+        key = self._contracts_cache_key(store)
+        cached = getattr(self, "_contracts_cache", None)
+        if cached and cached[0] == key:
+            return copy.deepcopy(cached[1])
         txns = counted_transactions(self._transactions, self._accounts)
         txns += pending_debits(self._transactions)
         contracts = build_contracts(
             txns, store, own_names=own_account_names(self._accounts)
         )
         await store.async_save_if_changed()
+        # re-key after the pass: learned aliases are part of the store state
+        self._contracts_cache = (self._contracts_cache_key(store), copy.deepcopy(contracts))
         return contracts
 
     def _ai_merchant_suggestions(self) -> dict[str, str]:
